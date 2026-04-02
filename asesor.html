@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REDA3 — Portal del Asesor</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --azul:#1a3a5c;--azul2:#2c5a8a;--azul-h:#0f2840;--azul-l:#e8f0f8;
+  --g50:#f7f9fc;--g100:#f0f3f7;--g200:#e1e7ef;--g300:#cdd6e1;--g400:#9aa5b4;--g600:#5a6a7e;--g800:#2d3748;
+  --blanco:#fff;--verde:#27ae60;--verde-l:#eafaf1;--rojo:#c0392b;--naranja:#e67e22;--amarillo:#f1c40f;
+  --r:10px;--sombra:0 2px 16px rgba(26,58,92,.08);
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var(--g800);line-height:1.6}
+
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,var(--azul) 0%,var(--azul2) 100%)}
+.login-card{background:var(--blanco);border-radius:16px;padding:48px 40px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2);text-align:center}
+.login-card h1{font-size:32px;color:var(--azul);margin-bottom:4px}
+.login-card .sub{font-size:13px;color:var(--g400);margin-bottom:32px}
+.login-card label{display:block;text-align:left;font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px}
+.login-card select{width:100%;padding:14px 16px;border:2px solid var(--g200);border-radius:8px;font-size:15px;cursor:pointer;margin-bottom:24px;appearance:auto}
+.login-card select:focus{outline:none;border-color:var(--azul2)}
+.login-card .btn-login{width:100%;padding:14px;background:var(--azul);color:var(--blanco);border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s}
+.login-card .btn-login:hover{background:var(--azul-h);transform:translateY(-1px)}
+.login-card .btn-login:disabled{opacity:.5;cursor:default;transform:none}
+.login-error{color:var(--rojo);font-size:13px;margin-top:12px;display:none}
+
+/* APP LAYOUT */
+.app{display:none;min-height:100vh}
+.app.show{display:flex}
+.sidebar{width:250px;background:var(--azul);color:var(--blanco);position:fixed;top:0;left:0;bottom:0;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+.sidebar-hd{padding:20px 18px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar-hd h2{font-size:18px;font-weight:700}
+.sidebar-hd .user-name{font-size:12px;opacity:.6;margin-top:2px}
+.sidebar-hd .user-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;margin-top:6px;font-weight:600}
+.user-badge.free{background:rgba(46,204,113,.2);color:#a9dfbf}
+.user-badge.emp{background:rgba(241,196,15,.2);color:#f9e79f}
+.sidebar-nav{flex:1;padding:12px 0;overflow-y:auto}
+.nav-sep{padding:16px 18px 6px;font-size:9px;text-transform:uppercase;letter-spacing:2px;opacity:.3;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:12px 18px;cursor:pointer;font-size:13px;border:none;background:none;color:rgba(255,255,255,.6);width:100%;text-align:left;transition:all .15s;border-left:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.07);color:var(--blanco)}
+.nav-item.active{background:rgba(255,255,255,.12);color:var(--blanco);font-weight:600;border-left-color:rgba(255,255,255,.5)}
+.nav-icon{font-size:15px;width:20px;text-align:center}
+.sidebar-ft{padding:14px 18px;border-top:1px solid rgba(255,255,255,.1)}
+.btn-logout{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;transition:all .15s}
+.btn-logout:hover{background:rgba(255,255,255,.1);color:var(--blanco)}
+.main{flex:1;margin-left:250px}
+.topbar{background:var(--blanco);padding:14px 32px;border-bottom:1px solid var(--g200);position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between}
+.topbar h2{font-size:17px;color:var(--azul)}
+.menu-btn{display:none;background:none;border:none;font-size:22px;color:var(--azul);cursor:pointer}
+.content{padding:32px;max-width:820px;margin:0 auto}
+
+/* SECTION */
+.section{display:none}.section.show{display:block}
+
+/* FORM CARD */
+.fcard{background:var(--blanco);border-radius:var(--r);box-shadow:var(--sombra);overflow:hidden;margin-bottom:24px}
+.fcard-hd{padding:18px 24px;background:var(--azul-l);border-bottom:1px solid var(--g200)}
+.fcard-hd h3{font-size:15px;color:var(--azul);font-weight:700}
+.fcard-hd p{font-size:12px;color:var(--g600);margin-top:3px}
+.fcard-bd{padding:24px}
+.fcard-ft{padding:14px 24px;background:var(--g50);border-top:1px solid var(--g200);display:flex;justify-content:flex-end;gap:12px}
+
+/* FORM */
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.ff{display:flex;flex-direction:column}
+.ff.full{grid-column:1/-1}
+.ff label{font-size:12px;font-weight:600;color:var(--g800);margin-bottom:5px}
+.ff label .req{color:var(--rojo)}.ff label .opt{color:var(--g400);font-weight:400;font-size:10px;margin-left:3px}
+.ff input,.ff select,.ff textarea{padding:11px 12px;border:2px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;transition:border-color .2s;background:var(--blanco)}
+.ff input:focus,.ff select:focus,.ff textarea:focus{outline:none;border-color:var(--azul2);box-shadow:0 0 0 3px rgba(44,90,138,.1)}
+.ff input:read-only{background:var(--g100);color:var(--azul);font-weight:600}
+.ff .hint{font-size:10px;color:var(--g400);margin-top:3px}
+.ff textarea{resize:vertical;min-height:60px}
+.form-div{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:6px 0 2px}
+.form-div .fd-line{flex:1;height:1px;background:var(--g200)}
+.form-div .fd-text{font-size:11px;font-weight:700;color:var(--azul);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+
+/* COMISION CALCULATOR */
+.com-section{grid-column:1/-1;margin-top:4px}
+.com-title{font-size:13px;font-weight:700;color:var(--azul);margin-bottom:10px}
+.com-row{display:grid;grid-template-columns:1fr 100px 90px 120px 40px;gap:8px;align-items:center;margin-bottom:8px;padding:10px 12px;background:var(--g50);border-radius:6px;font-size:12px}
+.com-row select,.com-row input{padding:7px 8px;font-size:12px;border:1px solid var(--g300);border-radius:5px}
+.com-row .com-val{font-weight:700;color:var(--verde);font-size:13px;text-align:right}
+.com-add{margin-top:6px}
+.com-add button{background:none;border:1px dashed var(--g300);color:var(--azul2);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;transition:all .15s}
+.com-add button:hover{background:var(--azul-l);border-color:var(--azul2)}
+.com-del{background:none;border:none;color:var(--rojo);cursor:pointer;font-size:16px;padding:2px 6px}
+
+/* RESUMEN COMISIONES */
+.com-resumen{grid-column:1/-1;background:var(--verde-l);border:2px solid #c8e6c9;border-radius:8px;padding:16px 20px;display:none}
+.com-resumen.show{display:block}
+.com-resumen h4{font-size:13px;color:#2e7d32;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+.com-resumen-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.com-r-item{display:flex;flex-direction:column}
+.com-r-item .crl{font-size:10px;color:#388e3c;text-transform:uppercase;letter-spacing:.3px}
+.com-r-item .crv{font-size:16px;font-weight:700;color:#2e7d32}
+.com-detalle{margin-top:12px;border-top:1px solid #c8e6c9;padding-top:10px}
+.com-detalle-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:#388e3c}
+.com-detalle-row strong{color:#2e7d32}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 24px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-guardar{background:var(--verde);color:var(--blanco);font-size:15px;padding:13px 32px}
+.btn-guardar:hover{background:#219a52;transform:translateY(-1px);box-shadow:0 4px 12px rgba(39,174,96,.3)}
+.btn-guardar:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+.btn-limpiar{background:var(--g100);color:var(--g600);border:1px solid var(--g300)}
+.btn-limpiar:hover{background:var(--g200)}
+
+/* SUCCESS */
+.success-panel{background:var(--verde-l);border:2px solid #a5d6a7;border-radius:10px;padding:32px;text-align:center;display:none;margin-bottom:24px}
+.success-panel.show{display:block}
+.success-panel .sp-icon{font-size:52px;margin-bottom:8px}
+.success-panel h3{font-size:20px;color:#2e7d32;margin-bottom:4px}
+.success-panel p{font-size:14px;color:#388e3c;margin-bottom:16px}
+.success-panel .btn-otro{background:#2e7d32;color:var(--blanco);padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+.success-panel .btn-otro:hover{background:#27ae60}
+
+/* MIS NEGOCIOS */
+.neg-card{background:var(--blanco);border-radius:8px;box-shadow:var(--sombra);padding:16px 20px;margin-bottom:12px;border-left:4px solid var(--azul)}
+.neg-card.arriendo{border-left-color:var(--naranja)}
+.neg-card.venta{border-left-color:var(--verde)}
+.neg-card .neg-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.neg-card .neg-id{font-weight:700;color:var(--azul);font-size:14px}
+.neg-card .neg-tipo{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
+.neg-card .neg-tipo.arr{background:#fff3e0;color:#e65100}
+.neg-card .neg-tipo.vnt{background:#e8f5e9;color:#2e7d32}
+.neg-card .neg-detail{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--g600)}
+.neg-card .neg-detail strong{color:var(--g800)}
+.neg-card .neg-com{margin-top:8px;padding-top:8px;border-top:1px solid var(--g200);font-size:13px;font-weight:700;color:var(--verde)}
+.neg-empty{text-align:center;padding:40px;color:var(--g400);font-size:14px}
+.neg-resumen{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px}
+.neg-stat{background:var(--blanco);border-radius:8px;padding:16px;box-shadow:var(--sombra);text-align:center}
+.neg-stat .ns-val{font-size:24px;font-weight:700;color:var(--azul)}
+.neg-stat .ns-label{font-size:11px;color:var(--g600);text-transform:uppercase;letter-spacing:.5px}
+.neg-stat.v .ns-val{color:var(--verde)}
+
+/* LOADING */
+.loading{text-align:center;padding:40px;color:var(--g400)}
+.spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--g200);border-top-color:var(--azul);border-radius:50%;animation:spin .6s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* TOAST */
+.toast-c{position:fixed;top:16px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:6px}
+.toast{padding:12px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:tin .3s;color:var(--blanco);min-width:260px;font-weight:500}
+.toast.ok{background:var(--verde)}.toast.er{background:var(--rojo)}.toast.wr{background:var(--naranja)}
+@keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+
+/* DUPLI WARNING */
+.dupli-warn{grid-column:1/-1;background:#fff3e0;border:2px solid #ffcc02;border-radius:8px;padding:16px;display:none;font-size:13px;color:#e65100}
+.dupli-warn.show{display:block}
+.dupli-warn strong{font-size:14px}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}.menu-btn{display:block}
+  .content{padding:16px}.fg{grid-template-columns:1fr}
+  .com-row{grid-template-columns:1fr 1fr;gap:6px}
+  .com-resumen-grid{grid-template-columns:1fr}
+  .neg-resumen{grid-template-columns:1fr}
+  .login-card{padding:32px 24px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <h1>REDA3</h1>
+    <p class="sub">Portal del Asesor</p>
+    <label>Seleccione su nombre</label>
+    <select id="loginSelect"><option value="">Cargando asesores...</option></select>
+    <button class="btn-login" id="btnLogin" onclick="hacerLogin()" disabled>Ingresar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div class="app" id="appWrap">
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-hd">
+    <h2>REDA3</h2>
+    <div class="user-name" id="userName"></div>
+    <span class="user-badge" id="userBadge"></span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-sep">Registrar negocio</div>
+    <button class="nav-item active" data-s="arriendo"><span class="nav-icon">&#128196;</span> Nuevo Arriendo</button>
+    <button class="nav-item" data-s="venta"><span class="nav-icon">&#128176;</span> Nueva Venta</button>
+    <div class="nav-sep">Registrar datos</div>
+    <button class="nav-item" data-s="inmueble"><span class="nav-icon">&#127968;</span> Nuevo Inmueble</button>
+    <button class="nav-item" data-s="cliente"><span class="nav-icon">&#128101;</span> Nuevo Cliente</button>
+    <div class="nav-sep">Mi informaci&oacute;n</div>
+    <button class="nav-item" data-s="misnegocios"><span class="nav-icon">&#128200;</span> Mis Negocios</button>
+  </nav>
+  <div class="sidebar-ft"><button class="btn-logout" onclick="cerrarSesion()">Cerrar sesi&oacute;n</button></div>
+</aside>
+
+<div class="main">
+<header class="topbar">
+  <button class="menu-btn" id="menuBtn">&#9776;</button>
+  <h2 id="pageTitle">Nuevo Arriendo</h2>
+  <div style="font-size:12px;color:var(--g400)" id="fechaHoy"></div>
+</header>
+<div class="content">
+
+<!-- ============ ARRIENDO ============ -->
+<div class="section show" id="sec-arriendo">
+  <div class="success-panel" id="okArr"><div class="sp-icon">&#9989;</div><h3>Arriendo registrado</h3><p id="okArrMsg"></p><button class="btn-otro" onclick="resetArriendo()">Registrar otro arriendo</button></div>
+  <div id="formArrWrap">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Registrar nuevo arriendo</h3><p>Complete la informaci&oacute;n paso a paso. Los campos con <span style="color:var(--rojo)">*</span> son obligatorios.</p></div>
+    <div class="fcard-bd">
+      <div class="fg" id="frmArr">
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 1 &mdash; Datos del negocio</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Mes <span class="req">*</span></label><select id="ar_mes"><option value="">-- Mes --</option></select></div>
+        <div class="ff"><label>Tipo de mercado <span class="req">*</span></label><select id="ar_mercado"><option value="">-- Escoja --</option><option>Primario</option><option>Secundario</option></select></div>
+        <div class="ff"><label>Inmueble <span class="req">*</span></label><select id="ar_inmueble"><option value="">-- Escoja el inmueble --</option></select><div class="hint">Si no existe, cr&eacute;elo primero en "Nuevo Inmueble"</div></div>
+        <div class="ff">&nbsp;</div>
+        <div class="dupli-warn" id="dupliArr"><strong>&#9888; Posible duplicado:</strong> Ya existe un arriendo para este inmueble en este mes. Verifique antes de continuar.</div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Arrendador y arrendatario</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Arrendador (due&ntilde;o) <span class="req">*</span></label><select id="ar_arrendador"><option value="">-- Due&ntilde;o del inmueble --</option></select></div>
+        <div class="ff"><label>Arrendatario (inquilino) <span class="req">*</span></label><select id="ar_arrendatario"><option value="">-- Quien arrienda --</option></select></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Valor y comisi&oacute;n oficina</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Valor del canon mensual (COP) <span class="req">*</span></label><input type="number" id="ar_canon" min="0" placeholder="Ej: 1300000" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;nto paga el inquilino al mes</div></div>
+        <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="ar_ofcap"><option value="">-- Oficina --</option></select></div>
+        <div class="ff"><label>Origen captaci&oacute;n <span class="req">*</span></label><select id="ar_orgcap"><option value="">-- Origen --</option></select></div>
+        <div class="ff"><label>Referido captador <span class="opt">(opcional)</span></label><input type="text" id="ar_refcap" placeholder="Nombre si aplica"></div>
+        <div class="ff"><label>Valor ref. captador <span class="opt">(opcional)</span></label><input type="number" id="ar_valrefcap" min="0" placeholder="0"></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 5 &mdash; Cierre</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Oficina cierre <span class="req">*</span></label><select id="ar_ofcie"><option value="">-- Oficina --</option></select></div>
+        <div class="ff"><label>Origen cierre <span class="req">*</span></label><select id="ar_orgcie"><option value="">-- Origen --</option></select></div>
+        <div class="ff"><label>Referido cerrador <span class="opt">(opcional)</span></label><input type="text" id="ar_refcie" placeholder="Nombre si aplica"></div>
+        <div class="ff"><label>Valor ref. cerrador <span class="opt">(opcional)</span></label><input type="number" id="ar_valrefcie" min="0" placeholder="0"></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 6 &mdash; Asesores y comisiones</span><span class="fd-line"></span></div>
+
+        <div class="com-section">
+          <div class="com-title">Asesores captadores</div>
+          <div id="capArrList"></div>
+          <div class="com-add"><button type="button" onclick="addAsesorRow('capArrList','Captador','arr')">+ Agregar asesor captador</button></div>
+        </div>
+
+        <div class="com-section">
+          <div class="com-title">Asesores cerradores</div>
+          <div id="cerArrList"></div>
+          <div class="com-add"><button type="button" onclick="addAsesorRow('cerArrList','Cerrador','arr')">+ Agregar asesor cerrador</button></div>
+        </div>
+
+        <div class="com-resumen" id="resumenArr">
+          <h4>Resumen de comisiones del negocio</h4>
+          <div class="com-resumen-grid" id="resumenArrGrid"></div>
+          <div class="com-detalle" id="resumenArrDet"></div>
+        </div>
+      </div>
+    </div>
+    <div class="fcard-ft">
+      <button class="btn btn-limpiar" onclick="resetArriendo()">Limpiar</button>
+      <button class="btn btn-guardar" id="btnGuardarArr" onclick="guardarArriendo()">&#10003; Guardar Arriendo</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ VENTA ============ -->
+<div class="section" id="sec-venta">
+  <div class="success-panel" id="okVnt"><div class="sp-icon">&#9989;</div><h3>Venta registrada</h3><p id="okVntMsg"></p><button class="btn-otro" onclick="resetVenta()">Registrar otra venta</button></div>
+  <div id="formVntWrap">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Registrar nueva venta</h3><p>Complete la informaci&oacute;n de la venta.</p></div>
+    <div class="fcard-bd">
+      <div class="fg" id="frmVnt">
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 1 &mdash; Datos del negocio</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Mes <span class="req">*</span></label><select id="v_mes"><option value="">-- Mes --</option></select></div>
+        <div class="ff"><label>Tipo de mercado <span class="req">*</span></label><select id="v_mercado"><option value="">-- Escoja --</option><option>Primario</option><option>Secundario</option></select></div>
+        <div class="ff"><label>Inmueble <span class="req">*</span></label><select id="v_inmueble"><option value="">-- Escoja --</option></select></div>
+        <div class="ff">&nbsp;</div>
+        <div class="dupli-warn" id="dupliVnt"><strong>&#9888; Posible duplicado:</strong> Ya existe una venta para este inmueble en este mes.</div>
+        <div class="ff"><label>Vendedor <span class="req">*</span></label><select id="v_vendedor"><option value="">-- Quien vende --</option></select></div>
+        <div class="ff"><label>Comprador <span class="req">*</span></label><select id="v_comprador"><option value="">-- Quien compra --</option></select></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Valor y comisi&oacute;n</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Valor base comisi&oacute;n (COP) <span class="req">*</span></label><input type="number" id="v_valorbase" min="0" placeholder="Ej: 350000000" oninput="calcularComisionVnt()"></div>
+        <div class="ff"><label>% Comisi&oacute;n oficina <span class="req">*</span></label><select id="v_pct" onchange="calcularComisionVnt()"><option value="">-- % --</option><option value="0.01">1%</option><option value="0.015">1.5%</option><option value="0.02">2%</option><option value="0.025">2.5%</option><option value="0.0252">2.52%</option><option value="0.03">3%</option></select></div>
+        <div class="ff"><label>Comisiones facturadas <span class="opt">(opcional)</span></label><input type="number" id="v_facturadas" min="0" placeholder="0"></div>
+        <div class="ff"><label>Pagos efectuados <span class="opt">(opcional)</span></label><input type="number" id="v_pagos" min="0" placeholder="0"></div>
+        <div class="ff"><label>Pendiente por cobrar <span class="opt">(opcional)</span></label><input type="number" id="v_pendiente" min="0" placeholder="0"></div>
+        <div class="ff"><label>Fecha cobro comisi&oacute;n <span class="opt">(opcional)</span></label><input type="date" id="v_fechacobro"></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="v_ofcap"><option value="">-- Oficina --</option></select></div>
+        <div class="ff"><label>Origen captaci&oacute;n <span class="req">*</span></label><select id="v_orgcap"><option value="">-- Origen --</option></select></div>
+        <div class="ff"><label>Referido captador <span class="opt">(opcional)</span></label><input type="text" id="v_refcap"></div>
+        <div class="ff"><label>Valor ref. captador <span class="opt">(opcional)</span></label><input type="number" id="v_valrefcap" min="0" placeholder="0"></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Cierre</span><span class="fd-line"></span></div>
+        <div class="ff"><label>Oficina cierre <span class="req">*</span></label><select id="v_ofcie"><option value="">-- Oficina --</option></select></div>
+        <div class="ff"><label>Origen cierre <span class="req">*</span></label><select id="v_orgcie"><option value="">-- Origen --</option></select></div>
+        <div class="ff"><label>Referido cerrador <span class="opt">(opcional)</span></label><input type="text" id="v_refcie"></div>
+        <div class="ff"><label>Valor ref. cerrador <span class="opt">(opcional)</span></label><input type="number" id="v_valrefcie" min="0" placeholder="0"></div>
+
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 5 &mdash; Asesores y comisiones</span><span class="fd-line"></span></div>
+
+        <div class="com-section">
+          <div class="com-title">Asesores captadores</div>
+          <div id="capVntList"></div>
+          <div class="com-add"><button type="button" onclick="addAsesorRow('capVntList','Captador','vnt')">+ Agregar asesor captador</button></div>
+        </div>
+        <div class="com-section">
+          <div class="com-title">Asesores cerradores</div>
+          <div id="cerVntList"></div>
+          <div class="com-add"><button type="button" onclick="addAsesorRow('cerVntList','Cerrador','vnt')">+ Agregar asesor cerrador</button></div>
+        </div>
+
+        <div class="com-resumen" id="resumenVnt">
+          <h4>Resumen de comisiones del negocio</h4>
+          <div class="com-resumen-grid" id="resumenVntGrid"></div>
+          <div class="com-detalle" id="resumenVntDet"></div>
+        </div>
+      </div>
+    </div>
+    <div class="fcard-ft">
+      <button class="btn btn-limpiar" onclick="resetVenta()">Limpiar</button>
+      <button class="btn btn-guardar" id="btnGuardarVnt" onclick="guardarVenta()">&#10003; Guardar Venta</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ INMUEBLE ============ -->
+<div class="section" id="sec-inmueble">
+  <div class="success-panel" id="okInm"><div class="sp-icon">&#9989;</div><h3>Inmueble registrado</h3><p id="okInmMsg"></p><button class="btn-otro" onclick="resetInmueble()">Registrar otro</button></div>
+  <div id="formInmWrap">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Registrar nuevo inmueble</h3><p>Si el inmueble que necesita no existe en las listas, cr&eacute;elo aqu&iacute;.</p></div>
+    <div class="fcard-bd"><div class="fg">
+      <div class="ff"><label>C&oacute;digo plataforma <span class="opt">(opcional)</span></label><input type="number" id="i_codigo" placeholder="Ej: 7358"></div>
+      <div class="ff">&nbsp;</div>
+      <div class="ff full"><label>Nombre del inmueble <span class="req">*</span></label><input type="text" id="i_nombre" placeholder="Ej: Reservas de Batar&aacute; 1205"></div>
+      <div class="ff"><label>Ciudad <span class="req">*</span></label><select id="i_ciudad"><option value="">-- Ciudad --</option><option>Pereira</option><option>Dosquebradas</option></select></div>
+      <div class="ff"><label>Zona <span class="req">*</span></label><select id="i_zona"><option value="">-- Zona --</option></select></div>
+      <div class="ff"><label>Tipo <span class="req">*</span></label><select id="i_tipo"><option value="">-- Tipo --</option></select></div>
+      <div class="ff"><label>Residencial o Comercial <span class="req">*</span></label><select id="i_rc"><option value="">-- Escoja --</option><option>Residencial</option><option>Comercial</option></select></div>
+    </div></div>
+    <div class="fcard-ft">
+      <button class="btn btn-limpiar" onclick="resetInmueble()">Limpiar</button>
+      <button class="btn btn-guardar" onclick="guardarInmueble()">&#10003; Guardar Inmueble</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ CLIENTE ============ -->
+<div class="section" id="sec-cliente">
+  <div class="success-panel" id="okCli"><div class="sp-icon">&#9989;</div><h3>Cliente registrado</h3><p id="okCliMsg"></p><button class="btn-otro" onclick="resetCliente()">Registrar otro</button></div>
+  <div id="formCliWrap">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Registrar nuevo cliente</h3><p>Agregue un cliente que no existe en el sistema.</p></div>
+    <div class="fcard-bd"><div class="fg">
+      <div class="ff full"><label>Nombre completo <span class="req">*</span></label><input type="text" id="c_nombre" placeholder="Nombre de la persona o empresa"></div>
+      <div class="ff"><label>Tel&eacute;fono <span class="opt">(opcional)</span></label><input type="tel" id="c_tel" placeholder="Ej: 3001234567"></div>
+      <div class="ff"><label>Correo electr&oacute;nico <span class="opt">(opcional)</span></label><input type="email" id="c_email" placeholder="correo@ejemplo.com"></div>
+    </div></div>
+    <div class="fcard-ft">
+      <button class="btn btn-limpiar" onclick="resetCliente()">Limpiar</button>
+      <button class="btn btn-guardar" onclick="guardarCliente()">&#10003; Guardar Cliente</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ MIS NEGOCIOS ============ -->
+<div class="section" id="sec-misnegocios">
+  <div id="misNegContent"><div class="loading"><span class="spinner"></span> Cargando sus negocios...</div></div>
+</div>
+
+</div></div></div>
+
+<div class="toast-c" id="toasts"></div>
+
+<script>
+// =====================================================================
+// CONFIGURACIÓN — PEGA AQUÍ TU URL DE APPS SCRIPT
+// =====================================================================
+const SCRIPT_URL = '/api';
+// =====================================================================
+
+// ===== DATOS EN MEMORIA =====
+let asesorActual = null; // { id_asesor, nombre, vinculacion, estado }
+let asesoresLista = [];
+let inmuebles = [];
+let clientes = [];
+
+// Catálogos fijos
+const CAT = {
+  zonas:['30 de Agosto','Alpes','Av Belalcazar','Av Sur','Av. 30 Agosto','Av. Rio','Av. Sur','Belmonte','Centro','Cerritos','Circunvalar','Ciudad Jardin','Combia','Condina','Cuba','Dosquebradas','El Poblado','El Tigre','Galicia','Gama','La Florida','La Villa','Maraya','Mercasa','Mundo Nuevo','Pinares','Sabanitas','Tribunas','Ukumari','Unicentro','Verona','Villa Olimpica','Villa Verde','\u00c1lamos'],
+  tipos:['Apartaestudio','Apartaloft','Apartamento','Bodega','Burbuja','Burbuja Comercial','Caba\u00f1a','Casa','Casa Campestre','Casa Comercial','Casa Residencial','Casa en Conjunto Cerrado','Consultorio','Local Comercial','Lote Comercial','Lote en Conjunto Cerrado','Lote en Parcelaci\u00f3n','Oficina'],
+  oficinas:['Uniplex','Portal de Cerritos','Dosquebradas','Uniplex - Dosquebradas','Uniplex - Portal de Cerritos','Portal de Cerritos - Dosquebradas'],
+  orgcap:['CRM','Cliente Oficina','Colegaje Inmobiliario','Constructora','C\u00edrculo de Influencia','Farming','Inmo CG','Referido','Visita Oficina'],
+  orgcie:['Aviso','CRM','Cliente Oficina','Colegaje Inmobiliario','Constructora','C\u00edrculo de Influencia','Inmo CG','Marketplace','Redes Sociales','Referido','Uniplex','Visita Oficina'],
+  meses:[{v:1,l:'Enero'},{v:2,l:'Febrero'},{v:3,l:'Marzo'},{v:4,l:'Abril'},{v:5,l:'Mayo'},{v:6,l:'Junio'},{v:7,l:'Julio'},{v:8,l:'Agosto'},{v:9,l:'Septiembre'},{v:10,l:'Octubre'},{v:11,l:'Noviembre'},{v:12,l:'Diciembre'}]
+};
+
+// ===== LÓGICA DE COMISIONES (de Comisiones(1).xlsx) =====
+const COM_RENTA = {
+  sin_circulo: { freelance: 0.15, empleado_div: 1.3 },
+  con_circulo: { freelance: 0.175, empleado_div: 1.3 },
+  referido: { total: 0.20, oficina: 0.75, asesor: 0.25 }
+};
+
+const COM_VENTA = {
+  secundario: {
+    sin_circulo: { freelance: 0.20, empleado_div: 1.3 },
+    con_circulo: { freelance: 0.225, empleado_div: 1.3 }
+  },
+  primario: {
+    captador: { sin_circulo: { freelance: 0.15, empleado_div: 1.3 }, con_circulo: { freelance: 0.175, empleado_div: 1.3 } },
+    cerrador: { sin_circulo: { freelance: 0.30, empleado_div: 1.3 }, con_circulo: { freelance: 0.325, empleado_div: 1.3 } }
+  },
+  referido: { total: 0.20, oficina: 0.75, asesor: 0.25 }
+};
+
+function calcComisionAsesor(comisionPunta, vinculacion, conCirculo, tipoNeg, mercado, punta) {
+  let pctFree;
+  if (tipoNeg === 'arriendo') {
+    pctFree = conCirculo ? COM_RENTA.con_circulo.freelance : COM_RENTA.sin_circulo.freelance;
+  } else {
+    if (mercado === 'Secundario') {
+      pctFree = conCirculo ? COM_VENTA.secundario.con_circulo.freelance : COM_VENTA.secundario.sin_circulo.freelance;
+    } else {
+      const p = punta === 'Captador' ? 'captador' : 'cerrador';
+      pctFree = conCirculo ? COM_VENTA.primario[p].con_circulo.freelance : COM_VENTA.primario[p].sin_circulo.freelance;
+    }
+  }
+  const valorFree = comisionPunta * pctFree;
+  if (vinculacion === 'Freelance') return valorFree;
+  return valorFree / 1.3;
+}
+
+// ===== UTILIDADES =====
+function toast(m,t='ok'){const e=document.createElement('div');e.className='toast '+t;e.textContent=m;document.getElementById('toasts').appendChild(e);setTimeout(()=>e.remove(),4000)}
+function fmtP(n){return n!=null&&n!==''?'$ '+Math.round(Number(n)).toLocaleString('es-CO'):''}
+function fillSel(id,opts,ph){const s=document.getElementById(id);s.innerHTML='<option value="">'+ph+'</option>'+opts.map(o=>typeof o==='object'?'<option value="'+o.v+'">'+o.l+'</option>':'<option>'+o+'</option>').join('')}
+function val(id,msg){const v=document.getElementById(id).value.trim();if(!v){toast(msg,'er');document.getElementById(id).focus();return null}return v}
+
+function fillSelectInmuebles(id,ph){
+  const s=document.getElementById(id);
+  s.innerHTML='<option value="">'+ph+'</option>'+inmuebles.map(d=>'<option value="'+d.id_inmueble+'">'+d.id_inmueble+' \u2014 '+d.nombre+'</option>').join('');
+}
+function fillSelectClientes(id,ph){
+  const s=document.getElementById(id);
+  s.innerHTML='<option value="">'+ph+'</option>'+clientes.map(d=>'<option value="'+d.id_cliente+'">'+d.id_cliente+' \u2014 '+d.nombre+'</option>').join('');
+}
+function fillSelectAsesores(sel){
+  sel.innerHTML='<option value="">-- Asesor --</option>'+asesoresLista.filter(a=>a.estado==='Activo').map(a=>'<option value="'+a.id_asesor+'" data-vinc="'+(a.vinculacion||'Freelance')+'">'+a.id_asesor+' \u2014 '+a.nombre+' ('+a.vinculacion+')</option>').join('');
+}
+
+// ===== API =====
+async function apiGet(params){
+  if(!SCRIPT_URL){toast('Configure SCRIPT_URL en el código','er');return null}
+  const url=SCRIPT_URL+'?'+new URLSearchParams(params).toString();
+  const r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return await r.json();
+}
+async function apiPost(body){
+  if(!SCRIPT_URL){toast('Configure SCRIPT_URL en el código','er');return null}
+  const r=await fetch(SCRIPT_URL,{
+    method:'POST',
+    body:JSON.stringify(body),
+    headers:{'Content-Type':'text/plain'}
+  });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return await r.json();
+}
+
+// ===== LOGIN =====
+async function cargarAsesores(){
+  try{
+    const r=await apiGet({action:'login'});
+    if(r&&r.ok){
+      asesoresLista=r.asesores.filter(a=>a.estado==='Activo');
+      const sel=document.getElementById('loginSelect');
+      sel.innerHTML='<option value="">-- Seleccione su nombre --</option>'+asesoresLista.map(a=>'<option value="'+a.id_asesor+'">'+a.nombre+' ('+a.id_asesor+')</option>').join('');
+      document.getElementById('btnLogin').disabled=false;
+    }else{
+      document.getElementById('loginError').textContent='Error al conectar con el servidor';
+      document.getElementById('loginError').style.display='block';
+    }
+  }catch(e){
+    document.getElementById('loginError').textContent='No se pudo conectar. Verifique la URL del script.';
+    document.getElementById('loginError').style.display='block';
+  }
+}
+
+function hacerLogin(){
+  const id=document.getElementById('loginSelect').value;
+  if(!id){toast('Seleccione su nombre','er');return}
+  asesorActual=asesoresLista.find(a=>a.id_asesor===id);
+  if(!asesorActual)return;
+  document.getElementById('userName').textContent=asesorActual.nombre;
+  const b=document.getElementById('userBadge');
+  b.textContent=asesorActual.vinculacion;
+  b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
+  document.getElementById('loginWrap').style.display='none';
+  document.getElementById('appWrap').classList.add('show');
+  cargarCatalogos();
+}
+
+function cerrarSesion(){
+  asesorActual=null;
+  document.getElementById('loginWrap').style.display='';
+  document.getElementById('appWrap').classList.remove('show');
+}
+
+async function cargarCatalogos(){
+  try{
+    const r=await apiGet({action:'catalogos'});
+    if(r&&r.ok){inmuebles=r.inmuebles;clientes=r.clientes;prepararFormularios()}
+  }catch(e){toast('Error cargando cat\u00e1logos','er')}
+}
+
+// ===== NAVEGACIÓN =====
+const navTitles={arriendo:'Nuevo Arriendo',venta:'Nueva Venta',inmueble:'Nuevo Inmueble',cliente:'Nuevo Cliente',misnegocios:'Mis Negocios'};
+document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>{
+  const s=n.dataset.s;
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));n.classList.add('active');
+  document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
+  document.getElementById('sec-'+s).classList.add('show');
+  document.getElementById('pageTitle').textContent=navTitles[s];
+  document.getElementById('sidebar').classList.remove('open');
+  if(s==='misnegocios')cargarMisNegocios();
+}));
+document.getElementById('menuBtn').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('open'));
+
+// ===== PREPARAR FORMULARIOS =====
+function prepararFormularios(){
+  // Meses
+  ['ar_mes','v_mes'].forEach(id=>fillSel(id,CAT.meses,'-- Mes --'));
+  // Inmuebles
+  ['ar_inmueble','v_inmueble'].forEach(id=>fillSelectInmuebles(id,'-- Escoja el inmueble --'));
+  // Clientes
+  ['ar_arrendador','ar_arrendatario','v_vendedor','v_comprador'].forEach(id=>fillSelectClientes(id,'-- Escoja --'));
+  // Oficinas y origenes
+  ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>fillSel(id,CAT.oficinas,'-- Oficina --'));
+  ['ar_orgcap','v_orgcap'].forEach(id=>fillSel(id,CAT.orgcap,'-- Origen --'));
+  ['ar_orgcie','v_orgcie'].forEach(id=>fillSel(id,CAT.orgcie,'-- Origen --'));
+  // Inmueble form
+  fillSel('i_zona',CAT.zonas,'-- Zona --');
+  fillSel('i_tipo',CAT.tipos,'-- Tipo --');
+}
+
+// ===== ASESOR ROWS (comisiones) =====
+function addAsesorRow(containerId, punta, tipo) {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'com-row';
+  row.innerHTML = `
+    <select class="com-asesor" onchange="recalcComisiones('${tipo}')"></select>
+    <select class="com-circulo" onchange="recalcComisiones('${tipo}')">
+      <option value="sin">Sin C.I.</option>
+      <option value="con">Con C.I.</option>
+    </select>
+    <span class="com-punta-label" style="font-size:11px;color:var(--g600)">${punta}</span>
+    <span class="com-val" data-punta="${punta}">$0</span>
+    <button class="com-del" onclick="this.closest('.com-row').remove();recalcComisiones('${tipo}')">&times;</button>
+  `;
+  container.appendChild(row);
+  fillSelectAsesores(row.querySelector('.com-asesor'));
+  recalcComisiones(tipo);
+}
+
+function recalcComisiones(tipo) {
+  const isArr = tipo === 'arr';
+  const comisionOficina = isArr
+    ? (Number(document.getElementById('ar_canon').value)||0) * (Number(document.getElementById('ar_pct').value)||0)
+    : (Number(document.getElementById('v_valorbase').value)||0) * (Number(document.getElementById('v_pct').value)||0);
+
+  if (!comisionOficina) {
+    document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
+    return;
+  }
+
+  const comisionPunta = comisionOficina / 2;
+  const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
+  const tipoNeg = isArr ? 'arriendo' : 'venta';
+
+  const capContainer = document.getElementById(isArr?'capArrList':'capVntList');
+  const cerContainer = document.getElementById(isArr?'cerArrList':'cerVntList');
+  const capRows = capContainer.querySelectorAll('.com-row');
+  const cerRows = cerContainer.querySelectorAll('.com-row');
+  const numCap = capRows.length || 1;
+  const numCer = cerRows.length || 1;
+
+  let totalAsesores = 0;
+  const detalles = [];
+
+  function processRows(rows, punta, comPunta, numAse) {
+    rows.forEach(row => {
+      const sel = row.querySelector('.com-asesor');
+      const circ = row.querySelector('.com-circulo').value;
+      const valSpan = row.querySelector('.com-val');
+      if (!sel.value) { valSpan.textContent = '$0'; return; }
+      const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
+      const conCirculo = circ === 'con';
+      const comAsesor = calcComisionAsesor(comPunta, vinc, conCirculo, tipoNeg, mercado, punta) / numAse;
+      valSpan.textContent = fmtP(comAsesor);
+      totalAsesores += comAsesor;
+      const nombre = sel.options[sel.selectedIndex].text;
+      detalles.push({ nombre, punta, valor: comAsesor, vinc });
+    });
+  }
+
+  processRows(capRows, 'Captador', comisionPunta, numCap);
+  processRows(cerRows, 'Cerrador', comisionPunta, numCer);
+
+  const empresaRecibe = comisionOficina - totalAsesores;
+
+  // Mostrar resumen
+  const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
+  resumen.classList.add('show');
+  document.getElementById(isArr?'resumenArrGrid':'resumenVntGrid').innerHTML = `
+    <div class="com-r-item"><span class="crl">Comisi&oacute;n total oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
+    <div class="com-r-item"><span class="crl">Total asesores</span><span class="crv">${fmtP(totalAsesores)}</span></div>
+    <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv">${fmtP(empresaRecibe)}</span></div>
+  `;
+  document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detalles.map(d =>
+    `<div class="com-detalle-row"><span>${d.nombre} (${d.punta} - ${d.vinc})</span><strong>${fmtP(d.valor)}</strong></div>`
+  ).join('');
+}
+
+function calcularComisionArr() { recalcComisiones('arr'); }
+function calcularComisionVnt() { recalcComisiones('vnt'); }
+
+// ===== RECOLECTAR COMISIONES ASESORES =====
+function recolectarComisiones(tipo) {
+  const isArr = tipo === 'arr';
+  const comisionOficina = isArr
+    ? (Number(document.getElementById('ar_canon').value)||0) * (Number(document.getElementById('ar_pct').value)||0)
+    : (Number(document.getElementById('v_valorbase').value)||0) * (Number(document.getElementById('v_pct').value)||0);
+  const comisionPunta = comisionOficina / 2;
+  const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
+  const tipoNeg = isArr ? 'arriendo' : 'venta';
+
+  const result = [];
+  ['cap','cer'].forEach(tipo2 => {
+    const containerId = tipo2 + (isArr?'ArrList':'VntList');
+    const punta = tipo2 === 'cap' ? 'Captador' : 'Cerrador';
+    const rows = document.getElementById(containerId).querySelectorAll('.com-row');
+    const numAse = rows.length || 1;
+    rows.forEach(row => {
+      const sel = row.querySelector('.com-asesor');
+      if (!sel.value) return;
+      const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
+      const conCirculo = row.querySelector('.com-circulo').value === 'con';
+      const comAsesor = calcComisionAsesor(comisionPunta, vinc, conCirculo, tipoNeg, mercado, punta) / numAse;
+      result.push({ id_asesor: sel.value, valor_comision: Math.round(comAsesor * 100) / 100, punta });
+    });
+  });
+  return result;
+}
+
+// ===== GUARDAR ARRIENDO =====
+async function guardarArriendo() {
+  const mes=val('ar_mes','Escoja el mes');if(!mes)return;
+  const mercado=val('ar_mercado','Escoja el tipo de mercado');if(!mercado)return;
+  const inmueble=val('ar_inmueble','Escoja el inmueble');if(!inmueble)return;
+  const arrendador=val('ar_arrendador','Escoja el arrendador');if(!arrendador)return;
+  const arrendatario=val('ar_arrendatario','Escoja el arrendatario');if(!arrendatario)return;
+  const canon=val('ar_canon','Escriba el valor del canon');if(!canon)return;
+  const pct=val('ar_pct','Escoja el porcentaje de comisi\u00f3n');if(!pct)return;
+  const ofcap=val('ar_ofcap','Escoja la oficina de captaci\u00f3n');if(!ofcap)return;
+  const orgcap=val('ar_orgcap','Escoja el origen de captaci\u00f3n');if(!orgcap)return;
+  const ofcie=val('ar_ofcie','Escoja la oficina de cierre');if(!ofcie)return;
+  const orgcie=val('ar_orgcie','Escoja el origen de cierre');if(!orgcie)return;
+
+  const comisiones = recolectarComisiones('arr');
+  if (comisiones.length === 0) { toast('Agregue al menos un asesor captador o cerrador', 'er'); return; }
+
+  const btn = document.getElementById('btnGuardarArr');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  try {
+    const r = await apiPost({
+      action: 'registrar_arriendo',
+      datos: {
+        mes: Number(mes), mercado, id_inmueble: inmueble,
+        id_arrendador: arrendador, id_arrendatario: arrendatario,
+        valor_canon: Number(canon), pct_comision_oficina: Number(pct),
+        oficina_captacion: ofcap, origen_captacion: orgcap,
+        oficina_cierre: ofcie, origen_cierre: orgcie,
+        referido_captador: document.getElementById('ar_refcap').value || '',
+        valor_ref_captador: Number(document.getElementById('ar_valrefcap').value) || 0,
+        referido_cerrador: document.getElementById('ar_refcie').value || '',
+        valor_ref_cerrador: Number(document.getElementById('ar_valrefcie').value) || 0
+      },
+      comisiones_asesores: comisiones
+    });
+    if (r && r.ok) {
+      document.getElementById('okArrMsg').textContent = r.id + ' \u2014 Canon: ' + fmtP(Number(canon));
+      document.getElementById('okArr').classList.add('show');
+      document.getElementById('formArrWrap').style.display = 'none';
+      toast('Arriendo registrado: ' + r.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else { toast(r?.error || 'Error al guardar', 'er'); }
+  } catch (e) { toast('Error de conexi\u00f3n: ' + e.message, 'er'); }
+  btn.disabled = false; btn.textContent = '\u2713 Guardar Arriendo';
+}
+
+// ===== GUARDAR VENTA =====
+async function guardarVenta() {
+  const mes=val('v_mes','Escoja el mes');if(!mes)return;
+  const mercado=val('v_mercado','Escoja el mercado');if(!mercado)return;
+  const inmueble=val('v_inmueble','Escoja el inmueble');if(!inmueble)return;
+  const vendedor=val('v_vendedor','Escoja el vendedor');if(!vendedor)return;
+  const comprador=val('v_comprador','Escoja el comprador');if(!comprador)return;
+  const valorbase=val('v_valorbase','Escriba el valor base');if(!valorbase)return;
+  const pct=val('v_pct','Escoja el porcentaje');if(!pct)return;
+  const ofcap=val('v_ofcap','Escoja oficina captaci\u00f3n');if(!ofcap)return;
+  const orgcap=val('v_orgcap','Escoja origen captaci\u00f3n');if(!orgcap)return;
+  const ofcie=val('v_ofcie','Escoja oficina cierre');if(!ofcie)return;
+  const orgcie=val('v_orgcie','Escoja origen cierre');if(!orgcie)return;
+
+  const comisiones = recolectarComisiones('vnt');
+  if (comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
+
+  const btn = document.getElementById('btnGuardarVnt');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  try {
+    const r = await apiPost({
+      action: 'registrar_venta',
+      datos: {
+        mes: Number(mes), mercado, id_inmueble: inmueble,
+        id_vendedor: vendedor, id_comprador: comprador,
+        valor_base_comision: Number(valorbase), pct_comision_oficina: Number(pct),
+        comisiones_facturadas: Number(document.getElementById('v_facturadas').value) || '',
+        pagos_efectuados: Number(document.getElementById('v_pagos').value) || '',
+        pendiente_por_cobrar: Number(document.getElementById('v_pendiente').value) || '',
+        fechas_cobro_comision: document.getElementById('v_fechacobro').value || '',
+        oficina_captacion: ofcap, origen_captacion: orgcap,
+        oficina_cierre: ofcie, origen_cierre: orgcie,
+        referido_captador: document.getElementById('v_refcap').value || '',
+        valor_ref_captador: Number(document.getElementById('v_valrefcap').value) || 0,
+        referido_cerrador: document.getElementById('v_refcie').value || '',
+        valor_ref_cerrador: Number(document.getElementById('v_valrefcie').value) || 0
+      },
+      comisiones_asesores: comisiones
+    });
+    if (r && r.ok) {
+      document.getElementById('okVntMsg').textContent = r.id + ' \u2014 Valor: ' + fmtP(Number(valorbase));
+      document.getElementById('okVnt').classList.add('show');
+      document.getElementById('formVntWrap').style.display = 'none';
+      toast('Venta registrada: ' + r.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else { toast(r?.error || 'Error al guardar', 'er'); }
+  } catch (e) { toast('Error: ' + e.message, 'er'); }
+  btn.disabled = false; btn.textContent = '\u2713 Guardar Venta';
+}
+
+// ===== GUARDAR INMUEBLE =====
+async function guardarInmueble() {
+  const nombre = val('i_nombre', 'Escriba el nombre del inmueble'); if (!nombre) return;
+  const ciudad = val('i_ciudad', 'Escoja la ciudad'); if (!ciudad) return;
+  const zona = val('i_zona', 'Escoja la zona'); if (!zona) return;
+  const tipo = val('i_tipo', 'Escoja el tipo'); if (!tipo) return;
+  const rc = val('i_rc', 'Escoja Residencial o Comercial'); if (!rc) return;
+
+  try {
+    const r = await apiPost({
+      action: 'registrar_inmueble',
+      datos: {
+        codigo_plataforma: document.getElementById('i_codigo').value ? Number(document.getElementById('i_codigo').value) : '',
+        nombre, ciudad, zona, tipo, residencial_comercial: rc
+      }
+    });
+    if (r && r.ok) {
+      inmuebles.push({ id_inmueble: r.id, nombre, ciudad, zona, tipo, residencial_comercial: rc, estado: 'Disponible' });
+      ['ar_inmueble', 'v_inmueble'].forEach(id => fillSelectInmuebles(id, '-- Escoja el inmueble --'));
+      document.getElementById('okInmMsg').textContent = r.id + ' \u2014 ' + nombre;
+      document.getElementById('okInm').classList.add('show');
+      document.getElementById('formInmWrap').style.display = 'none';
+      toast('Inmueble registrado: ' + r.id);
+    } else { toast(r?.error || 'Error', 'er'); }
+  } catch (e) { toast('Error: ' + e.message, 'er'); }
+}
+
+// ===== GUARDAR CLIENTE =====
+async function guardarCliente() {
+  const nombre = val('c_nombre', 'Escriba el nombre del cliente'); if (!nombre) return;
+  try {
+    const r = await apiPost({
+      action: 'registrar_cliente',
+      datos: { nombre, telefono: document.getElementById('c_tel').value || '', email: document.getElementById('c_email').value || '' }
+    });
+    if (r && r.ok) {
+      clientes.push({ id_cliente: r.id, nombre, telefono: '', email: '' });
+      ['ar_arrendador', 'ar_arrendatario', 'v_vendedor', 'v_comprador'].forEach(id => fillSelectClientes(id, '-- Escoja --'));
+      document.getElementById('okCliMsg').textContent = r.id + ' \u2014 ' + nombre;
+      document.getElementById('okCli').classList.add('show');
+      document.getElementById('formCliWrap').style.display = 'none';
+      toast('Cliente registrado: ' + r.id);
+    } else { toast(r?.error || 'Error', 'er'); }
+  } catch (e) { toast('Error: ' + e.message, 'er'); }
+}
+
+// ===== RESET FORMS =====
+function resetArriendo(){
+  document.getElementById('okArr').classList.remove('show');
+  document.getElementById('formArrWrap').style.display='';
+  document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''});
+  document.getElementById('capArrList').innerHTML='';
+  document.getElementById('cerArrList').innerHTML='';
+  document.getElementById('resumenArr').classList.remove('show');
+  document.getElementById('dupliArr').classList.remove('show');
+}
+function resetVenta(){
+  document.getElementById('okVnt').classList.remove('show');
+  document.getElementById('formVntWrap').style.display='';
+  document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''});
+  document.getElementById('capVntList').innerHTML='';
+  document.getElementById('cerVntList').innerHTML='';
+  document.getElementById('resumenVnt').classList.remove('show');
+  document.getElementById('dupliVnt').classList.remove('show');
+}
+function resetInmueble(){
+  document.getElementById('okInm').classList.remove('show');
+  document.getElementById('formInmWrap').style.display='';
+  document.querySelectorAll('#sec-inmueble input,#sec-inmueble select').forEach(el=>{if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''});
+}
+function resetCliente(){
+  document.getElementById('okCli').classList.remove('show');
+  document.getElementById('formCliWrap').style.display='';
+  document.querySelectorAll('#sec-cliente input').forEach(el=>el.value='');
+}
+
+// ===== VERIFICAR DUPLICADOS =====
+document.getElementById('ar_inmueble').addEventListener('change', checkDupliArr);
+document.getElementById('ar_mes').addEventListener('change', checkDupliArr);
+document.getElementById('v_inmueble').addEventListener('change', checkDupliVnt);
+document.getElementById('v_mes').addEventListener('change', checkDupliVnt);
+
+async function checkDupliArr(){
+  const inm=document.getElementById('ar_inmueble').value;
+  const mes=document.getElementById('ar_mes').value;
+  if(!inm||!mes){document.getElementById('dupliArr').classList.remove('show');return}
+  try{
+    const r=await apiGet({action:'verificar_duplicado',tipo:'arriendos',id_inmueble:inm,mes:mes});
+    if(r&&r.duplicado)document.getElementById('dupliArr').classList.add('show');
+    else document.getElementById('dupliArr').classList.remove('show');
+  }catch(e){}
+}
+async function checkDupliVnt(){
+  const inm=document.getElementById('v_inmueble').value;
+  const mes=document.getElementById('v_mes').value;
+  if(!inm||!mes){document.getElementById('dupliVnt').classList.remove('show');return}
+  try{
+    const r=await apiGet({action:'verificar_duplicado',tipo:'ventas',id_inmueble:inm,mes:mes});
+    if(r&&r.duplicado)document.getElementById('dupliVnt').classList.add('show');
+    else document.getElementById('dupliVnt').classList.remove('show');
+  }catch(e){}
+}
+
+// ===== MIS NEGOCIOS =====
+async function cargarMisNegocios(){
+  const cont=document.getElementById('misNegContent');
+  cont.innerHTML='<div class="loading"><span class="spinner"></span> Cargando sus negocios...</div>';
+  try{
+    const r=await apiGet({action:'mis_negocios',id_asesor:asesorActual.id_asesor});
+    if(!r||!r.ok){cont.innerHTML='<div class="neg-empty">Error al cargar</div>';return}
+
+    const totalCom=r.comisiones.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+
+    let html=`<div class="neg-resumen">
+      <div class="neg-stat"><div class="ns-val">${r.arriendos.length}</div><div class="ns-label">Arriendos</div></div>
+      <div class="neg-stat"><div class="ns-val">${r.ventas.length}</div><div class="ns-label">Ventas</div></div>
+      <div class="neg-stat v"><div class="ns-val">${fmtP(totalCom)}</div><div class="ns-label">Comisiones totales</div></div>
+    </div>`;
+
+    if(r.arriendos.length===0&&r.ventas.length===0){
+      html+='<div class="neg-empty">A&uacute;n no tiene negocios registrados.</div>';
+    } else {
+      // Helper para buscar nombre
+      const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
+      const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
+      const nomMes=m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+
+      r.arriendos.forEach(a=>{
+        const misCom=r.comisiones.filter(c=>c.id_negocio===a.id_arriendo);
+        const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+        html+=`<div class="neg-card arriendo">
+          <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)}</span></div>
+          <div class="neg-detail">
+            <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
+            <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
+            <div><strong>Arrendador:</strong> ${nomCli(a.id_arrendador)}</div>
+            <div><strong>Arrendatario:</strong> ${nomCli(a.id_arrendatario)}</div>
+          </div>
+          <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        </div>`;
+      });
+
+      r.ventas.forEach(v=>{
+        const misCom=r.comisiones.filter(c=>c.id_negocio===v.id_venta);
+        const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+        html+=`<div class="neg-card venta">
+          <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)}</span></div>
+          <div class="neg-detail">
+            <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
+            <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
+            <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
+            <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
+          </div>
+          <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        </div>`;
+      });
+    }
+    cont.innerHTML=html;
+  }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
+}
+
+// ===== INIT =====
+const h=new Date();const ms=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+document.getElementById('fechaHoy').textContent=h.getDate()+' de '+ms[h.getMonth()]+' de '+h.getFullYear();
+cargarAsesores();
+</script>
+</body>
+</html>

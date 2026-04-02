@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REDA3 — Panel Jefe Comercial</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --azul:#1a3a5c;--azul2:#2c5a8a;--azul-l:#e8f0f8;
+  --g50:#f7f9fc;--g100:#f0f3f7;--g200:#e1e7ef;--g300:#cdd6e1;--g400:#9aa5b4;--g600:#5a6a7e;--g800:#2d3748;
+  --blanco:#fff;--verde:#27ae60;--verde-l:#eafaf1;--rojo:#c0392b;--naranja:#e67e22;
+  --r:10px;--sombra:0 2px 16px rgba(26,58,92,.08);
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var(--g800);line-height:1.6}
+
+.header{background:var(--azul);color:var(--blanco);padding:20px 32px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:22px;font-weight:700}
+.header .sub{font-size:12px;opacity:.6}
+.content{padding:32px;max-width:1100px;margin:0 auto}
+
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px}
+.stat{background:var(--blanco);border-radius:var(--r);padding:18px;box-shadow:var(--sombra);text-align:center;border-top:3px solid var(--azul)}
+.stat .sv{font-size:28px;font-weight:700;color:var(--azul)}.stat .sl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--g600);margin-top:2px}
+.stat.v{border-top-color:var(--verde)}.stat.v .sv{color:var(--verde)}
+.stat.n{border-top-color:var(--naranja)}.stat.n .sv{color:var(--naranja)}
+
+.toolbar{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:11px 22px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-export{background:var(--verde);color:var(--blanco)}.btn-export:hover{background:#219a52}
+.btn-refresh{background:var(--azul);color:var(--blanco)}.btn-refresh:hover{background:var(--azul2)}
+.btn:disabled{opacity:.5;cursor:default}
+
+.panel{background:var(--blanco);border-radius:var(--r);box-shadow:var(--sombra);margin-bottom:24px;overflow:hidden}
+.panel-hd{padding:14px 20px;border-bottom:1px solid var(--g200);font-weight:700;font-size:14px;color:var(--azul);display:flex;align-items:center;justify-content:space-between}
+.panel-hd .count{background:var(--azul-l);color:var(--azul);padding:2px 10px;border-radius:12px;font-size:12px}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--g100);padding:10px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--g600);font-weight:600;white-space:nowrap;border-bottom:2px solid var(--g200)}
+tbody td{padding:9px 12px;font-size:12px;border-bottom:1px solid var(--g100);white-space:nowrap}
+tbody tr:hover{background:rgba(26,58,92,.02)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.b-cap{background:#e3f2fd;color:#1565c0}.b-cer{background:#f3e5f5;color:#7b1fa2}
+.precio{font-weight:600;color:var(--verde)}
+.loading{text-align:center;padding:40px;color:var(--g400)}
+.spinner{display:inline-block;width:20px;height:20px;border:3px solid var(--g200);border-top-color:var(--azul);border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast-c{position:fixed;top:16px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:6px}
+.toast{padding:12px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:tin .3s;color:var(--blanco);min-width:260px;font-weight:500}
+.toast.ok{background:var(--verde)}.toast.er{background:var(--rojo)}
+@keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><h1>REDA3</h1><span class="sub">Panel Jefe Comercial</span></div>
+  <div style="font-size:12px;opacity:.6" id="fecha"></div>
+</div>
+
+<div class="content">
+  <div class="stats-row" id="stats"><div class="loading"><span class="spinner"></span> Conectando...</div></div>
+
+  <div class="toolbar">
+    <button class="btn btn-refresh" onclick="cargarTodo()" id="btnRefresh">&#8635; Actualizar datos</button>
+    <button class="btn btn-export" onclick="exportarExcel()" id="btnExport" disabled>&#128190; Descargar data_set_actualizado.xlsx</button>
+  </div>
+
+  <div class="panel" id="panelArr">
+    <div class="panel-hd"><span>Arriendos</span><span class="count" id="cArr">0</span></div>
+    <div class="tbl-wrap"><table><thead id="thArr"></thead><tbody id="tbArr"></tbody></table></div>
+  </div>
+
+  <div class="panel" id="panelVnt">
+    <div class="panel-hd"><span>Ventas</span><span class="count" id="cVnt">0</span></div>
+    <div class="tbl-wrap"><table><thead id="thVnt"></thead><tbody id="tbVnt"></tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><span>Comisiones</span><span class="count" id="cCom">0</span></div>
+    <div class="tbl-wrap"><table><thead id="thCom"></thead><tbody id="tbCom"></tbody></table></div>
+  </div>
+</div>
+
+<div class="toast-c" id="toasts"></div>
+
+<script>
+// =====================================================================
+// PEGA AQUÍ LA MISMA URL DE APPS SCRIPT
+const SCRIPT_URL = '/api';
+// =====================================================================
+
+let DATA = { asesores:[], inmuebles:[], clientes:[], arriendos:[], ventas:[], pipeline:[], comisiones:[] };
+
+function toast(m,t='ok'){const e=document.createElement('div');e.className='toast '+t;e.textContent=m;document.getElementById('toasts').appendChild(e);setTimeout(()=>e.remove(),4000)}
+function fmtP(n){return n!=null&&n!==''&&!isNaN(n)?'$ '+Math.round(Number(n)).toLocaleString('es-CO'):''}
+
+async function apiGet(params){
+  const url=SCRIPT_URL+'?'+new URLSearchParams(params).toString();
+  const r=await fetch(url,{redirect:'follow'});
+  return await r.json();
+}
+
+async function cargarTodo(){
+  document.getElementById('btnRefresh').disabled=true;
+  document.getElementById('btnRefresh').textContent='Cargando...';
+  try{
+    // Cargar catálogos
+    const [rCat, rLogin] = await Promise.all([
+      apiGet({action:'catalogos'}),
+      apiGet({action:'login'})
+    ]);
+    if(rCat&&rCat.ok){DATA.inmuebles=rCat.inmuebles;DATA.clientes=rCat.clientes}
+    if(rLogin&&rLogin.ok){DATA.asesores=rLogin.asesores}
+
+    // Cargar todos los negocios (via mis_negocios con un ID que no filtre - usamos un truco: pedir todos)
+    // Alternativa: cargar directo desde el sheet
+    // Para simplicidad, vamos a hacer un GET especial
+    const rAll = await apiGet({action:'todos_los_datos'});
+    if(rAll&&rAll.ok){
+      DATA.arriendos=rAll.arriendos||[];
+      DATA.ventas=rAll.ventas||[];
+      DATA.comisiones=rAll.comisiones||[];
+      DATA.pipeline=rAll.pipeline||[];
+    }
+
+    renderTodo();
+    document.getElementById('btnExport').disabled=false;
+    toast('Datos actualizados');
+  }catch(e){toast('Error: '+e.message,'er')}
+  document.getElementById('btnRefresh').disabled=false;
+  document.getElementById('btnRefresh').textContent='\u21BB Actualizar datos';
+}
+
+function nomInm(id){const i=DATA.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id}
+function nomCli(id){const c=DATA.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id}
+function nomAse(id){const a=DATA.asesores.find(x=>x.id_asesor===id);return a?a.nombre:id}
+const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function renderTodo(){
+  // Stats
+  const totalComArr=DATA.arriendos.reduce((s,a)=>s+(Number(a.comision_oficina)||0),0);
+  const totalComVnt=DATA.ventas.reduce((s,v)=>s+(Number(v.comision_oficina)||0),0);
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="sv">${DATA.asesores.length}</div><div class="sl">Asesores</div></div>
+    <div class="stat"><div class="sv">${DATA.inmuebles.length}</div><div class="sl">Inmuebles</div></div>
+    <div class="stat"><div class="sv">${DATA.clientes.length}</div><div class="sl">Clientes</div></div>
+    <div class="stat n"><div class="sv">${DATA.arriendos.length}</div><div class="sl">Arriendos</div></div>
+    <div class="stat v"><div class="sv">${DATA.ventas.length}</div><div class="sl">Ventas</div></div>
+    <div class="stat"><div class="sv">${DATA.comisiones.length}</div><div class="sl">Comisiones</div></div>
+  `;
+
+  // Arriendos
+  document.getElementById('cArr').textContent=DATA.arriendos.length;
+  document.getElementById('thArr').innerHTML='<tr><th>ID</th><th>Mes</th><th>Mercado</th><th>Inmueble</th><th>Arrendador</th><th>Arrendatario</th><th>Canon</th><th>%Com</th><th>Comisi\u00f3n</th></tr>';
+  document.getElementById('tbArr').innerHTML=DATA.arriendos.map(a=>`<tr>
+    <td>${a.id_arriendo}</td><td>${MESES[a.mes]||a.mes}</td><td>${a.mercado}</td>
+    <td>${nomInm(a.id_inmueble)}</td><td>${nomCli(a.id_arrendador)}</td><td>${nomCli(a.id_arrendatario)}</td>
+    <td class="precio">${fmtP(a.valor_canon)}</td><td>${a.pct_comision_oficina?((a.pct_comision_oficina*100).toFixed(1)+'%'):''}</td>
+    <td class="precio">${fmtP(a.comision_oficina)}</td>
+  </tr>`).join('')||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--g400)">Sin arriendos</td></tr>';
+
+  // Ventas
+  document.getElementById('cVnt').textContent=DATA.ventas.length;
+  document.getElementById('thVnt').innerHTML='<tr><th>ID</th><th>Mes</th><th>Mercado</th><th>Inmueble</th><th>Vendedor</th><th>Comprador</th><th>Valor Base</th><th>%Com</th><th>Comisi\u00f3n</th></tr>';
+  document.getElementById('tbVnt').innerHTML=DATA.ventas.map(v=>`<tr>
+    <td>${v.id_venta}</td><td>${MESES[v.mes]||v.mes}</td><td>${v.mercado}</td>
+    <td>${nomInm(v.id_inmueble)}</td><td>${nomCli(v.id_vendedor)}</td><td>${nomCli(v.id_comprador)}</td>
+    <td class="precio">${fmtP(v.valor_base_comision)}</td><td>${v.pct_comision_oficina?((v.pct_comision_oficina*100).toFixed(1)+'%'):''}</td>
+    <td class="precio">${fmtP(v.comision_oficina)}</td>
+  </tr>`).join('')||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--g400)">Sin ventas</td></tr>';
+
+  // Comisiones
+  document.getElementById('cCom').textContent=DATA.comisiones.length;
+  document.getElementById('thCom').innerHTML='<tr><th>Asesor</th><th>Negocio</th><th>Valor Comisi\u00f3n</th><th>Punta</th></tr>';
+  document.getElementById('tbCom').innerHTML=DATA.comisiones.map(c=>`<tr>
+    <td>${nomAse(c.id_asesor)} (${c.id_asesor})</td><td>${c.id_negocio}</td>
+    <td class="precio">${fmtP(c.valor_comision)}</td>
+    <td><span class="badge ${c.punta==='Captador'?'b-cap':'b-cer'}">${c.punta}</span></td>
+  </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--g400)">Sin comisiones</td></tr>';
+}
+
+function exportarExcel(){
+  const wb=XLSX.utils.book_new();
+  const sheets=[
+    ['Asesores',DATA.asesores],['Inmuebles',DATA.inmuebles],['Clientes',DATA.clientes],
+    ['Arriendos',DATA.arriendos],['Ventas',DATA.ventas],['Pipeline',DATA.pipeline],['Comisiones',DATA.comisiones]
+  ];
+  sheets.forEach(([name,data])=>{
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.length?data:[{}]),name);
+  });
+  XLSX.writeFile(wb,'data_set_actualizado.xlsx');
+  toast('Archivo descargado');
+}
+
+// Init
+const h=new Date();const ms=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+document.getElementById('fecha').textContent=h.getDate()+' de '+ms[h.getMonth()]+' de '+h.getFullYear();
+if(SCRIPT_URL)cargarTodo();
+else document.getElementById('stats').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--rojo)">Configure SCRIPT_URL en el c\u00f3digo</div>';
+</script>
+</body>
+</html>
