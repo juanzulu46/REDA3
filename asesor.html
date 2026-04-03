@@ -275,7 +275,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
           <div id="ar_ref_fields" style="display:none">
             <div class="fg">
               <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="ar_refnombre" placeholder="Nombre del referido"></div>
-              <div class="ff"><label>Valor referido total (20% com. oficina)</label><input type="text" id="ar_reftotal" readonly></div>
+              <div class="ff"><label>Valor referido total (20% com. asesor)</label><input type="text" id="ar_reftotal" readonly></div>
               <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="ar_refempresa" readonly></div>
               <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="ar_refasesor" readonly></div>
             </div>
@@ -352,7 +352,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
           <div id="v_ref_fields" style="display:none">
             <div class="fg">
               <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="v_refnombre" placeholder="Nombre del referido"></div>
-              <div class="ff"><label>Valor referido total (20% com. oficina)</label><input type="text" id="v_reftotal" readonly></div>
+              <div class="ff"><label>Valor referido total (20% com. asesor)</label><input type="text" id="v_reftotal" readonly></div>
               <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="v_refempresa" readonly></div>
               <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="v_refasesor" readonly></div>
             </div>
@@ -673,13 +673,14 @@ function recalcComisiones(tipo) {
   processRows(capRows, 'Captador', comisionPunta, numCap);
   processRows(cerRows, 'Cerrador', comisionPunta, numCer);
 
-  // Calcular referido si aplica
+  // Calcular referido si aplica (20% de la comisión del asesor)
   const prefix = isArr ? 'ar' : 'v';
   const hayRef = document.getElementById(prefix + '_hayref').checked;
-  const refTotal = hayRef ? comisionOficina * 0.20 : 0;
+  const refTotal = hayRef ? totalAsesores * 0.20 : 0;
   const refEmpresa = refTotal * 0.75;
   const refAsesor = refTotal * 0.25;
 
+  const comisionNetaAsesores = totalAsesores - refAsesor;
   const empresaRecibe = comisionOficina - totalAsesores - refEmpresa;
 
   // Mostrar resumen
@@ -687,9 +688,12 @@ function recalcComisiones(tipo) {
   resumen.classList.add('show');
   let gridHtml = `
     <div class="com-r-item"><span class="crl">Comisi&oacute;n total oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
-    <div class="com-r-item"><span class="crl">Total asesores</span><span class="crv">${fmtP(totalAsesores)}</span></div>
+    <div class="com-r-item"><span class="crl">Total asesores${hayRef?' (bruto)':''}</span><span class="crv">${fmtP(totalAsesores)}</span></div>
     <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv">${fmtP(empresaRecibe)}</span></div>
   `;
+  if (hayRef) {
+    gridHtml += `<div class="com-r-item"><span class="crl">Comisi&oacute;n neta asesor</span><span class="crv">${fmtP(comisionNetaAsesores)}</span></div>`;
+  }
   document.getElementById(isArr?'resumenArrGrid':'resumenVntGrid').innerHTML = gridHtml;
 
   let detHtml = detalles.map(d =>
@@ -697,14 +701,15 @@ function recalcComisiones(tipo) {
   ).join('');
   if (hayRef) {
     const refNombre = document.getElementById(prefix + '_refnombre').value || 'Referido';
-    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido:</strong> ${refNombre} (20% com. oficina)</span><strong>${fmtP(refTotal)}</strong></div>`;
+    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido:</strong> ${refNombre} (20% com. asesor)</span><strong>${fmtP(refTotal)}</strong></div>`;
     detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga la empresa (75%)</span><strong>${fmtP(refEmpresa)}</strong></div>`;
-    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga el asesor (25%)</span><strong style="color:var(--rojo)">${fmtP(refAsesor)}</strong></div>`;
+    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga el asesor (25%)</span><strong style="color:var(--rojo)">-${fmtP(refAsesor)}</strong></div>`;
+    detHtml += `<div class="com-detalle-row" style="font-weight:700"><span>Comisi&oacute;n neta asesor</span><strong style="color:var(--verde)">${fmtP(comisionNetaAsesores)}</strong></div>`;
   }
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
 
   // Recalcular referido
-  updateReferidoValues(tipo, comisionOficina);
+  updateReferidoValues(tipo, totalAsesores);
 }
 
 function calcularComisionArr() { recalcComisiones('arr'); }
@@ -1021,17 +1026,17 @@ function toggleReferido(tipo) {
   if (checked) recalcComisiones(tipo);
 }
 
-function updateReferidoValues(tipo, comisionOficina) {
+function updateReferidoValues(tipo, totalAsesores) {
   const isArr = tipo === 'arr';
   const prefix = isArr ? 'ar' : 'v';
   const checked = document.getElementById(prefix + '_hayref').checked;
-  if (!checked || !comisionOficina) {
+  if (!checked || !totalAsesores) {
     [prefix+'_reftotal', prefix+'_refempresa', prefix+'_refasesor'].forEach(id => {
       const el = document.getElementById(id); if(el) el.value = '';
     });
     return;
   }
-  const total = comisionOficina * 0.20;
+  const total = totalAsesores * 0.20;
   const empresa = total * 0.75;
   const asesor = total * 0.25;
   document.getElementById(prefix + '_reftotal').value = fmtP(total);
