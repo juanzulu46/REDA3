@@ -58,7 +58,8 @@ http.createServer(async (req, res)=>{
   }
 
   // STATIC FILES
-  let filePath = path.join(__dirname, parsed.pathname==='/'?'index.html':parsed.pathname);
+  if(parsed.pathname==='/'){res.writeHead(302,{'Location':'/asesor.html'});res.end();return}
+  let filePath = path.join(__dirname, parsed.pathname);
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data)=>{
     if(err){res.writeHead(404);res.end('Not found');return}

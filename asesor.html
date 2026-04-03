@@ -50,7 +50,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .topbar{background:var(--blanco);padding:14px 32px;border-bottom:1px solid var(--g200);position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between}
 .topbar h2{font-size:17px;color:var(--azul)}
 .menu-btn{display:none;background:none;border:none;font-size:22px;color:var(--azul);cursor:pointer}
-.content{padding:32px;max-width:820px;margin:0 auto}
+.content{padding:32px}
 
 /* SECTION */
 .section{display:none}.section.show{display:block}
@@ -153,6 +153,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .dupli-warn.show{display:block}
 .dupli-warn strong{font-size:14px}
 
+/* SEARCHABLE SELECT */
+.search-select{position:relative}
+.search-select input.ss-input{width:100%;padding:11px 12px;border:2px solid var(--g200);border-radius:7px;font-size:14px;font-family:inherit;background:var(--blanco);cursor:text;transition:border-color .2s}
+.search-select input.ss-input:focus{outline:none;border-color:var(--azul2);box-shadow:0 0 0 3px rgba(44,90,138,.1)}
+.search-select .ss-dropdown{position:absolute;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:var(--blanco);border:2px solid var(--azul2);border-top:none;border-radius:0 0 7px 7px;z-index:200;display:none;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.search-select .ss-dropdown.open{display:block}
+.search-select .ss-option{padding:9px 12px;font-size:13px;cursor:pointer;transition:background .1s}
+.search-select .ss-option:hover,.search-select .ss-option.highlighted{background:var(--azul-l);color:var(--azul)}
+.search-select .ss-option.selected{background:var(--azul);color:var(--blanco)}
+.search-select .ss-empty{padding:12px;font-size:12px;color:var(--g400);text-align:center}
+.com-row .search-select{flex:1}
+.com-row .search-select input.ss-input{padding:7px 8px;font-size:12px;border:1px solid var(--g300);border-radius:5px}
+
 /* RESPONSIVE */
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}
@@ -234,14 +247,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="ar_ofcap"><option value="">-- Oficina --</option></select></div>
         <div class="ff"><label>Origen captaci&oacute;n <span class="req">*</span></label><select id="ar_orgcap"><option value="">-- Origen --</option></select></div>
-        <div class="ff"><label>Referido captador <span class="opt">(opcional)</span></label><input type="text" id="ar_refcap" placeholder="Nombre si aplica"></div>
-        <div class="ff"><label>Valor ref. captador <span class="opt">(opcional)</span></label><input type="number" id="ar_valrefcap" min="0" placeholder="0"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 5 &mdash; Cierre</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina cierre <span class="req">*</span></label><select id="ar_ofcie"><option value="">-- Oficina --</option></select></div>
         <div class="ff"><label>Origen cierre <span class="req">*</span></label><select id="ar_orgcie"><option value="">-- Origen --</option></select></div>
-        <div class="ff"><label>Referido cerrador <span class="opt">(opcional)</span></label><input type="text" id="ar_refcie" placeholder="Nombre si aplica"></div>
-        <div class="ff"><label>Valor ref. cerrador <span class="opt">(opcional)</span></label><input type="number" id="ar_valrefcie" min="0" placeholder="0"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 6 &mdash; Asesores y comisiones</span><span class="fd-line"></span></div>
 
@@ -255,6 +264,22 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
           <div class="com-title">Asesores cerradores</div>
           <div id="cerArrList"></div>
           <div class="com-add"><button type="button" onclick="addAsesorRow('cerArrList','Cerrador','arr')">+ Agregar asesor cerrador</button></div>
+        </div>
+
+        <div class="com-section" id="refArrSection">
+          <div class="com-title">Referido</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <input type="checkbox" id="ar_hayref" onchange="toggleReferido('arr')">
+            <label for="ar_hayref" style="font-size:13px;cursor:pointer;margin:0">&iquest;Hubo referido?</label>
+          </div>
+          <div id="ar_ref_fields" style="display:none">
+            <div class="fg">
+              <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="ar_refnombre" placeholder="Nombre del referido"></div>
+              <div class="ff"><label>Valor referido total (20% com. oficina)</label><input type="text" id="ar_reftotal" readonly></div>
+              <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="ar_refempresa" readonly></div>
+              <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="ar_refasesor" readonly></div>
+            </div>
+          </div>
         </div>
 
         <div class="com-resumen" id="resumenArr">
@@ -300,14 +325,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="v_ofcap"><option value="">-- Oficina --</option></select></div>
         <div class="ff"><label>Origen captaci&oacute;n <span class="req">*</span></label><select id="v_orgcap"><option value="">-- Origen --</option></select></div>
-        <div class="ff"><label>Referido captador <span class="opt">(opcional)</span></label><input type="text" id="v_refcap"></div>
-        <div class="ff"><label>Valor ref. captador <span class="opt">(opcional)</span></label><input type="number" id="v_valrefcap" min="0" placeholder="0"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Cierre</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina cierre <span class="req">*</span></label><select id="v_ofcie"><option value="">-- Oficina --</option></select></div>
         <div class="ff"><label>Origen cierre <span class="req">*</span></label><select id="v_orgcie"><option value="">-- Origen --</option></select></div>
-        <div class="ff"><label>Referido cerrador <span class="opt">(opcional)</span></label><input type="text" id="v_refcie"></div>
-        <div class="ff"><label>Valor ref. cerrador <span class="opt">(opcional)</span></label><input type="number" id="v_valrefcie" min="0" placeholder="0"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 5 &mdash; Asesores y comisiones</span><span class="fd-line"></span></div>
 
@@ -320,6 +341,22 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
           <div class="com-title">Asesores cerradores</div>
           <div id="cerVntList"></div>
           <div class="com-add"><button type="button" onclick="addAsesorRow('cerVntList','Cerrador','vnt')">+ Agregar asesor cerrador</button></div>
+        </div>
+
+        <div class="com-section" id="refVntSection">
+          <div class="com-title">Referido</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <input type="checkbox" id="v_hayref" onchange="toggleReferido('vnt')">
+            <label for="v_hayref" style="font-size:13px;cursor:pointer;margin:0">&iquest;Hubo referido?</label>
+          </div>
+          <div id="v_ref_fields" style="display:none">
+            <div class="fg">
+              <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="v_refnombre" placeholder="Nombre del referido"></div>
+              <div class="ff"><label>Valor referido total (20% com. oficina)</label><input type="text" id="v_reftotal" readonly></div>
+              <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="v_refempresa" readonly></div>
+              <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="v_refasesor" readonly></div>
+            </div>
+          </div>
         </div>
 
         <div class="com-resumen" id="resumenVnt">
@@ -493,6 +530,7 @@ async function cargarAsesores(){
       const sel=document.getElementById('loginSelect');
       sel.innerHTML='<option value="">-- Seleccione su nombre --</option>'+asesoresLista.map(a=>'<option value="'+a.id_asesor+'">'+a.nombre+' ('+a.id_asesor+')</option>').join('');
       document.getElementById('btnLogin').disabled=false;
+      makeSearchableById('loginSelect');
     }else{
       document.getElementById('loginError').textContent='Error al conectar con el servidor';
       document.getElementById('loginError').style.display='block';
@@ -539,6 +577,7 @@ document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=
   document.getElementById('sec-'+s).classList.add('show');
   document.getElementById('pageTitle').textContent=navTitles[s];
   document.getElementById('sidebar').classList.remove('open');
+  if(s==='arriendo'||s==='venta') prepararFormularios();
   if(s==='misnegocios')cargarMisNegocios();
 }));
 document.getElementById('menuBtn').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('open'));
@@ -558,6 +597,14 @@ function prepararFormularios(){
   // Inmueble form
   fillSel('i_zona',CAT.zonas,'-- Zona --');
   fillSel('i_tipo',CAT.tipos,'-- Tipo --');
+  // Make all selects searchable
+  ['ar_mes','v_mes','ar_mercado','v_mercado',
+   'ar_inmueble','v_inmueble','ar_arrendador','ar_arrendatario','v_vendedor','v_comprador',
+   'ar_pct','v_pct',
+   'ar_ofcap','ar_ofcie','v_ofcap','v_ofcie',
+   'ar_orgcap','ar_orgcie','v_orgcap','v_orgcie',
+   'i_ciudad','i_zona','i_tipo','i_rc'
+  ].forEach(makeSearchableById);
 }
 
 // ===== ASESOR ROWS (comisiones) =====
@@ -576,7 +623,9 @@ function addAsesorRow(containerId, punta, tipo) {
     <button class="com-del" onclick="this.closest('.com-row').remove();recalcComisiones('${tipo}')">&times;</button>
   `;
   container.appendChild(row);
-  fillSelectAsesores(row.querySelector('.com-asesor'));
+  const asesorSel = row.querySelector('.com-asesor');
+  fillSelectAsesores(asesorSel);
+  makeSearchable(asesorSel);
   recalcComisiones(tipo);
 }
 
@@ -624,19 +673,38 @@ function recalcComisiones(tipo) {
   processRows(capRows, 'Captador', comisionPunta, numCap);
   processRows(cerRows, 'Cerrador', comisionPunta, numCer);
 
-  const empresaRecibe = comisionOficina - totalAsesores;
+  // Calcular referido si aplica
+  const prefix = isArr ? 'ar' : 'v';
+  const hayRef = document.getElementById(prefix + '_hayref').checked;
+  const refTotal = hayRef ? comisionOficina * 0.20 : 0;
+  const refEmpresa = refTotal * 0.75;
+  const refAsesor = refTotal * 0.25;
+
+  const empresaRecibe = comisionOficina - totalAsesores - refEmpresa;
 
   // Mostrar resumen
   const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
   resumen.classList.add('show');
-  document.getElementById(isArr?'resumenArrGrid':'resumenVntGrid').innerHTML = `
+  let gridHtml = `
     <div class="com-r-item"><span class="crl">Comisi&oacute;n total oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
     <div class="com-r-item"><span class="crl">Total asesores</span><span class="crv">${fmtP(totalAsesores)}</span></div>
     <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv">${fmtP(empresaRecibe)}</span></div>
   `;
-  document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detalles.map(d =>
+  document.getElementById(isArr?'resumenArrGrid':'resumenVntGrid').innerHTML = gridHtml;
+
+  let detHtml = detalles.map(d =>
     `<div class="com-detalle-row"><span>${d.nombre} (${d.punta} - ${d.vinc})</span><strong>${fmtP(d.valor)}</strong></div>`
   ).join('');
+  if (hayRef) {
+    const refNombre = document.getElementById(prefix + '_refnombre').value || 'Referido';
+    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido:</strong> ${refNombre} (20% com. oficina)</span><strong>${fmtP(refTotal)}</strong></div>`;
+    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga la empresa (75%)</span><strong>${fmtP(refEmpresa)}</strong></div>`;
+    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga el asesor (25%)</span><strong style="color:var(--rojo)">${fmtP(refAsesor)}</strong></div>`;
+  }
+  document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
+
+  // Recalcular referido
+  updateReferidoValues(tipo, comisionOficina);
 }
 
 function calcularComisionArr() { recalcComisiones('arr'); }
@@ -684,6 +752,10 @@ async function guardarArriendo() {
   const ofcie=val('ar_ofcie','Escoja la oficina de cierre');if(!ofcie)return;
   const orgcie=val('ar_orgcie','Escoja el origen de cierre');if(!orgcie)return;
 
+  if (document.getElementById('ar_hayref').checked && !document.getElementById('ar_refnombre').value.trim()) {
+    toast('Escriba el nombre del referido','er'); document.getElementById('ar_refnombre').focus(); return;
+  }
+
   const comisiones = recolectarComisiones('arr');
   if (comisiones.length === 0) { toast('Agregue al menos un asesor captador o cerrador', 'er'); return; }
 
@@ -699,10 +771,11 @@ async function guardarArriendo() {
         valor_canon: Number(canon), pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
-        referido_captador: document.getElementById('ar_refcap').value || '',
-        valor_ref_captador: Number(document.getElementById('ar_valrefcap').value) || 0,
-        referido_cerrador: document.getElementById('ar_refcie').value || '',
-        valor_ref_cerrador: Number(document.getElementById('ar_valrefcie').value) || 0
+        hay_referido: document.getElementById('ar_hayref').checked,
+        nombre_referido: document.getElementById('ar_refnombre').value || '',
+        valor_referido_total: parseRefVal('ar_reftotal'),
+        valor_referido_empresa: parseRefVal('ar_refempresa'),
+        valor_referido_asesor: parseRefVal('ar_refasesor')
       },
       comisiones_asesores: comisiones
     });
@@ -731,6 +804,10 @@ async function guardarVenta() {
   const ofcie=val('v_ofcie','Escoja oficina cierre');if(!ofcie)return;
   const orgcie=val('v_orgcie','Escoja origen cierre');if(!orgcie)return;
 
+  if (document.getElementById('v_hayref').checked && !document.getElementById('v_refnombre').value.trim()) {
+    toast('Escriba el nombre del referido','er'); document.getElementById('v_refnombre').focus(); return;
+  }
+
   const comisiones = recolectarComisiones('vnt');
   if (comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
 
@@ -750,10 +827,11 @@ async function guardarVenta() {
         fechas_cobro_comision: document.getElementById('v_fechacobro').value || '',
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
-        referido_captador: document.getElementById('v_refcap').value || '',
-        valor_ref_captador: Number(document.getElementById('v_valrefcap').value) || 0,
-        referido_cerrador: document.getElementById('v_refcie').value || '',
-        valor_ref_cerrador: Number(document.getElementById('v_valrefcie').value) || 0
+        hay_referido: document.getElementById('v_hayref').checked,
+        nombre_referido: document.getElementById('v_refnombre').value || '',
+        valor_referido_total: parseRefVal('v_reftotal'),
+        valor_referido_empresa: parseRefVal('v_refempresa'),
+        valor_referido_asesor: parseRefVal('v_refasesor')
       },
       comisiones_asesores: comisiones
     });
@@ -786,7 +864,7 @@ async function guardarInmueble() {
     });
     if (r && r.ok) {
       inmuebles.push({ id_inmueble: r.id, nombre, ciudad, zona, tipo, residencial_comercial: rc, estado: 'Disponible' });
-      ['ar_inmueble', 'v_inmueble'].forEach(id => fillSelectInmuebles(id, '-- Escoja el inmueble --'));
+      ['ar_inmueble', 'v_inmueble'].forEach(id => { fillSelectInmuebles(id, '-- Escoja el inmueble --'); refreshSearchable(id); });
       document.getElementById('okInmMsg').textContent = r.id + ' \u2014 ' + nombre;
       document.getElementById('okInm').classList.add('show');
       document.getElementById('formInmWrap').style.display = 'none';
@@ -805,7 +883,7 @@ async function guardarCliente() {
     });
     if (r && r.ok) {
       clientes.push({ id_cliente: r.id, nombre, telefono: '', email: '' });
-      ['ar_arrendador', 'ar_arrendatario', 'v_vendedor', 'v_comprador'].forEach(id => fillSelectClientes(id, '-- Escoja --'));
+      ['ar_arrendador', 'ar_arrendatario', 'v_vendedor', 'v_comprador'].forEach(id => { fillSelectClientes(id, '-- Escoja --'); refreshSearchable(id); });
       document.getElementById('okCliMsg').textContent = r.id + ' \u2014 ' + nombre;
       document.getElementById('okCli').classList.add('show');
       document.getElementById('formCliWrap').style.display = 'none';
@@ -818,20 +896,26 @@ async function guardarCliente() {
 function resetArriendo(){
   document.getElementById('okArr').classList.remove('show');
   document.getElementById('formArrWrap').style.display='';
-  document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''});
+  document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else el.value=''});
   document.getElementById('capArrList').innerHTML='';
   document.getElementById('cerArrList').innerHTML='';
   document.getElementById('resumenArr').classList.remove('show');
   document.getElementById('dupliArr').classList.remove('show');
+  document.getElementById('ar_hayref').checked=false;
+  document.getElementById('ar_ref_fields').style.display='none';
+  document.getElementById('ar_refnombre').value='';
 }
 function resetVenta(){
   document.getElementById('okVnt').classList.remove('show');
   document.getElementById('formVntWrap').style.display='';
-  document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT')el.selectedIndex=0;else el.value=''});
+  document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else el.value=''});
   document.getElementById('capVntList').innerHTML='';
   document.getElementById('cerVntList').innerHTML='';
   document.getElementById('resumenVnt').classList.remove('show');
   document.getElementById('dupliVnt').classList.remove('show');
+  document.getElementById('v_hayref').checked=false;
+  document.getElementById('v_ref_fields').style.display='none';
+  document.getElementById('v_refnombre').value='';
 }
 function resetInmueble(){
   document.getElementById('okInm').classList.remove('show');
@@ -927,6 +1011,139 @@ async function cargarMisNegocios(){
     }
     cont.innerHTML=html;
   }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
+}
+
+// ===== REFERIDO =====
+function toggleReferido(tipo) {
+  const isArr = tipo === 'arr';
+  const checked = document.getElementById(isArr ? 'ar_hayref' : 'v_hayref').checked;
+  document.getElementById(isArr ? 'ar_ref_fields' : 'v_ref_fields').style.display = checked ? '' : 'none';
+  if (checked) recalcComisiones(tipo);
+}
+
+function updateReferidoValues(tipo, comisionOficina) {
+  const isArr = tipo === 'arr';
+  const prefix = isArr ? 'ar' : 'v';
+  const checked = document.getElementById(prefix + '_hayref').checked;
+  if (!checked || !comisionOficina) {
+    [prefix+'_reftotal', prefix+'_refempresa', prefix+'_refasesor'].forEach(id => {
+      const el = document.getElementById(id); if(el) el.value = '';
+    });
+    return;
+  }
+  const total = comisionOficina * 0.20;
+  const empresa = total * 0.75;
+  const asesor = total * 0.25;
+  document.getElementById(prefix + '_reftotal').value = fmtP(total);
+  document.getElementById(prefix + '_refempresa').value = fmtP(empresa);
+  document.getElementById(prefix + '_refasesor').value = fmtP(asesor);
+}
+
+function parseRefVal(id) {
+  const v = document.getElementById(id).value.replace(/[^0-9]/g, '');
+  return Number(v) || 0;
+}
+
+// ===== SEARCHABLE SELECT =====
+function makeSearchable(selectEl) {
+  if (selectEl.dataset.ssInit) return;
+  selectEl.dataset.ssInit = '1';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'search-select';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'ss-input';
+  input.placeholder = selectEl.options[0] ? selectEl.options[0].text : '-- Buscar --';
+  input.autocomplete = 'off';
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'ss-dropdown';
+
+  selectEl.parentNode.insertBefore(wrapper, selectEl);
+  wrapper.appendChild(input);
+  wrapper.appendChild(dropdown);
+  selectEl.style.display = 'none';
+  wrapper.appendChild(selectEl);
+
+  function buildOptions(filter) {
+    dropdown.innerHTML = '';
+    const filt = (filter || '').toLowerCase();
+    let count = 0;
+    for (let i = 1; i < selectEl.options.length; i++) {
+      const opt = selectEl.options[i];
+      if (filt && opt.text.toLowerCase().indexOf(filt) === -1) continue;
+      const div = document.createElement('div');
+      div.className = 'ss-option' + (opt.value === selectEl.value ? ' selected' : '');
+      div.textContent = opt.text;
+      div.dataset.idx = i;
+      div.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        selectEl.selectedIndex = Number(this.dataset.idx);
+        input.value = opt.text;
+        dropdown.classList.remove('open');
+        selectEl.dispatchEvent(new Event('change'));
+      });
+      dropdown.appendChild(div);
+      count++;
+    }
+    if (count === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ss-empty';
+      empty.textContent = 'Sin resultados';
+      dropdown.appendChild(empty);
+    }
+  }
+
+  input.addEventListener('focus', function() {
+    buildOptions(this.value);
+    dropdown.classList.add('open');
+  });
+
+  input.addEventListener('input', function() {
+    buildOptions(this.value);
+    dropdown.classList.add('open');
+  });
+
+  input.addEventListener('blur', function() {
+    setTimeout(() => dropdown.classList.remove('open'), 150);
+  });
+
+  // Sync: when select value changes programmatically
+  const origVal = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+  selectEl._ssInput = input;
+
+  // Observer to detect innerHTML changes (when options are rebuilt)
+  const observer = new MutationObserver(() => {
+    const si = selectEl.selectedIndex;
+    if (si > 0) input.value = selectEl.options[si].text;
+    else input.value = '';
+    input.placeholder = selectEl.options[0] ? selectEl.options[0].text : '-- Buscar --';
+  });
+  observer.observe(selectEl, { childList: true });
+
+  // Clear input when select is reset
+  selectEl.addEventListener('change', function() {
+    if (this.selectedIndex > 0) input.value = this.options[this.selectedIndex].text;
+    else input.value = '';
+  });
+
+  return wrapper;
+}
+
+function makeSearchableById(id) {
+  const el = document.getElementById(id);
+  if (el) makeSearchable(el);
+}
+
+function refreshSearchable(id) {
+  const sel = document.getElementById(id);
+  if (!sel || !sel._ssInput) return;
+  // Reset the searchable input
+  if (sel.selectedIndex > 0) sel._ssInput.value = sel.options[sel.selectedIndex].text;
+  else sel._ssInput.value = '';
+  sel._ssInput.placeholder = sel.options[0] ? sel.options[0].text : '-- Buscar --';
 }
 
 // ===== INIT =====
