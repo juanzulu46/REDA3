@@ -21,7 +21,11 @@ const HOJAS = {
   arriendos: 'Arriendos',
   ventas: 'Ventas',
   pipeline: 'Pipeline',
-  comisiones: 'Comisiones'
+  comisiones: 'Comisiones',
+  oficina: 'Oficina',
+  origen: 'Origen',
+  zona: 'Zona',
+  acciones: 'Acciones'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -45,7 +49,11 @@ const COLUMNAS = {
              'pendiente_por_cobrar', 'fechas_cobro_comision',
              'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
              'referido_captador', 'valor_ref_captador', 'referido_cerrador', 'valor_ref_cerrador'],
-  comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta']
+  comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion'],
+  oficina: ['id_oficina', 'nombre'],
+  origen: ['id_origen', 'nombre', 'circulo'],
+  zona: ['id_zona', 'comuna', 'ciudad'],
+  acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion']
 };
 
 // ===== UTILIDADES =====
@@ -121,12 +129,15 @@ function doGet(e) {
       return jsonResponse({ ok: true, asesores: asesores });
     }
 
-    // --- CATALOGOS: devuelve inmuebles y clientes para los selects ---
+    // --- CATALOGOS: devuelve todos los catálogos para los selects ---
     if (action === 'catalogos') {
       return jsonResponse({
         ok: true,
         inmuebles: leerHoja(HOJAS.inmuebles),
-        clientes: leerHoja(HOJAS.clientes)
+        clientes: leerHoja(HOJAS.clientes),
+        oficinas: leerHoja(HOJAS.oficina),
+        origenes: leerHoja(HOJAS.origen),
+        zonas: leerHoja(HOJAS.zona)
       });
     }
 
@@ -177,8 +188,123 @@ function doGet(e) {
         arriendos: leerHoja(HOJAS.arriendos),
         ventas: leerHoja(HOJAS.ventas),
         pipeline: leerHoja(HOJAS.pipeline),
-        comisiones: leerHoja(HOJAS.comisiones)
+        comisiones: leerHoja(HOJAS.comisiones),
+        oficinas: leerHoja(HOJAS.oficina),
+        origenes: leerHoja(HOJAS.origen),
+        zonas: leerHoja(HOJAS.zona),
+        acciones: leerHoja(HOJAS.acciones)
       });
+    }
+
+    // --- MIS BONIFICACIONES: calcula bonificación del mes para un asesor ---
+    if (action === 'mis_bonificaciones') {
+      var idAsesorB = params.id_asesor || '';
+      var mesB = parseInt(params.mes || '0', 10);
+      if (!idAsesorB || !mesB) return jsonResponse({ ok: false, error: 'Faltan parámetros (id_asesor, mes)' });
+
+      var arriendosB = leerHoja(HOJAS.arriendos);
+      var ventasB = leerHoja(HOJAS.ventas);
+      var comisionesB = leerHoja(HOJAS.comisiones);
+      var accionesB = leerHoja(HOJAS.acciones);
+
+      // Identificar negocios del mes donde participa el asesor
+      var misCom = comisionesB.filter(function(c) { return c.id_asesor === idAsesorB; });
+      var negociosIds = misCom.map(function(c) { return c.id_negocio; });
+
+      // Comisión generada a la oficina por las puntas que participa (50% por punta)
+      var comisionGeneradaOficina = 0;
+      var totalRecibido = 0;
+
+      // Arriendos del mes
+      arriendosB.forEach(function(a) {
+        if (parseInt(a.mes, 10) !== mesB) return;
+        if (negociosIds.indexOf(a.id_arriendo) === -1) return;
+        // Cuántas puntas tiene el asesor en este negocio
+        var puntas = misCom.filter(function(c) { return c.id_negocio === a.id_arriendo; }).length;
+        comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * puntas;
+      });
+      // Ventas del mes
+      ventasB.forEach(function(v) {
+        if (parseInt(v.mes, 10) !== mesB) return;
+        if (negociosIds.indexOf(v.id_venta) === -1) return;
+        var puntas = misCom.filter(function(c) { return c.id_negocio === v.id_venta; }).length;
+        comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * puntas;
+      });
+
+      // Total recibido del mes (lo que efectivamente cobra)
+      misCom.forEach(function(c) {
+        var negocio = arriendosB.find(function(a) { return a.id_arriendo === c.id_negocio; }) ||
+                      ventasB.find(function(v) { return v.id_venta === c.id_negocio; });
+        if (negocio && parseInt(negocio.mes, 10) === mesB) {
+          totalRecibido += Number(c.valor_comision) || 0;
+        }
+      });
+
+      // Acciones comerciales del mes
+      var misAcciones = accionesB.filter(function(ac) {
+        return ac.id_asesor === idAsesorB && parseInt(ac.mes, 10) === mesB;
+      });
+      var numAcciones = misAcciones.length;
+
+      // Determinar categoría
+      var categoria = 'ARENA MOVEDIZA';
+      var fijo = 0;
+      var pctVariable = mesB === 1 ? 0.04 : 0.05;
+      var variable = 0;
+
+      if (comisionGeneradaOficina >= 14085000 && numAcciones >= 10) {
+        categoria = 'ORO';
+        fijo = 563400;
+        variable = comisionGeneradaOficina * pctVariable;
+      } else if (comisionGeneradaOficina >= 10955000 && numAcciones >= 10) {
+        categoria = 'PLATA';
+        fijo = 438200;
+        variable = comisionGeneradaOficina * pctVariable;
+      } else if (comisionGeneradaOficina >= 7825000 && numAcciones >= 5) {
+        categoria = 'BRONCE';
+        fijo = 313000;
+        variable = comisionGeneradaOficina * pctVariable;
+      } else if (comisionGeneradaOficina >= 3260417 && numAcciones >= 5) {
+        categoria = 'PIEDRA';
+        fijo = 156500;
+        variable = comisionGeneradaOficina * pctVariable;
+      } else if (comisionGeneradaOficina < 3260417 && numAcciones >= 5) {
+        categoria = 'PIEDRA (medio)';
+        fijo = 78250;
+        variable = comisionGeneradaOficina * pctVariable;
+      } else if (numAcciones >= 5) {
+        categoria = 'ARENA';
+        fijo = 0;
+        variable = 0;
+      }
+
+      var bonificacionTotal = fijo + variable;
+
+      return jsonResponse({
+        ok: true,
+        mes: mesB,
+        comision_generada_oficina: comisionGeneradaOficina,
+        total_recibido: totalRecibido,
+        num_acciones: numAcciones,
+        categoria: categoria,
+        bonificacion_fija: fijo,
+        bonificacion_variable: variable,
+        bonificacion_total: bonificacionTotal,
+        pct_variable: pctVariable
+      });
+    }
+
+    // --- MIS ACCIONES ---
+    if (action === 'mis_acciones') {
+      var idAsesorA = params.id_asesor || '';
+      var mesA = params.mes ? parseInt(params.mes, 10) : null;
+      var todasAcciones = leerHoja(HOJAS.acciones);
+      var filt = todasAcciones.filter(function(a) {
+        if (a.id_asesor !== idAsesorA) return false;
+        if (mesA && parseInt(a.mes, 10) !== mesA) return false;
+        return true;
+      });
+      return jsonResponse({ ok: true, acciones: filt });
     }
 
     // --- VERIFICAR DUPLICADO ---
@@ -235,7 +361,8 @@ function doPost(e) {
             id_asesor: com.id_asesor,
             id_negocio: datos.id_arriendo,
             valor_comision: com.valor_comision,
-            punta: com.punta
+            punta: com.punta,
+            participacion: com.participacion || 100
           });
         });
       }
@@ -258,7 +385,8 @@ function doPost(e) {
             id_asesor: com.id_asesor,
             id_negocio: datos.id_venta,
             valor_comision: com.valor_comision,
-            punta: com.punta
+            punta: com.punta,
+            participacion: com.participacion || 100
           });
         });
       }
@@ -284,6 +412,20 @@ function doPost(e) {
       agregarFila(HOJAS.clientes, COLUMNAS.clientes, datos);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_cliente, mensaje: 'Cliente registrado' });
+    }
+
+    // --- REGISTRAR ACCIÓN COMERCIAL ---
+    if (action === 'registrar_accion') {
+      const datos = body.datos;
+      datos.id_accion = siguienteId(HOJAS.acciones, 'ACC');
+      // Calcular mes desde fecha si no viene
+      if (!datos.mes && datos.fecha) {
+        var fechaP = new Date(datos.fecha);
+        datos.mes = fechaP.getMonth() + 1;
+      }
+      agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
+      lock.releaseLock();
+      return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
     }
 
     lock.releaseLock();

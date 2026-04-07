@@ -81,8 +81,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 /* COMISION CALCULATOR */
 .com-section{grid-column:1/-1;margin-top:4px}
 .com-title{font-size:13px;font-weight:700;color:var(--azul);margin-bottom:10px}
-.com-row{display:grid;grid-template-columns:1fr 100px 90px 120px 40px;gap:8px;align-items:center;margin-bottom:8px;padding:10px 12px;background:var(--g50);border-radius:6px;font-size:12px}
+.com-row{display:grid;grid-template-columns:1fr 80px 90px 120px 40px;gap:8px;align-items:center;margin-bottom:8px;padding:10px 12px;background:var(--g50);border-radius:6px;font-size:12px}
 .com-row select,.com-row input{padding:7px 8px;font-size:12px;border:1px solid var(--g300);border-radius:5px}
+.com-row input.com-part{text-align:center;font-weight:600;color:var(--azul)}
 .com-row .com-val{font-weight:700;color:var(--verde);font-size:13px;text-align:right}
 .com-add{margin-top:6px}
 .com-add button{background:none;border:1px dashed var(--g300);color:var(--azul2);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;transition:all .15s}
@@ -166,6 +167,44 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .com-row .search-select{flex:1}
 .com-row .search-select input.ss-input{padding:7px 8px;font-size:12px;border:1px solid var(--g300);border-radius:5px}
 
+/* INDICACIONES */
+.ind-hero{background:linear-gradient(135deg,var(--azul) 0%,var(--azul2) 100%);color:var(--blanco);padding:40px 32px;border-radius:14px;margin-bottom:24px;text-align:center;box-shadow:0 8px 30px rgba(26,58,92,.18)}
+.ind-hero h1{font-size:32px;margin-bottom:8px;font-weight:800}
+.ind-hero p{font-size:15px;opacity:.92;max-width:700px;margin:0 auto}
+.ind-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:24px}
+.ind-card{background:var(--blanco);border-radius:12px;padding:24px;box-shadow:var(--sombra);position:relative;border-top:4px solid var(--azul);transition:transform .15s,box-shadow .15s}
+.ind-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(26,58,92,.12)}
+.ind-num{position:absolute;top:-14px;left:20px;background:var(--azul);color:var(--blanco);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;box-shadow:0 4px 10px rgba(26,58,92,.3)}
+.ind-icon{font-size:36px;margin-bottom:10px}
+.ind-card h3{font-size:15px;color:var(--azul);margin-bottom:8px;font-weight:700}
+.ind-card p{font-size:13px;color:var(--g600);line-height:1.6}
+.ind-card p strong{color:var(--azul)}
+.ind-warn{background:#fff8e1;border:2px solid #ffd54f;border-radius:10px;padding:18px 24px;margin-bottom:24px;color:#e65100;font-size:14px}
+.ind-cta{text-align:center;padding:20px 0}
+.ind-cta .btn{font-size:16px;padding:16px 36px}
+
+/* BONIFICACIONES */
+.bon-hero{background:linear-gradient(135deg,#f9d423 0%,#ff8c00 100%);color:var(--blanco);padding:30px;border-radius:12px;margin-bottom:24px;text-align:center}
+.bon-hero .bon-cat{font-size:42px;font-weight:900;letter-spacing:2px;text-shadow:0 2px 8px rgba(0,0,0,.2)}
+.bon-hero .bon-mes{font-size:13px;opacity:.95;text-transform:uppercase;letter-spacing:1px}
+.bon-hero .bon-total{font-size:28px;font-weight:800;margin-top:6px}
+.bon-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px}
+.bon-stat{background:var(--blanco);border-radius:10px;padding:18px;box-shadow:var(--sombra);text-align:center}
+.bon-stat .bs-label{font-size:11px;color:var(--g600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.bon-stat .bs-val{font-size:22px;font-weight:800;color:var(--azul)}
+.bon-stat.v .bs-val{color:var(--verde)}
+.bon-mes-sel{display:flex;gap:10px;align-items:center;margin-bottom:18px;background:var(--blanco);padding:14px 18px;border-radius:8px;box-shadow:var(--sombra)}
+.bon-mes-sel select{padding:8px 14px;border:2px solid var(--g200);border-radius:6px;font-size:13px}
+
+/* CATEGORÍAS BONIFICACIÓN colores */
+.cat-ORO{background:linear-gradient(135deg,#ffd700 0%,#ff8c00 100%)}
+.cat-PLATA{background:linear-gradient(135deg,#c0c0c0 0%,#808080 100%)}
+.cat-BRONCE{background:linear-gradient(135deg,#cd7f32 0%,#8b4513 100%)}
+.cat-PIEDRA{background:linear-gradient(135deg,#778899 0%,#2f4f4f 100%)}
+.cat-PIEDRA_medio{background:linear-gradient(135deg,#778899 0%,#2f4f4f 100%)}
+.cat-ARENA{background:linear-gradient(135deg,#f4a460 0%,#d2691e 100%)}
+.cat-ARENA_MOVEDIZA{background:linear-gradient(135deg,#a0522d 0%,#5c3317 100%)}
+
 /* RESPONSIVE */
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}
@@ -201,14 +240,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
     <span class="user-badge" id="userBadge"></span>
   </div>
   <nav class="sidebar-nav">
+    <div class="nav-sep">Inicio</div>
+    <button class="nav-item active" data-s="indicaciones"><span class="nav-icon">&#128218;</span> Indicaciones</button>
     <div class="nav-sep">Registrar negocio</div>
-    <button class="nav-item active" data-s="arriendo"><span class="nav-icon">&#128196;</span> Nuevo Arriendo</button>
+    <button class="nav-item" data-s="arriendo"><span class="nav-icon">&#128196;</span> Nuevo Arriendo</button>
     <button class="nav-item" data-s="venta"><span class="nav-icon">&#128176;</span> Nueva Venta</button>
+    <button class="nav-item" data-s="accion"><span class="nav-icon">&#128640;</span> Acci&oacute;n Comercial</button>
     <div class="nav-sep">Registrar datos</div>
     <button class="nav-item" data-s="inmueble"><span class="nav-icon">&#127968;</span> Nuevo Inmueble</button>
     <button class="nav-item" data-s="cliente"><span class="nav-icon">&#128101;</span> Nuevo Cliente</button>
     <div class="nav-sep">Mi informaci&oacute;n</div>
     <button class="nav-item" data-s="misnegocios"><span class="nav-icon">&#128200;</span> Mis Negocios</button>
+    <button class="nav-item" data-s="bonificaciones"><span class="nav-icon">&#127942;</span> Mis Bonificaciones</button>
   </nav>
   <div class="sidebar-ft"><button class="btn-logout" onclick="cerrarSesion()">Cerrar sesi&oacute;n</button></div>
 </aside>
@@ -222,7 +265,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 <div class="content">
 
 <!-- ============ ARRIENDO ============ -->
-<div class="section show" id="sec-arriendo">
+<div class="section" id="sec-arriendo">
   <div class="success-panel" id="okArr"><div class="sp-icon">&#9989;</div><h3>Arriendo registrado</h3><p id="okArrMsg"></p><button class="btn-otro" onclick="resetArriendo()">Registrar otro arriendo</button></div>
   <div id="formArrWrap">
   <div class="fcard">
@@ -267,19 +310,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         </div>
 
         <div class="com-section" id="refArrSection">
-          <div class="com-title">Referido</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <input type="checkbox" id="ar_hayref" onchange="toggleReferido('arr')">
-            <label for="ar_hayref" style="font-size:13px;cursor:pointer;margin:0">&iquest;Hubo referido?</label>
-          </div>
-          <div id="ar_ref_fields" style="display:none">
-            <div class="fg">
-              <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="ar_refnombre" placeholder="Nombre del referido"></div>
-              <div class="ff"><label>Valor referido total (20% com. asesor)</label><input type="text" id="ar_reftotal" readonly></div>
-              <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="ar_refempresa" readonly></div>
-              <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="ar_refasesor" readonly></div>
+          <div class="com-title">Referidos (uno por punta)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div style="background:var(--g50);padding:12px;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <input type="checkbox" id="ar_hayref_cap" onchange="recalcComisiones('arr')">
+                <label for="ar_hayref_cap" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en captaci&oacute;n</label>
+              </div>
+              <input type="text" id="ar_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('arr')">
+            </div>
+            <div style="background:var(--g50);padding:12px;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <input type="checkbox" id="ar_hayref_cer" onchange="recalcComisiones('arr')">
+                <label for="ar_hayref_cer" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en cierre</label>
+              </div>
+              <input type="text" id="ar_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('arr')">
             </div>
           </div>
+          <p style="font-size:11px;color:var(--g600);margin-top:8px">El referido es 20% de la comisi&oacute;n bruta del asesor en esa punta. Empresa paga 75%, asesor paga 25%.</p>
         </div>
 
         <div class="com-resumen" id="resumenArr">
@@ -344,19 +392,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         </div>
 
         <div class="com-section" id="refVntSection">
-          <div class="com-title">Referido</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <input type="checkbox" id="v_hayref" onchange="toggleReferido('vnt')">
-            <label for="v_hayref" style="font-size:13px;cursor:pointer;margin:0">&iquest;Hubo referido?</label>
-          </div>
-          <div id="v_ref_fields" style="display:none">
-            <div class="fg">
-              <div class="ff full"><label>Nombre del referido <span class="req">*</span></label><input type="text" id="v_refnombre" placeholder="Nombre del referido"></div>
-              <div class="ff"><label>Valor referido total (20% com. asesor)</label><input type="text" id="v_reftotal" readonly></div>
-              <div class="ff"><label>Paga la empresa (75%)</label><input type="text" id="v_refempresa" readonly></div>
-              <div class="ff"><label>Paga el asesor (25%)</label><input type="text" id="v_refasesor" readonly></div>
+          <div class="com-title">Referidos (uno por punta)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div style="background:var(--g50);padding:12px;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <input type="checkbox" id="v_hayref_cap" onchange="recalcComisiones('vnt')">
+                <label for="v_hayref_cap" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en captaci&oacute;n</label>
+              </div>
+              <input type="text" id="v_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('vnt')">
+            </div>
+            <div style="background:var(--g50);padding:12px;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <input type="checkbox" id="v_hayref_cer" onchange="recalcComisiones('vnt')">
+                <label for="v_hayref_cer" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en cierre</label>
+              </div>
+              <input type="text" id="v_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('vnt')">
             </div>
           </div>
+          <p style="font-size:11px;color:var(--g600);margin-top:8px">El referido es 20% de la comisi&oacute;n bruta del asesor en esa punta. Empresa paga 75%, asesor paga 25%.</p>
         </div>
 
         <div class="com-resumen" id="resumenVnt">
@@ -421,6 +474,115 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
   <div id="misNegContent"><div class="loading"><span class="spinner"></span> Cargando sus negocios...</div></div>
 </div>
 
+<!-- ============ INDICACIONES ============ -->
+<div class="section show" id="sec-indicaciones">
+  <div class="ind-hero">
+    <h1>&iexcl;Bienvenido a REDA3! &#128075;</h1>
+    <p>Esta es tu plataforma para registrar negocios, hacer seguimiento de tus comisiones y bonificaciones. Sigue estos pasos para usarla correctamente.</p>
+  </div>
+
+  <div class="ind-grid">
+    <div class="ind-card">
+      <div class="ind-num">1</div>
+      <div class="ind-icon">&#128218;</div>
+      <h3>Registra acciones comerciales todos los d&iacute;as</h3>
+      <p>Cada video, reel, captaci&oacute;n, open house, volante o pieza en redes <strong>cuenta</strong>. Reg&iacute;stralos en <strong>"Acci&oacute;n Comercial"</strong>. Tu bonificaci&oacute;n del mes depende de esto.</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">2</div>
+      <div class="ind-icon">&#127968;</div>
+      <h3>&iquest;El inmueble no existe? Cr&eacute;alo primero</h3>
+      <p>Antes de registrar un arriendo o venta, asegurate que el inmueble est&eacute; en el sistema. Si no, ve a <strong>"Nuevo Inmueble"</strong> y agr&eacute;galo.</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">3</div>
+      <div class="ind-icon">&#128101;</div>
+      <h3>&iquest;El cliente no existe? Cr&eacute;alo primero</h3>
+      <p>Igual que con los inmuebles, si el arrendador, arrendatario, vendedor o comprador no aparece en el sistema, ve a <strong>"Nuevo Cliente"</strong>.</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">4</div>
+      <div class="ind-icon">&#128196;</div>
+      <h3>Registra el negocio paso a paso</h3>
+      <p>En <strong>"Nuevo Arriendo"</strong> o <strong>"Nueva Venta"</strong>, sigue los pasos del formulario. Llena <strong>todos los campos obligatorios</strong> (los que tienen asterisco rojo *).</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">5</div>
+      <div class="ind-icon">&#128184;</div>
+      <h3>Agrega los asesores que participaron</h3>
+      <p>Cada negocio tiene <strong>2 puntas</strong>: captador y cerrador. Si tu participaste en una sola, agr&eacute;gate solo en esa. Si fueron varios asesores en una punta, cada uno indica su <strong>% de participaci&oacute;n</strong> (entre todos deben sumar 100%).</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">6</div>
+      <div class="ind-icon">&#11088;</div>
+      <h3>C&iacute;rculo de Influencia es autom&aacute;tico</h3>
+      <p>Los or&iacute;genes marcados con &#9733; tienen C&iacute;rculo de Influencia. El sistema lo detecta automáticamente y aumenta tu comisi&oacute;n. <strong>No necesitas marcarlo manualmente.</strong></p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">7</div>
+      <div class="ind-icon">&#129309;</div>
+      <h3>Si hay referido, marca la casilla</h3>
+      <p>El referido es 20% de tu comisi&oacute;n bruta en esa punta. La empresa paga 75%, t&uacute; pagas 25%. Hay una casilla de referido para captaci&oacute;n y otra para cierre, son independientes.</p>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-num">8</div>
+      <div class="ind-icon">&#128200;</div>
+      <h3>Revisa tus negocios y bonificaciones</h3>
+      <p>En <strong>"Mis Negocios"</strong> ves todo lo que has cerrado. En <strong>"Mis Bonificaciones"</strong> ves la categor&iacute;a del mes (Oro, Plata, Bronce, Piedra) y tu bonificaci&oacute;n calculada.</p>
+    </div>
+  </div>
+
+  <div class="ind-warn">
+    <strong>&#9888; Importante:</strong> La informaci&oacute;n que registres aqu&iacute; es lo que se usa para calcular tus comisiones y bonificaciones. <strong>Reg&iacute;strala bien y a tiempo.</strong> Si tienes dudas, pregunta al jefe comercial antes de guardar.
+  </div>
+
+  <div class="ind-cta">
+    <button class="btn btn-guardar" onclick="document.querySelector('.nav-item[data-s=arriendo]').click()">Empezar a registrar negocios</button>
+  </div>
+</div>
+
+<!-- ============ ACCIÓN COMERCIAL ============ -->
+<div class="section" id="sec-accion">
+  <div class="success-panel" id="okAcc"><div class="sp-icon">&#9989;</div><h3>Acci&oacute;n registrada</h3><p id="okAccMsg"></p><button class="btn-otro" onclick="resetAccion()">Registrar otra</button></div>
+  <div id="formAccWrap">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Registrar acci&oacute;n comercial</h3><p>Cada acci&oacute;n suma para tu bonificaci&oacute;n del mes.</p></div>
+    <div class="fcard-bd"><div class="fg">
+      <div class="ff"><label>Fecha <span class="req">*</span></label><input type="date" id="ac_fecha"></div>
+      <div class="ff"><label>Tipo de acci&oacute;n <span class="req">*</span></label><select id="ac_tipo">
+        <option value="">-- Tipo --</option>
+        <option>Captaci&oacute;n Venta</option>
+        <option>Captaci&oacute;n Arriendo</option>
+        <option>Video</option>
+        <option>Reel</option>
+        <option>Pieza Redes</option>
+        <option>Open House</option>
+        <option>Volantes</option>
+        <option>Promoci&oacute;n Local</option>
+        <option>Otra</option>
+      </select></div>
+      <div class="ff full"><label>Descripci&oacute;n <span class="opt">(opcional)</span></label><textarea id="ac_desc" placeholder="Detalle de la acci&oacute;n"></textarea></div>
+    </div></div>
+    <div class="fcard-ft">
+      <button class="btn btn-limpiar" onclick="resetAccion()">Limpiar</button>
+      <button class="btn btn-guardar" onclick="guardarAccion()">&#10003; Guardar Acci&oacute;n</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ BONIFICACIONES ============ -->
+<div class="section" id="sec-bonificaciones">
+  <div id="bonContent"><div class="loading"><span class="spinner"></span> Cargando bonificaciones...</div></div>
+</div>
+
 </div></div></div>
 
 <div class="toast-c" id="toasts"></div>
@@ -437,51 +599,55 @@ let asesorActual = null; // { id_asesor, nombre, vinculacion, estado }
 let asesoresLista = [];
 let inmuebles = [];
 let clientes = [];
+let oficinas = [];   // [{id_oficina, nombre}]
+let origenes = [];   // [{id_origen, nombre, circulo}] -> circulo: 'con' | 'sin'
+let zonas = [];      // [{id_zona, comuna, ciudad}]
 
-// Catálogos fijos
+// Catálogos fijos (los únicos que NO van a base de datos)
 const CAT = {
-  zonas:['30 de Agosto','Alpes','Av Belalcazar','Av Sur','Av. 30 Agosto','Av. Rio','Av. Sur','Belmonte','Centro','Cerritos','Circunvalar','Ciudad Jardin','Combia','Condina','Cuba','Dosquebradas','El Poblado','El Tigre','Galicia','Gama','La Florida','La Villa','Maraya','Mercasa','Mundo Nuevo','Pinares','Sabanitas','Tribunas','Ukumari','Unicentro','Verona','Villa Olimpica','Villa Verde','\u00c1lamos'],
   tipos:['Apartaestudio','Apartaloft','Apartamento','Bodega','Burbuja','Burbuja Comercial','Caba\u00f1a','Casa','Casa Campestre','Casa Comercial','Casa Residencial','Casa en Conjunto Cerrado','Consultorio','Local Comercial','Lote Comercial','Lote en Conjunto Cerrado','Lote en Parcelaci\u00f3n','Oficina'],
-  oficinas:['Uniplex','Portal de Cerritos','Dosquebradas','Uniplex - Dosquebradas','Uniplex - Portal de Cerritos','Portal de Cerritos - Dosquebradas'],
-  orgcap:['CRM','Cliente Oficina','Colegaje Inmobiliario','Constructora','C\u00edrculo de Influencia','Farming','Inmo CG','Referido','Visita Oficina'],
-  orgcie:['Aviso','CRM','Cliente Oficina','Colegaje Inmobiliario','Constructora','C\u00edrculo de Influencia','Inmo CG','Marketplace','Redes Sociales','Referido','Uniplex','Visita Oficina'],
   meses:[{v:1,l:'Enero'},{v:2,l:'Febrero'},{v:3,l:'Marzo'},{v:4,l:'Abril'},{v:5,l:'Mayo'},{v:6,l:'Junio'},{v:7,l:'Julio'},{v:8,l:'Agosto'},{v:9,l:'Septiembre'},{v:10,l:'Octubre'},{v:11,l:'Noviembre'},{v:12,l:'Diciembre'}]
 };
 
-// ===== LÓGICA DE COMISIONES (de Comisiones(1).xlsx) =====
-const COM_RENTA = {
-  sin_circulo: { freelance: 0.15, empleado_div: 1.3 },
-  con_circulo: { freelance: 0.175, empleado_div: 1.3 },
-  referido: { total: 0.20, oficina: 0.75, asesor: 0.25 }
-};
-
-const COM_VENTA = {
-  secundario: {
-    sin_circulo: { freelance: 0.20, empleado_div: 1.3 },
-    con_circulo: { freelance: 0.225, empleado_div: 1.3 }
-  },
-  primario: {
-    captador: { sin_circulo: { freelance: 0.15, empleado_div: 1.3 }, con_circulo: { freelance: 0.175, empleado_div: 1.3 } },
-    cerrador: { sin_circulo: { freelance: 0.30, empleado_div: 1.3 }, con_circulo: { freelance: 0.325, empleado_div: 1.3 } }
-  },
-  referido: { total: 0.20, oficina: 0.75, asesor: 0.25 }
-};
-
-function calcComisionAsesor(comisionPunta, vinculacion, conCirculo, tipoNeg, mercado, punta) {
+// ===== LÓGICA DE COMISIONES =====
+// Tabla de % por punta (sobre comisión completa de oficina)
+//   arriendo:     15% / 17.5% (con CI)
+//   venta sec:    20% / 22.5%
+//   venta primario captador: 15% / 17.5%
+//   venta primario cerrador: 30% / 32.5%
+// Empleado: dividir entre 1.3
+// Si officePct < 10%: factor = officePct × 10
+// Comisión asesor = % × comOficina × factor × (participación/100)
+// Si tiene referido en su punta: -25% del 20% de su comisión bruta
+function calcComisionAsesor(comisionOficina, vinculacion, conCirculo, tipoNeg, mercado, punta, officePct, participacion) {
   let pctFree;
   if (tipoNeg === 'arriendo') {
-    pctFree = conCirculo ? COM_RENTA.con_circulo.freelance : COM_RENTA.sin_circulo.freelance;
+    pctFree = conCirculo ? 0.175 : 0.15;
   } else {
     if (mercado === 'Secundario') {
-      pctFree = conCirculo ? COM_VENTA.secundario.con_circulo.freelance : COM_VENTA.secundario.sin_circulo.freelance;
+      pctFree = conCirculo ? 0.225 : 0.20;
     } else {
-      const p = punta === 'Captador' ? 'captador' : 'cerrador';
-      pctFree = conCirculo ? COM_VENTA.primario[p].con_circulo.freelance : COM_VENTA.primario[p].sin_circulo.freelance;
+      // Primario
+      if (punta === 'Captador') {
+        pctFree = conCirculo ? 0.175 : 0.15;
+      } else {
+        pctFree = conCirculo ? 0.325 : 0.30;
+      }
     }
   }
-  const valorFree = comisionPunta * pctFree;
-  if (vinculacion === 'Freelance') return valorFree;
-  return valorFree / 1.3;
+  // Factor para comisiones bajas (típico ventas con 3%)
+  const factor = (officePct && officePct < 0.10) ? officePct * 10 : 1;
+  const part = (Number(participacion) || 0) / 100;
+  let valor = pctFree * comisionOficina * factor * part;
+  if (vinculacion !== 'Freelance') valor = valor / 1.3;
+  return valor;
+}
+
+// Determina si un origen tiene círculo de influencia (busca en tabla origenes)
+function origenTieneCirculo(idOrigen) {
+  if (!idOrigen) return false;
+  const o = origenes.find(x => x.id_origen === idOrigen);
+  return o && (o.circulo === 'con' || o.circulo === true);
 }
 
 // ===== UTILIDADES =====
@@ -497,6 +663,21 @@ function fillSelectInmuebles(id,ph){
 function fillSelectClientes(id,ph){
   const s=document.getElementById(id);
   s.innerHTML='<option value="">'+ph+'</option>'+clientes.map(d=>'<option value="'+d.id_cliente+'">'+d.id_cliente+' \u2014 '+d.nombre+'</option>').join('');
+}
+function fillSelectOficinas(id,ph){
+  const s=document.getElementById(id);if(!s)return;
+  s.innerHTML='<option value="">'+ph+'</option>'+oficinas.map(d=>'<option value="'+d.id_oficina+'">'+d.nombre+'</option>').join('');
+}
+function fillSelectOrigenes(id,ph){
+  const s=document.getElementById(id);if(!s)return;
+  s.innerHTML='<option value="">'+ph+'</option>'+origenes.map(d=>{
+    const ci=(d.circulo==='con'||d.circulo===true)?' \u2605':'';
+    return '<option value="'+d.id_origen+'" data-circulo="'+(d.circulo||'sin')+'">'+d.nombre+ci+'</option>';
+  }).join('');
+}
+function fillSelectZonas(id,ph){
+  const s=document.getElementById(id);if(!s)return;
+  s.innerHTML='<option value="">'+ph+'</option>'+zonas.map(d=>'<option value="'+d.id_zona+'">'+d.comuna+' \u2014 '+d.ciudad+'</option>').join('');
 }
 function fillSelectAsesores(sel){
   sel.innerHTML='<option value="">-- Asesor --</option>'+asesoresLista.filter(a=>a.estado==='Activo').map(a=>'<option value="'+a.id_asesor+'" data-vinc="'+(a.vinculacion||'Freelance')+'">'+a.id_asesor+' \u2014 '+a.nombre+' ('+a.vinculacion+')</option>').join('');
@@ -552,6 +733,10 @@ function hacerLogin(){
   b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
   document.getElementById('loginWrap').style.display='none';
   document.getElementById('appWrap').classList.add('show');
+  // Asegurar que indicaciones sea la sección activa
+  document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
+  document.getElementById('sec-indicaciones').classList.add('show');
+  document.getElementById('pageTitle').innerHTML=navTitles.indicaciones;
   cargarCatalogos();
 }
 
@@ -564,12 +749,28 @@ function cerrarSesion(){
 async function cargarCatalogos(){
   try{
     const r=await apiGet({action:'catalogos'});
-    if(r&&r.ok){inmuebles=r.inmuebles;clientes=r.clientes;prepararFormularios()}
+    if(r&&r.ok){
+      inmuebles=r.inmuebles||[];
+      clientes=r.clientes||[];
+      oficinas=r.oficinas||[];
+      origenes=r.origenes||[];
+      zonas=r.zonas||[];
+      prepararFormularios();
+    }
   }catch(e){toast('Error cargando cat\u00e1logos','er')}
 }
 
 // ===== NAVEGACIÓN =====
-const navTitles={arriendo:'Nuevo Arriendo',venta:'Nueva Venta',inmueble:'Nuevo Inmueble',cliente:'Nuevo Cliente',misnegocios:'Mis Negocios'};
+const navTitles={
+  indicaciones:'Bienvenido — C&oacute;mo usar el portal',
+  arriendo:'Nuevo Arriendo',
+  venta:'Nueva Venta',
+  accion:'Registrar Acci&oacute;n Comercial',
+  inmueble:'Nuevo Inmueble',
+  cliente:'Nuevo Cliente',
+  misnegocios:'Mis Negocios',
+  bonificaciones:'Mis Bonificaciones'
+};
 document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>{
   const s=n.dataset.s;
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));n.classList.add('active');
@@ -579,6 +780,8 @@ document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=
   document.getElementById('sidebar').classList.remove('open');
   if(s==='arriendo'||s==='venta') prepararFormularios();
   if(s==='misnegocios')cargarMisNegocios();
+  if(s==='bonificaciones')cargarBonificaciones();
+  if(s==='accion')prepararFormAccion();
 }));
 document.getElementById('menuBtn').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('open'));
 
@@ -590,13 +793,21 @@ function prepararFormularios(){
   ['ar_inmueble','v_inmueble'].forEach(id=>fillSelectInmuebles(id,'-- Escoja el inmueble --'));
   // Clientes
   ['ar_arrendador','ar_arrendatario','v_vendedor','v_comprador'].forEach(id=>fillSelectClientes(id,'-- Escoja --'));
-  // Oficinas y origenes
-  ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>fillSel(id,CAT.oficinas,'-- Oficina --'));
-  ['ar_orgcap','v_orgcap'].forEach(id=>fillSel(id,CAT.orgcap,'-- Origen --'));
-  ['ar_orgcie','v_orgcie'].forEach(id=>fillSel(id,CAT.orgcie,'-- Origen --'));
+  // Oficinas y origenes (dinámicos desde backend)
+  ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>fillSelectOficinas(id,'-- Oficina --'));
+  ['ar_orgcap','ar_orgcie','v_orgcap','v_orgcie'].forEach(id=>fillSelectOrigenes(id,'-- Origen --'));
   // Inmueble form
-  fillSel('i_zona',CAT.zonas,'-- Zona --');
+  fillSelectZonas('i_zona','-- Zona --');
   fillSel('i_tipo',CAT.tipos,'-- Tipo --');
+  // Recalcular comisiones cuando cambie el origen (afecta C.I.)
+  ['ar_orgcap','ar_orgcie'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && !el.dataset.recBound){el.dataset.recBound='1';el.addEventListener('change',()=>recalcComisiones('arr'))}
+  });
+  ['v_orgcap','v_orgcie'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && !el.dataset.recBound){el.dataset.recBound='1';el.addEventListener('change',()=>recalcComisiones('vnt'))}
+  });
   // Make all selects searchable
   ['ar_mes','v_mes','ar_mercado','v_mercado',
    'ar_inmueble','v_inmueble','ar_arrendador','ar_arrendatario','v_vendedor','v_comprador',
@@ -614,10 +825,7 @@ function addAsesorRow(containerId, punta, tipo) {
   row.className = 'com-row';
   row.innerHTML = `
     <select class="com-asesor" onchange="recalcComisiones('${tipo}')"></select>
-    <select class="com-circulo" onchange="recalcComisiones('${tipo}')">
-      <option value="sin">Sin C.I.</option>
-      <option value="con">Con C.I.</option>
-    </select>
+    <input type="number" class="com-part" min="0" max="100" step="1" placeholder="%" value="100" oninput="recalcComisiones('${tipo}')" title="Participación %" />
     <span class="com-punta-label" style="font-size:11px;color:var(--g600)">${punta}</span>
     <span class="com-val" data-punta="${punta}">$0</span>
     <button class="com-del" onclick="this.closest('.com-row').remove();recalcComisiones('${tipo}')">&times;</button>
@@ -631,85 +839,100 @@ function addAsesorRow(containerId, punta, tipo) {
 
 function recalcComisiones(tipo) {
   const isArr = tipo === 'arr';
+  const officePct = isArr
+    ? (Number(document.getElementById('ar_pct').value)||0)
+    : (Number(document.getElementById('v_pct').value)||0);
   const comisionOficina = isArr
-    ? (Number(document.getElementById('ar_canon').value)||0) * (Number(document.getElementById('ar_pct').value)||0)
-    : (Number(document.getElementById('v_valorbase').value)||0) * (Number(document.getElementById('v_pct').value)||0);
+    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
+    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
 
   if (!comisionOficina) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
     return;
   }
 
-  const comisionPunta = comisionOficina / 2;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
+
+  // Determinar círculo de influencia automáticamente desde origen
+  const orgCapId = document.getElementById(isArr?'ar_orgcap':'v_orgcap').value;
+  const orgCieId = document.getElementById(isArr?'ar_orgcie':'v_orgcie').value;
+  const ciCap = origenTieneCirculo(orgCapId);
+  const ciCer = origenTieneCirculo(orgCieId);
 
   const capContainer = document.getElementById(isArr?'capArrList':'capVntList');
   const cerContainer = document.getElementById(isArr?'cerArrList':'cerVntList');
   const capRows = capContainer.querySelectorAll('.com-row');
   const cerRows = cerContainer.querySelectorAll('.com-row');
-  const numCap = capRows.length || 1;
-  const numCer = cerRows.length || 1;
 
-  let totalAsesores = 0;
+  // Referido por punta (independiente)
+  const prefix = isArr ? 'ar' : 'v';
+  const hayRefCap = document.getElementById(prefix + '_hayref_cap').checked;
+  const hayRefCer = document.getElementById(prefix + '_hayref_cer').checked;
+
+  let totalBrutoCap = 0, totalBrutoCer = 0;
+  let totalNetoCap = 0, totalNetoCer = 0;
   const detalles = [];
 
-  function processRows(rows, punta, comPunta, numAse) {
+  function processRows(rows, punta, conCirculo, hayRefPunta) {
     rows.forEach(row => {
       const sel = row.querySelector('.com-asesor');
-      const circ = row.querySelector('.com-circulo').value;
+      const partInput = row.querySelector('.com-part');
       const valSpan = row.querySelector('.com-val');
       if (!sel.value) { valSpan.textContent = '$0'; return; }
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
-      const conCirculo = circ === 'con';
-      const comAsesor = calcComisionAsesor(comPunta, vinc, conCirculo, tipoNeg, mercado, punta) / numAse;
-      valSpan.textContent = fmtP(comAsesor);
-      totalAsesores += comAsesor;
+      const participacion = Number(partInput.value) || 0;
+      const bruto = calcComisionAsesor(comisionOficina, vinc, conCirculo, tipoNeg, mercado, punta, officePct, participacion);
+      let neto = bruto;
+      let refValor = 0;
+      if (hayRefPunta) {
+        refValor = bruto * 0.20;
+        neto = bruto - (refValor * 0.25);
+      }
+      valSpan.textContent = fmtP(neto);
       const nombre = sel.options[sel.selectedIndex].text;
-      detalles.push({ nombre, punta, valor: comAsesor, vinc });
+      detalles.push({ nombre, punta, vinc, participacion, bruto, neto, refValor, conCirculo, hayRef: hayRefPunta });
+      if (punta === 'Captador') { totalBrutoCap += bruto; totalNetoCap += neto; }
+      else { totalBrutoCer += bruto; totalNetoCer += neto; }
     });
   }
 
-  processRows(capRows, 'Captador', comisionPunta, numCap);
-  processRows(cerRows, 'Cerrador', comisionPunta, numCer);
+  processRows(capRows, 'Captador', ciCap, hayRefCap);
+  processRows(cerRows, 'Cerrador', ciCer, hayRefCer);
 
-  // Calcular referido si aplica (20% de la comisión del asesor)
-  const prefix = isArr ? 'ar' : 'v';
-  const hayRef = document.getElementById(prefix + '_hayref').checked;
-  const refTotal = hayRef ? totalAsesores * 0.20 : 0;
-  const refEmpresa = refTotal * 0.75;
-  const refAsesor = refTotal * 0.25;
-
-  const comisionNetaAsesores = totalAsesores - refAsesor;
-  const empresaRecibe = comisionOficina - totalAsesores - refEmpresa;
+  const totalBruto = totalBrutoCap + totalBrutoCer;
+  const totalNeto = totalNetoCap + totalNetoCer;
+  // Referido empresa (75% del 20% del bruto en cada punta con referido)
+  const refEmpresaCap = hayRefCap ? totalBrutoCap * 0.20 * 0.75 : 0;
+  const refEmpresaCer = hayRefCer ? totalBrutoCer * 0.20 * 0.75 : 0;
+  const refEmpresa = refEmpresaCap + refEmpresaCer;
+  const empresaRecibe = comisionOficina - totalBruto - refEmpresa;
 
   // Mostrar resumen
   const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
   resumen.classList.add('show');
   let gridHtml = `
-    <div class="com-r-item"><span class="crl">Comisi&oacute;n total oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
-    <div class="com-r-item"><span class="crl">Total asesores${hayRef?' (bruto)':''}</span><span class="crv">${fmtP(totalAsesores)}</span></div>
+    <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
+    <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
     <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv">${fmtP(empresaRecibe)}</span></div>
   `;
-  if (hayRef) {
-    gridHtml += `<div class="com-r-item"><span class="crl">Comisi&oacute;n neta asesor</span><span class="crv">${fmtP(comisionNetaAsesores)}</span></div>`;
+  if (hayRefCap || hayRefCer) {
+    gridHtml += `<div class="com-r-item"><span class="crl">Asesores (neto)</span><span class="crv">${fmtP(totalNeto)}</span></div>`;
   }
   document.getElementById(isArr?'resumenArrGrid':'resumenVntGrid').innerHTML = gridHtml;
 
-  let detHtml = detalles.map(d =>
-    `<div class="com-detalle-row"><span>${d.nombre} (${d.punta} - ${d.vinc})</span><strong>${fmtP(d.valor)}</strong></div>`
-  ).join('');
-  if (hayRef) {
-    const refNombre = document.getElementById(prefix + '_refnombre').value || 'Referido';
-    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido:</strong> ${refNombre} (20% com. asesor)</span><strong>${fmtP(refTotal)}</strong></div>`;
-    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga la empresa (75%)</span><strong>${fmtP(refEmpresa)}</strong></div>`;
-    detHtml += `<div class="com-detalle-row"><span>&nbsp;&nbsp;Paga el asesor (25%)</span><strong style="color:var(--rojo)">-${fmtP(refAsesor)}</strong></div>`;
-    detHtml += `<div class="com-detalle-row" style="font-weight:700"><span>Comisi&oacute;n neta asesor</span><strong style="color:var(--verde)">${fmtP(comisionNetaAsesores)}</strong></div>`;
+  let detHtml = detalles.map(d => {
+    const ciTag = d.conCirculo ? ' <span style="color:var(--azul);font-weight:600">★C.I.</span>' : '';
+    const refTag = d.hayRef ? ` <span style="color:var(--rojo);font-size:10px">−ref</span>` : '';
+    return `<div class="com-detalle-row"><span>${d.nombre} (${d.punta} ${d.participacion}% - ${d.vinc})${ciTag}${refTag}</span><strong>${fmtP(d.neto)}</strong></div>`;
+  }).join('');
+  if (hayRefCap) {
+    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido captador:</strong> ${document.getElementById(prefix+'_refnombre_cap').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCap*0.20)}</strong></div>`;
+  }
+  if (hayRefCer) {
+    detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido cerrador:</strong> ${document.getElementById(prefix+'_refnombre_cer').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCer*0.20)}</strong></div>`;
   }
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
-
-  // Recalcular referido
-  updateReferidoValues(tipo, totalAsesores);
 }
 
 function calcularComisionArr() { recalcComisiones('arr'); }
@@ -718,26 +941,43 @@ function calcularComisionVnt() { recalcComisiones('vnt'); }
 // ===== RECOLECTAR COMISIONES ASESORES =====
 function recolectarComisiones(tipo) {
   const isArr = tipo === 'arr';
+  const officePct = isArr
+    ? (Number(document.getElementById('ar_pct').value)||0)
+    : (Number(document.getElementById('v_pct').value)||0);
   const comisionOficina = isArr
-    ? (Number(document.getElementById('ar_canon').value)||0) * (Number(document.getElementById('ar_pct').value)||0)
-    : (Number(document.getElementById('v_valorbase').value)||0) * (Number(document.getElementById('v_pct').value)||0);
-  const comisionPunta = comisionOficina / 2;
+    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
+    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
+  const prefix = isArr ? 'ar' : 'v';
+
+  // Círculo automático desde origen
+  const orgCapId = document.getElementById(prefix+'_orgcap').value;
+  const orgCieId = document.getElementById(prefix+'_orgcie').value;
+  const ciCap = origenTieneCirculo(orgCapId);
+  const ciCer = origenTieneCirculo(orgCieId);
+
+  const hayRefCap = document.getElementById(prefix + '_hayref_cap').checked;
+  const hayRefCer = document.getElementById(prefix + '_hayref_cer').checked;
 
   const result = [];
-  ['cap','cer'].forEach(tipo2 => {
-    const containerId = tipo2 + (isArr?'ArrList':'VntList');
-    const punta = tipo2 === 'cap' ? 'Captador' : 'Cerrador';
+  [['cap','Captador',ciCap,hayRefCap],['cer','Cerrador',ciCer,hayRefCer]].forEach(([t2,punta,ci,hayRef]) => {
+    const containerId = t2 + (isArr?'ArrList':'VntList');
     const rows = document.getElementById(containerId).querySelectorAll('.com-row');
-    const numAse = rows.length || 1;
     rows.forEach(row => {
       const sel = row.querySelector('.com-asesor');
       if (!sel.value) return;
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
-      const conCirculo = row.querySelector('.com-circulo').value === 'con';
-      const comAsesor = calcComisionAsesor(comisionPunta, vinc, conCirculo, tipoNeg, mercado, punta) / numAse;
-      result.push({ id_asesor: sel.value, valor_comision: Math.round(comAsesor * 100) / 100, punta });
+      const participacion = Number(row.querySelector('.com-part').value) || 0;
+      const bruto = calcComisionAsesor(comisionOficina, vinc, ci, tipoNeg, mercado, punta, officePct, participacion);
+      let valor = bruto;
+      if (hayRef) valor = bruto - (bruto * 0.20 * 0.25); // Resta 25% del referido (5% del bruto)
+      result.push({
+        id_asesor: sel.value,
+        valor_comision: Math.round(valor * 100) / 100,
+        punta,
+        participacion
+      });
     });
   });
   return result;
@@ -757,8 +997,12 @@ async function guardarArriendo() {
   const ofcie=val('ar_ofcie','Escoja la oficina de cierre');if(!ofcie)return;
   const orgcie=val('ar_orgcie','Escoja el origen de cierre');if(!orgcie)return;
 
-  if (document.getElementById('ar_hayref').checked && !document.getElementById('ar_refnombre').value.trim()) {
-    toast('Escriba el nombre del referido','er'); document.getElementById('ar_refnombre').focus(); return;
+  // Validar nombres de referidos si están marcados
+  if (document.getElementById('ar_hayref_cap').checked && !document.getElementById('ar_refnombre_cap').value.trim()) {
+    toast('Escriba el nombre del referido en captaci\u00f3n','er'); document.getElementById('ar_refnombre_cap').focus(); return;
+  }
+  if (document.getElementById('ar_hayref_cer').checked && !document.getElementById('ar_refnombre_cer').value.trim()) {
+    toast('Escriba el nombre del referido en cierre','er'); document.getElementById('ar_refnombre_cer').focus(); return;
   }
 
   const comisiones = recolectarComisiones('arr');
@@ -776,11 +1020,10 @@ async function guardarArriendo() {
         valor_canon: Number(canon), pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
-        hay_referido: document.getElementById('ar_hayref').checked,
-        nombre_referido: document.getElementById('ar_refnombre').value || '',
-        valor_referido_total: parseRefVal('ar_reftotal'),
-        valor_referido_empresa: parseRefVal('ar_refempresa'),
-        valor_referido_asesor: parseRefVal('ar_refasesor')
+        referido_captador: document.getElementById('ar_hayref_cap').checked ? (document.getElementById('ar_refnombre_cap').value || '') : '',
+        valor_ref_captador: calcRefPuntaParaGuardar('arr','Captador'),
+        referido_cerrador: document.getElementById('ar_hayref_cer').checked ? (document.getElementById('ar_refnombre_cer').value || '') : '',
+        valor_ref_cerrador: calcRefPuntaParaGuardar('arr','Cerrador')
       },
       comisiones_asesores: comisiones
     });
@@ -809,8 +1052,11 @@ async function guardarVenta() {
   const ofcie=val('v_ofcie','Escoja oficina cierre');if(!ofcie)return;
   const orgcie=val('v_orgcie','Escoja origen cierre');if(!orgcie)return;
 
-  if (document.getElementById('v_hayref').checked && !document.getElementById('v_refnombre').value.trim()) {
-    toast('Escriba el nombre del referido','er'); document.getElementById('v_refnombre').focus(); return;
+  if (document.getElementById('v_hayref_cap').checked && !document.getElementById('v_refnombre_cap').value.trim()) {
+    toast('Escriba el nombre del referido en captaci\u00f3n','er'); document.getElementById('v_refnombre_cap').focus(); return;
+  }
+  if (document.getElementById('v_hayref_cer').checked && !document.getElementById('v_refnombre_cer').value.trim()) {
+    toast('Escriba el nombre del referido en cierre','er'); document.getElementById('v_refnombre_cer').focus(); return;
   }
 
   const comisiones = recolectarComisiones('vnt');
@@ -832,11 +1078,10 @@ async function guardarVenta() {
         fechas_cobro_comision: document.getElementById('v_fechacobro').value || '',
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
-        hay_referido: document.getElementById('v_hayref').checked,
-        nombre_referido: document.getElementById('v_refnombre').value || '',
-        valor_referido_total: parseRefVal('v_reftotal'),
-        valor_referido_empresa: parseRefVal('v_refempresa'),
-        valor_referido_asesor: parseRefVal('v_refasesor')
+        referido_captador: document.getElementById('v_hayref_cap').checked ? (document.getElementById('v_refnombre_cap').value || '') : '',
+        valor_ref_captador: calcRefPuntaParaGuardar('vnt','Captador'),
+        referido_cerrador: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnombre_cer').value || '') : '',
+        valor_ref_cerrador: calcRefPuntaParaGuardar('vnt','Cerrador')
       },
       comisiones_asesores: comisiones
     });
@@ -901,26 +1146,20 @@ async function guardarCliente() {
 function resetArriendo(){
   document.getElementById('okArr').classList.remove('show');
   document.getElementById('formArrWrap').style.display='';
-  document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else el.value=''});
+  document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
   document.getElementById('capArrList').innerHTML='';
   document.getElementById('cerArrList').innerHTML='';
   document.getElementById('resumenArr').classList.remove('show');
   document.getElementById('dupliArr').classList.remove('show');
-  document.getElementById('ar_hayref').checked=false;
-  document.getElementById('ar_ref_fields').style.display='none';
-  document.getElementById('ar_refnombre').value='';
 }
 function resetVenta(){
   document.getElementById('okVnt').classList.remove('show');
   document.getElementById('formVntWrap').style.display='';
-  document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else el.value=''});
+  document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
   document.getElementById('capVntList').innerHTML='';
   document.getElementById('cerVntList').innerHTML='';
   document.getElementById('resumenVnt').classList.remove('show');
   document.getElementById('dupliVnt').classList.remove('show');
-  document.getElementById('v_hayref').checked=false;
-  document.getElementById('v_ref_fields').style.display='none';
-  document.getElementById('v_refnombre').value='';
 }
 function resetInmueble(){
   document.getElementById('okInm').classList.remove('show');
@@ -1018,35 +1257,114 @@ async function cargarMisNegocios(){
   }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
 }
 
-// ===== REFERIDO =====
-function toggleReferido(tipo) {
-  const isArr = tipo === 'arr';
-  const checked = document.getElementById(isArr ? 'ar_hayref' : 'v_hayref').checked;
-  document.getElementById(isArr ? 'ar_ref_fields' : 'v_ref_fields').style.display = checked ? '' : 'none';
-  if (checked) recalcComisiones(tipo);
+// ===== BONIFICACIONES =====
+async function cargarBonificaciones(mes) {
+  const cont = document.getElementById('bonContent');
+  if (!mes) mes = (new Date()).getMonth() + 1;
+  cont.innerHTML = '<div class="loading"><span class="spinner"></span> Cargando bonificaci&oacute;n...</div>';
+  try {
+    const r = await apiGet({ action: 'mis_bonificaciones', id_asesor: asesorActual.id_asesor, mes: mes });
+    if (!r || !r.ok) { cont.innerHTML = '<div class="neg-empty">Error: '+(r&&r.error||'desconocido')+'</div>'; return; }
+
+    const cat = r.categoria || 'ARENA MOVEDIZA';
+    const catKey = cat.replace(/[ ()]/g, '_');
+    const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    let html = `
+      <div class="bon-mes-sel">
+        <label style="font-size:13px;font-weight:600">Mes:</label>
+        <select id="bonMesSel" onchange="cargarBonificaciones(this.value)">
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>'<option value="'+m+'"'+(m===mes?' selected':'')+'>'+meses[m]+'</option>').join('')}
+        </select>
+      </div>
+      <div class="bon-hero cat-${catKey}">
+        <div class="bon-mes">Bonificaci&oacute;n de ${meses[mes]}</div>
+        <div class="bon-cat">${cat}</div>
+        <div class="bon-total">${fmtP(r.bonificacion_total)}</div>
+      </div>
+      <div class="bon-grid">
+        <div class="bon-stat"><div class="bs-label">Comisi&oacute;n generada a oficina</div><div class="bs-val">${fmtP(r.comision_generada_oficina)}</div></div>
+        <div class="bon-stat"><div class="bs-label">Acciones comerciales</div><div class="bs-val">${r.num_acciones}</div></div>
+        <div class="bon-stat v"><div class="bs-label">Total recibido (comisiones)</div><div class="bs-val">${fmtP(r.total_recibido)}</div></div>
+        <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n fija</div><div class="bs-val">${fmtP(r.bonificacion_fija)}</div></div>
+        <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n variable (${(r.pct_variable*100).toFixed(0)}%)</div><div class="bs-val">${fmtP(r.bonificacion_variable)}</div></div>
+      </div>
+      <div style="background:var(--g50);padding:18px;border-radius:8px;font-size:12px;color:var(--g600)">
+        <strong style="color:var(--azul);font-size:13px">Cómo se calcula:</strong><br>
+        &bull; <strong>ORO</strong>: ≥ $14.085.000 + 10 acciones &nbsp;&bull; <strong>PLATA</strong>: ≥ $10.955.000 + 10 acciones<br>
+        &bull; <strong>BRONCE</strong>: ≥ $7.825.000 + 5 acciones &nbsp;&bull; <strong>PIEDRA</strong>: ≥ $3.260.417 + 5 acciones<br>
+        &bull; <strong>ARENA</strong>: cualquier comisi&oacute;n + 5 acciones (sin bonificaci&oacute;n)<br>
+        &bull; Variable = % sobre comisi&oacute;n generada a oficina (4% mes 1, 5% siguientes)
+      </div>
+    `;
+    cont.innerHTML = html;
+  } catch(e) { cont.innerHTML = '<div class="neg-empty">Error de conexi&oacute;n</div>'; }
 }
 
-function updateReferidoValues(tipo, totalAsesores) {
+// ===== ACCIÓN COMERCIAL =====
+function prepararFormAccion() {
+  const f = document.getElementById('ac_fecha');
+  if (!f.value) { const h = new Date(); f.value = h.toISOString().slice(0,10); }
+  if (!document.getElementById('ac_tipo')._ssInit) makeSearchableById('ac_tipo');
+}
+async function guardarAccion() {
+  const fecha = val('ac_fecha','Escoja la fecha'); if (!fecha) return;
+  const tipo = val('ac_tipo','Escoja el tipo de acci\u00f3n'); if (!tipo) return;
+  const desc = document.getElementById('ac_desc').value || '';
+  const mes = (new Date(fecha)).getMonth() + 1;
+  try {
+    const r = await apiPost({
+      action:'registrar_accion',
+      datos:{ id_asesor: asesorActual.id_asesor, fecha, mes, tipo, descripcion: desc }
+    });
+    if (r && r.ok) {
+      document.getElementById('okAccMsg').textContent = r.id + ' \u2014 ' + tipo;
+      document.getElementById('okAcc').classList.add('show');
+      document.getElementById('formAccWrap').style.display = 'none';
+      toast('Acci\u00f3n registrada: '+r.id);
+    } else { toast(r?.error||'Error','er'); }
+  } catch(e) { toast('Error: '+e.message,'er'); }
+}
+function resetAccion() {
+  document.getElementById('okAcc').classList.remove('show');
+  document.getElementById('formAccWrap').style.display = '';
+  document.getElementById('ac_fecha').value = '';
+  document.getElementById('ac_tipo').selectedIndex = 0;
+  if (document.getElementById('ac_tipo')._ssInput) document.getElementById('ac_tipo')._ssInput.value = '';
+  document.getElementById('ac_desc').value = '';
+  prepararFormAccion();
+}
+
+// ===== REFERIDO HELPERS =====
+// Calcula valor de referido por punta para guardar en BD
+function calcRefPuntaParaGuardar(tipo, punta) {
   const isArr = tipo === 'arr';
   const prefix = isArr ? 'ar' : 'v';
-  const checked = document.getElementById(prefix + '_hayref').checked;
-  if (!checked || !totalAsesores) {
-    [prefix+'_reftotal', prefix+'_refempresa', prefix+'_refasesor'].forEach(id => {
-      const el = document.getElementById(id); if(el) el.value = '';
-    });
-    return;
-  }
-  const total = totalAsesores * 0.20;
-  const empresa = total * 0.75;
-  const asesor = total * 0.25;
-  document.getElementById(prefix + '_reftotal').value = fmtP(total);
-  document.getElementById(prefix + '_refempresa').value = fmtP(empresa);
-  document.getElementById(prefix + '_refasesor').value = fmtP(asesor);
-}
+  const sufx = punta === 'Captador' ? 'cap' : 'cer';
+  if (!document.getElementById(prefix + '_hayref_' + sufx).checked) return 0;
 
-function parseRefVal(id) {
-  const v = document.getElementById(id).value.replace(/[^0-9]/g, '');
-  return Number(v) || 0;
+  const officePct = Number(document.getElementById(prefix + '_pct').value) || 0;
+  const base = isArr
+    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
+    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
+  if (!base) return 0;
+  const mercado = document.getElementById(prefix + '_mercado').value;
+  const tipoNeg = isArr ? 'arriendo' : 'venta';
+  const orgId = document.getElementById(prefix + '_org' + sufx).value;
+  const ci = origenTieneCirculo(orgId);
+
+  // Suma bruta de la punta
+  const containerId = sufx + (isArr?'ArrList':'VntList');
+  const rows = document.getElementById(containerId).querySelectorAll('.com-row');
+  let bruto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('.com-asesor');
+    if (!sel.value) return;
+    const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
+    const part = Number(row.querySelector('.com-part').value) || 0;
+    bruto += calcComisionAsesor(base, vinc, ci, tipoNeg, mercado, punta, officePct, part);
+  });
+  return bruto * 0.20; // 20% del bruto de esa punta
 }
 
 // ===== SEARCHABLE SELECT =====
