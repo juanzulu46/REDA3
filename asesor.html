@@ -610,7 +610,7 @@ const CAT = {
 };
 
 // ===== LÓGICA DE COMISIONES =====
-// Tabla de % por punta (siempre sobre el TOTAL de la comisión oficina)
+// Tabla de % por punta:
 //   arriendo:     15% / 17.5% (con CI)
 //   venta sec:    20% / 22.5%
 //   venta primario captador: 15% / 17.5%
@@ -618,11 +618,12 @@ const CAT = {
 // Empleado: dividir entre 1.3
 //
 // BASE DEL CÁLCULO:
-//   ARRIENDO: base = CANON COMPLETO (no la comisión oficina)
-//             La empresa cobra 10% del canon mensualmente durante 12 meses
-//             pero el asesor recibe % del canon UNA VEZ en el primer mes
+//   ARRIENDO: base = CANON × factorArriendo
+//             factorArriendo = officePct × 10 si officePct ≤ 20%, sino 1
+//             Ejemplo: canon 2M, oficina 8% → base = 2M × 0.8 = 1.6M
+//                      asesor 15% × 1.6M = 240,000
+//             Pago único el primer mes (con dinero de la empresa)
 //   VENTA:    base = COMISIÓN OFICINA
-//             El asesor recibe % de la comisión que cobra la oficina
 //
 // Comisión asesor = % × base × (participación/100)
 // Si tiene referido: -25% del 20% de su comisión bruta
@@ -792,7 +793,7 @@ document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));n.classList.add('active');
   document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
   document.getElementById('sec-'+s).classList.add('show');
-  document.getElementById('pageTitle').textContent=navTitles[s];
+  document.getElementById('pageTitle').innerHTML=navTitles[s];
   document.getElementById('sidebar').classList.remove('open');
   if(s==='arriendo'||s==='venta') prepararFormularios();
   if(s==='misnegocios')cargarMisNegocios();
@@ -862,9 +863,10 @@ function recalcComisiones(tipo) {
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
   const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
   // Base para cálculo de comisión del asesor:
-  //   arriendo → canon completo
+  //   arriendo → canon × factor (factor = officePct × 10 si ≤ 20%, sino 1)
   //   venta    → comisión de la oficina
-  const baseAsesor = isArr ? canon : comisionOficina;
+  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
+  const baseAsesor = isArr ? canon * factorArr : comisionOficina;
 
   if (!comisionOficina && !baseAsesor) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
@@ -988,7 +990,8 @@ function recolectarComisiones(tipo) {
   const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
   const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
-  const baseAsesor = isArr ? canon : comisionOficina;
+  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
+  const baseAsesor = isArr ? canon * factorArr : comisionOficina;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
   const prefix = isArr ? 'ar' : 'v';
@@ -1057,6 +1060,7 @@ async function guardarArriendo() {
     const r = await apiPost({
       action: 'registrar_arriendo',
       datos: {
+        ['año']: new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         id_arrendador: arrendador, id_arrendatario: arrendatario,
         valor_canon: Number(canon), pct_comision_oficina: Number(pct),
@@ -1111,6 +1115,7 @@ async function guardarVenta() {
     const r = await apiPost({
       action: 'registrar_venta',
       datos: {
+        ['año']: new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         id_vendedor: vendedor, id_comprador: comprador,
         valor_base_comision: Number(valorbase), pct_comision_oficina: Number(pct),
@@ -1388,8 +1393,9 @@ function calcRefPuntaParaGuardar(tipo, punta) {
   const officePct = Number(document.getElementById(prefix + '_pct').value) || 0;
   const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
-  // Base: arriendo = canon, venta = comisión oficina
-  const baseAsesor = isArr ? canon : (valorVenta * officePct);
+  // Base: arriendo = canon × factor, venta = comisión oficina
+  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
+  const baseAsesor = isArr ? canon * factorArr : (valorVenta * officePct);
   if (!baseAsesor) return 0;
   const mercado = document.getElementById(prefix + '_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';

@@ -33,17 +33,17 @@ const COLUMNAS = {
   asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado'],
   inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
   clientes: ['id_cliente', 'nombre', 'telefono', 'email'],
-  arriendos: ['id_arriendo', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
+  arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
               'valor_canon', 'pct_comision_oficina', 'comision_oficina',
               'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
               'referido_captador', 'valor_ref_captador', 'referido_cerrador', 'valor_ref_cerrador'],
-  ventas: ['id_venta', 'mes', 'mercado', 'id_inmueble', 'id_vendedor', 'id_comprador',
+  ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble', 'id_vendedor', 'id_comprador',
            'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
            'comisiones_facturadas', 'comision_por_punta', 'pagos_efectuados',
            'pendiente_por_cobrar', 'fechas_cobro_comision',
            'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
            'referido_captador', 'valor_ref_captador', 'referido_cerrador', 'valor_ref_cerrador'],
-  pipeline: ['id_pipeline', 'mes', 'mercado', 'id_inmueble', 'id_vendedor', 'id_comprador',
+  pipeline: ['id_pipeline', 'año', 'mes', 'mercado', 'id_inmueble', 'id_vendedor', 'id_comprador',
              'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
              'comisiones_facturadas', 'comision_por_punta', 'pagos_efectuados',
              'pendiente_por_cobrar', 'fechas_cobro_comision',
@@ -349,6 +349,8 @@ function doPost(e) {
       const datos = body.datos;
       // Generar ID
       datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
+      // Año automático
+      if (!datos['año']) datos['año'] = new Date().getFullYear();
       // Calcular comisión
       datos.comision_oficina = (datos.valor_canon || 0) * (datos.pct_comision_oficina || 0);
       // Guardar arriendo
@@ -375,6 +377,7 @@ function doPost(e) {
     if (action === 'registrar_venta') {
       const datos = body.datos;
       datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
+      if (!datos['año']) datos['año'] = new Date().getFullYear();
       datos.comision_oficina = (datos.valor_base_comision || 0) * (datos.pct_comision_oficina || 0);
       datos.comision_por_punta = datos.comision_oficina / 2;
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
