@@ -722,7 +722,7 @@ async function cargarAsesores(){
   }
 }
 
-function hacerLogin(){
+async function hacerLogin(){
   const id=document.getElementById('loginSelect').value;
   if(!id){toast('Seleccione su nombre','er');return}
   asesorActual=asesoresLista.find(a=>a.id_asesor===id);
@@ -731,13 +731,17 @@ function hacerLogin(){
   const b=document.getElementById('userBadge');
   b.textContent=asesorActual.vinculacion;
   b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
+  // Mostrar loading mientras carga catálogos
+  const btn=document.getElementById('btnLogin');
+  btn.disabled=true; btn.textContent='Cargando datos...';
+  await cargarCatalogos();
+  btn.disabled=false; btn.textContent='Ingresar';
   document.getElementById('loginWrap').style.display='none';
   document.getElementById('appWrap').classList.add('show');
   // Asegurar que indicaciones sea la sección activa
   document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
   document.getElementById('sec-indicaciones').classList.add('show');
   document.getElementById('pageTitle').innerHTML=navTitles.indicaciones;
-  cargarCatalogos();
 }
 
 function cerrarSesion(){
@@ -794,10 +798,10 @@ function prepararFormularios(){
   // Clientes
   ['ar_arrendador','ar_arrendatario','v_vendedor','v_comprador'].forEach(id=>fillSelectClientes(id,'-- Escoja --'));
   // Oficinas y origenes (dinámicos desde backend)
-  ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>fillSelectOficinas(id,'-- Oficina --'));
-  ['ar_orgcap','ar_orgcie','v_orgcap','v_orgcie'].forEach(id=>fillSelectOrigenes(id,'-- Origen --'));
+  ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>{ fillSelectOficinas(id,'-- Oficina --'); refreshSearchable(id); });
+  ['ar_orgcap','ar_orgcie','v_orgcap','v_orgcie'].forEach(id=>{ fillSelectOrigenes(id,'-- Origen --'); refreshSearchable(id); });
   // Inmueble form
-  fillSelectZonas('i_zona','-- Zona --');
+  fillSelectZonas('i_zona','-- Zona --'); refreshSearchable('i_zona');
   fillSel('i_tipo',CAT.tipos,'-- Tipo --');
   // Recalcular comisiones cuando cambie el origen (afecta C.I.)
   ['ar_orgcap','ar_orgcie'].forEach(id=>{
