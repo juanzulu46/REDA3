@@ -154,6 +154,22 @@ function renderTodo(){
   `;
 }
 
+// Schema de columnas (debe coincidir con COLUMNAS en apps_script.js)
+const SCHEMA = {
+  Asesores:   ['id_asesor','nombre','vinculacion','estado','cedula','ciudad_cc','direccion','banco','tipo_cuenta','numero_cuenta','email','password'],
+  Inmuebles:  ['id_inmueble','codigo_plataforma','nombre','ciudad','zona','tipo','residencial_comercial','estado'],
+  Clientes:   ['id_cliente','nombre','telefono','email'],
+  Arriendos:  ['id_arriendo','año','mes','mercado','id_inmueble','id_arrendador','id_arrendatario','valor_canon','administracion','pct_comision_oficina','comision_oficina','oficina_captacion','origen_captacion','oficina_cierre','origen_cierre','referido_captador','numero_captador_r','valor_ref_captador','referido_cerrador','numero_cerrador_r','valor_ref_cerrador'],
+  Ventas:     ['id_venta','año','mes','mercado','id_inmueble','id_vendedor','id_comprador','valor_base_comision','pct_comision_oficina','comision_oficina','comisiones_facturadas','comision_por_punta','pagos_efectuados','pendiente_por_cobrar','fechas_cobro_comision','oficina_captacion','origen_captacion','oficina_cierre','origen_cierre','referido_captador','numero_captador_r','valor_ref_captador','referido_cerrador','numero_cerrador_r','valor_ref_cerrador'],
+  Pipeline:   ['id_pipeline','año','mes','mercado','id_inmueble','id_vendedor','id_comprador','valor_base_comision','pct_comision_oficina','comision_oficina','comisiones_facturadas','comision_por_punta','pagos_efectuados','pendiente_por_cobrar','fechas_cobro_comision','oficina_captacion','origen_captacion','oficina_cierre','origen_cierre','referido_captador','valor_ref_captador','referido_cerrador','valor_ref_cerrador'],
+  Comisiones: ['id_asesor','id_negocio','valor_comision','punta','participacion'],
+  Oficina:    ['id_oficina','nombre'],
+  Origen:     ['id_origen','nombre','circulo'],
+  Zona:       ['id_zona','comuna','ciudad'],
+  Acciones:   ['id_accion','id_asesor','fecha','mes','tipo','descripcion'],
+  TipoAccion: ['id_tipo','nombre','activo']
+};
+
 function exportarExcel(){
   const wb=XLSX.utils.book_new();
   const sheets=[
@@ -171,7 +187,19 @@ function exportarExcel(){
     ['TipoAccion', DATA.tipos_accion]
   ];
   sheets.forEach(([name,data])=>{
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.length?data:[{}]),name);
+    const cols = SCHEMA[name];
+    // Normalizar cada fila para que tenga TODAS las columnas (rellena faltantes con '')
+    const rows = (data||[]).map(row => {
+      const o = {};
+      cols.forEach(c => { o[c] = (row[c] !== undefined && row[c] !== null) ? row[c] : ''; });
+      return o;
+    });
+    // json_to_sheet con header explícito garantiza el orden y que todas existan,
+    // incluso si la hoja está vacía
+    const ws = rows.length
+      ? XLSX.utils.json_to_sheet(rows, { header: cols })
+      : XLSX.utils.aoa_to_sheet([cols]);
+    XLSX.utils.book_append_sheet(wb, ws, name);
   });
   XLSX.writeFile(wb,'data_set_final.xlsx');
   toast('Archivo descargado');
