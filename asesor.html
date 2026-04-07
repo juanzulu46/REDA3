@@ -779,10 +779,10 @@ async function cargarCatalogos(){
 
 // ===== NAVEGACIÓN =====
 const navTitles={
-  indicaciones:'Bienvenido — C&oacute;mo usar el portal',
+  indicaciones:'Bienvenido \u2014 C\u00f3mo usar el portal',
   arriendo:'Nuevo Arriendo',
   venta:'Nueva Venta',
-  accion:'Registrar Acci&oacute;n Comercial',
+  accion:'Registrar Acci\u00f3n Comercial',
   inmueble:'Nuevo Inmueble',
   cliente:'Nuevo Cliente',
   misnegocios:'Mis Negocios',
@@ -939,9 +939,13 @@ function recalcComisiones(tipo) {
   resumen.classList.add('show');
   let gridHtml = '';
   if (isArr) {
+    const baseLabel = factorArr !== 1
+      ? `Base asesor (canon &times; ${(officePct*100).toFixed(0)}% &times; 10 = ${(factorArr*100).toFixed(0)}%)`
+      : `Base asesor (canon completo)`;
     gridHtml = `
       <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina mensual (${(officePct*100).toFixed(1)}%)</span><span class="crv">${fmtP(comisionOficina)}</span></div>
       <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina anual (12 meses)</span><span class="crv">${fmtP(ingresoEmpresaAnual)}</span></div>
+      <div class="com-r-item"><span class="crl">${baseLabel}</span><span class="crv">${fmtP(baseAsesor)}</span></div>
       <div class="com-r-item"><span class="crl">Asesores (pago &uacute;nico)</span><span class="crv">${fmtP(totalBruto)}</span></div>
       <div class="com-r-item"><span class="crl">Empresa neta (anual)</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
     `;
