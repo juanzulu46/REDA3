@@ -50,7 +50,8 @@ const HOJAS = {
 // Columnas de cada hoja (en orden exacto)
 const COLUMNAS = {
   asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado',
-             'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email'],
+             'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email',
+             'password'],
   inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
   clientes: ['id_cliente', 'nombre', 'telefono', 'email'],
   arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
@@ -145,10 +146,18 @@ function doGet(e) {
     }
     var action = params.action || '';
 
-    // --- LOGIN: devuelve datos del asesor y catálogos ---
+    // --- LOGIN: devuelve SOLO lista para el dropdown (sin passwords ni datos sensibles) ---
     if (action === 'login') {
       var asesores = leerHoja(HOJAS.asesores);
-      return jsonResponse({ ok: true, asesores: asesores });
+      var listado = asesores.map(function(a){
+        return {
+          id_asesor: a.id_asesor,
+          nombre: a.nombre,
+          estado: a.estado,
+          vinculacion: a.vinculacion
+        };
+      });
+      return jsonResponse({ ok: true, asesores: listado });
     }
 
     // --- CATALOGOS: devuelve todos los catálogos para los selects ---
@@ -365,6 +374,37 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var action = body.action;
+
+    // --- LOGIN CON CONTRASEÑA ---
+    // body: { action, id_asesor, password }
+    // Devuelve el asesor (sin password) si las credenciales son válidas
+    if (action === 'login_password') {
+      var idLog = body.id_asesor || '';
+      var pwdLog = body.password || '';
+      if (!idLog || !pwdLog) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Ingrese asesor y contraseña' });
+      }
+      var asesoresLog = leerHoja(HOJAS.asesores);
+      var found = asesoresLog.find(function(a){ return a.id_asesor === idLog; });
+      if (!found) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Asesor no encontrado' });
+      }
+      if (!found.password || String(found.password).trim() === '') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Este asesor aún no tiene contraseña asignada. Contacta al administrador.' });
+      }
+      if (String(found.password) !== String(pwdLog)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Contraseña incorrecta' });
+      }
+      // Eliminar password del objeto antes de devolverlo
+      var safe = {};
+      Object.keys(found).forEach(function(k){ if (k !== 'password') safe[k] = found[k]; });
+      lock.releaseLock();
+      return jsonResponse({ ok:true, asesor: safe });
+    }
 
     // --- REGISTRAR ARRIENDO ---
     if (action === 'registrar_arriendo') {

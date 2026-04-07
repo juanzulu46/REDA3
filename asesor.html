@@ -20,8 +20,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .login-card h1{font-size:32px;color:var(--azul);margin-bottom:4px}
 .login-card .sub{font-size:13px;color:var(--g400);margin-bottom:32px}
 .login-card label{display:block;text-align:left;font-size:13px;font-weight:600;color:var(--g600);margin-bottom:6px}
-.login-card select{width:100%;padding:14px 16px;border:2px solid var(--g200);border-radius:8px;font-size:15px;cursor:pointer;margin-bottom:24px;appearance:auto}
+.login-card select{width:100%;padding:14px 16px;border:2px solid var(--g200);border-radius:8px;font-size:15px;cursor:pointer;margin-bottom:18px;appearance:auto}
 .login-card select:focus{outline:none;border-color:var(--azul2)}
+.login-card input[type=password]{width:100%;padding:14px 16px;border:2px solid var(--g200);border-radius:8px;font-size:15px;margin-bottom:24px;box-sizing:border-box;font-family:inherit}
+.login-card input[type=password]:focus{outline:none;border-color:var(--azul2)}
 .login-card .btn-login{width:100%;padding:14px;background:var(--azul);color:var(--blanco);border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s}
 .login-card .btn-login:hover{background:var(--azul-h);transform:translateY(-1px)}
 .login-card .btn-login:disabled{opacity:.5;cursor:default;transform:none}
@@ -235,6 +237,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
     <p class="sub">Portal del Asesor</p>
     <label>Seleccione su nombre</label>
     <select id="loginSelect"><option value="">Cargando asesores...</option></select>
+    <label>Contrase&ntilde;a</label>
+    <input type="password" id="loginPassword" placeholder="Ingrese su contrase&ntilde;a" autocomplete="current-password" onkeydown="if(event.key==='Enter')hacerLogin()">
     <button class="btn-login" id="btnLogin" onclick="hacerLogin()" disabled>Ingresar</button>
     <div class="login-error" id="loginError"></div>
   </div>
@@ -752,24 +756,40 @@ async function cargarAsesores(){
 
 async function hacerLogin(){
   const id=document.getElementById('loginSelect').value;
-  if(!id){toast('Seleccione su nombre','er');return}
-  asesorActual=asesoresLista.find(a=>a.id_asesor===id);
-  if(!asesorActual)return;
-  document.getElementById('userName').textContent=asesorActual.nombre;
-  const b=document.getElementById('userBadge');
-  b.textContent=asesorActual.vinculacion;
-  b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
-  // Mostrar loading mientras carga catálogos
+  const pwd=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginError');
+  errEl.style.display='none'; errEl.textContent='';
+  if(!id){errEl.textContent='Seleccione su nombre';errEl.style.display='block';return}
+  if(!pwd){errEl.textContent='Ingrese su contrase\u00f1a';errEl.style.display='block';return}
   const btn=document.getElementById('btnLogin');
-  btn.disabled=true; btn.textContent='Cargando datos...';
-  await cargarCatalogos();
-  btn.disabled=false; btn.textContent='Ingresar';
-  document.getElementById('loginWrap').style.display='none';
-  document.getElementById('appWrap').classList.add('show');
-  // Asegurar que indicaciones sea la sección activa
-  document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
-  document.getElementById('sec-indicaciones').classList.add('show');
-  document.getElementById('pageTitle').innerHTML=navTitles.indicaciones;
+  btn.disabled=true; btn.textContent='Validando...';
+  try{
+    const r=await apiPost({action:'login_password',id_asesor:id,password:pwd});
+    if(!r||!r.ok){
+      errEl.textContent=(r&&r.error)||'Error al validar';
+      errEl.style.display='block';
+      btn.disabled=false; btn.textContent='Ingresar';
+      return;
+    }
+    asesorActual=r.asesor;
+    document.getElementById('userName').textContent=asesorActual.nombre;
+    const b=document.getElementById('userBadge');
+    b.textContent=asesorActual.vinculacion;
+    b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
+    btn.textContent='Cargando datos...';
+    await cargarCatalogos();
+    btn.disabled=false; btn.textContent='Ingresar';
+    document.getElementById('loginPassword').value='';
+    document.getElementById('loginWrap').style.display='none';
+    document.getElementById('appWrap').classList.add('show');
+    document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
+    document.getElementById('sec-indicaciones').classList.add('show');
+    document.getElementById('pageTitle').innerHTML=navTitles.indicaciones;
+  }catch(e){
+    errEl.textContent='Error de conexi\u00f3n: '+e.message;
+    errEl.style.display='block';
+    btn.disabled=false; btn.textContent='Ingresar';
+  }
 }
 
 function cerrarSesion(){
