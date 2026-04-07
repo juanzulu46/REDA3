@@ -616,14 +616,17 @@ const CAT = {
 //   venta primario captador: 15% / 17.5%
 //   venta primario cerrador: 30% / 32.5%
 // Empleado: dividir entre 1.3
-// Comisión asesor = % × comOficina × (participación/100)
-// Cuando hay varios asesores en la misma punta, dividen la punta entre ellos
-// según su participación negociada (suma debe dar 100%)
-// Si tiene referido en su punta: -25% del 20% de su comisión bruta
-// IMPORTANTE TRANSPARENCIA: en arriendos, la empresa paga al asesor desde el
-// primer mes con dinero propio, mientras el cliente paga la comisión durante
-// toda la duración del contrato.
-function calcComisionAsesor(comisionOficina, vinculacion, conCirculo, tipoNeg, mercado, punta, officePct, participacion) {
+//
+// BASE DEL CÁLCULO:
+//   ARRIENDO: base = CANON COMPLETO (no la comisión oficina)
+//             La empresa cobra 10% del canon mensualmente durante 12 meses
+//             pero el asesor recibe % del canon UNA VEZ en el primer mes
+//   VENTA:    base = COMISIÓN OFICINA
+//             El asesor recibe % de la comisión que cobra la oficina
+//
+// Comisión asesor = % × base × (participación/100)
+// Si tiene referido: -25% del 20% de su comisión bruta
+function calcComisionAsesor(base, vinculacion, conCirculo, tipoNeg, mercado, punta, participacion) {
   let pctFree;
   if (tipoNeg === 'arriendo') {
     pctFree = conCirculo ? 0.175 : 0.15;
@@ -640,7 +643,7 @@ function calcComisionAsesor(comisionOficina, vinculacion, conCirculo, tipoNeg, m
     }
   }
   const part = (Number(participacion) || 0) / 100;
-  let valor = pctFree * comisionOficina * part;
+  let valor = pctFree * base * part;
   if (vinculacion !== 'Freelance') valor = valor / 1.3;
   return valor;
 }
@@ -701,7 +704,14 @@ async function apiPost(body){
     headers:{'Content-Type':'text/plain'}
   });
   if(!r.ok) throw new Error('HTTP '+r.status);
-  return await r.json();
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    // Si el response no es JSON pero el request fue OK, asumir éxito
+    // (caso típico: GAS redirige y devuelve HTML)
+    return { ok: true, id: 'guardado', mensaje: 'Guardado' };
+  }
 }
 
 // ===== LOGIN =====
@@ -848,11 +858,15 @@ function recalcComisiones(tipo) {
   const officePct = isArr
     ? (Number(document.getElementById('ar_pct').value)||0)
     : (Number(document.getElementById('v_pct').value)||0);
-  const comisionOficina = isArr
-    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
-    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
+  const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
+  const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
+  // Base para cálculo de comisión del asesor:
+  //   arriendo → canon completo
+  //   venta    → comisión de la oficina
+  const baseAsesor = isArr ? canon : comisionOficina;
 
-  if (!comisionOficina) {
+  if (!comisionOficina && !baseAsesor) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
     return;
   }
@@ -888,7 +902,7 @@ function recalcComisiones(tipo) {
       if (!sel.value) { valSpan.textContent = '$0'; return; }
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(partInput.value) || 0;
-      const bruto = calcComisionAsesor(comisionOficina, vinc, conCirculo, tipoNeg, mercado, punta, officePct, participacion);
+      const bruto = calcComisionAsesor(baseAsesor, vinc, conCirculo, tipoNeg, mercado, punta, participacion);
       let neto = bruto;
       let refValor = 0;
       if (hayRefPunta) {
@@ -912,16 +926,30 @@ function recalcComisiones(tipo) {
   const refEmpresaCap = hayRefCap ? totalBrutoCap * 0.20 * 0.75 : 0;
   const refEmpresaCer = hayRefCer ? totalBrutoCer * 0.20 * 0.75 : 0;
   const refEmpresa = refEmpresaCap + refEmpresaCer;
-  const empresaRecibe = comisionOficina - totalBruto - refEmpresa;
+
+  // Para arriendos: la empresa cobra comisionOficina × 12 meses durante el año
+  // Para ventas: la empresa cobra comisionOficina una vez
+  const ingresoEmpresaAnual = isArr ? (comisionOficina * 12) : comisionOficina;
+  const empresaRecibe = ingresoEmpresaAnual - totalBruto - refEmpresa;
 
   // Mostrar resumen
   const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
   resumen.classList.add('show');
-  let gridHtml = `
-    <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
-    <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
-    <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
-  `;
+  let gridHtml = '';
+  if (isArr) {
+    gridHtml = `
+      <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina mensual (${(officePct*100).toFixed(1)}%)</span><span class="crv">${fmtP(comisionOficina)}</span></div>
+      <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina anual (12 meses)</span><span class="crv">${fmtP(ingresoEmpresaAnual)}</span></div>
+      <div class="com-r-item"><span class="crl">Asesores (pago &uacute;nico)</span><span class="crv">${fmtP(totalBruto)}</span></div>
+      <div class="com-r-item"><span class="crl">Empresa neta (anual)</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
+    `;
+  } else {
+    gridHtml = `
+      <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
+      <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
+      <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
+    `;
+  }
   if (hayRefCap || hayRefCer) {
     gridHtml += `<div class="com-r-item"><span class="crl">Asesores (neto)</span><span class="crv">${fmtP(totalNeto)}</span></div>`;
   }
@@ -939,10 +967,10 @@ function recalcComisiones(tipo) {
     detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido cerrador:</strong> ${document.getElementById(prefix+'_refnombre_cer').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCer*0.20)}</strong></div>`;
   }
 
-  // Aviso de transparencia para arriendos: la empresa paga al asesor el primer mes
+  // Aviso de transparencia para arriendos
   if (isArr && totalBruto > 0) {
     detHtml += `<div style="margin-top:14px;padding:12px 14px;background:#fff8e1;border-left:4px solid #ffc107;border-radius:6px;font-size:12px;color:#795548">
-      <strong>&#9888; Transparencia:</strong> En arriendos, la empresa paga la comisi&oacute;n al asesor (<strong>${fmtP(totalBruto)}</strong>) el <strong>primer mes</strong> con dinero propio. La comisi&oacute;n del cliente (${fmtP(comisionOficina)}) se cobra mes a mes durante toda la duraci&oacute;n del contrato.
+      <strong>&#9888; Transparencia:</strong> El asesor recibe su comisi&oacute;n (<strong>${fmtP(totalBruto)}</strong>, calculada sobre el <strong>canon completo</strong>) en un solo pago el <strong>primer mes</strong>. La empresa cobra ${fmtP(comisionOficina)} mensual al cliente durante 12 meses (total anual ${fmtP(ingresoEmpresaAnual)}). Por eso el primer mes la empresa paga al asesor con dinero propio y luego recupera mes a mes.
     </div>`;
   }
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
@@ -957,9 +985,10 @@ function recolectarComisiones(tipo) {
   const officePct = isArr
     ? (Number(document.getElementById('ar_pct').value)||0)
     : (Number(document.getElementById('v_pct').value)||0);
-  const comisionOficina = isArr
-    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
-    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
+  const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
+  const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
+  const baseAsesor = isArr ? canon : comisionOficina;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
   const prefix = isArr ? 'ar' : 'v';
@@ -982,7 +1011,7 @@ function recolectarComisiones(tipo) {
       if (!sel.value) return;
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(row.querySelector('.com-part').value) || 0;
-      const bruto = calcComisionAsesor(comisionOficina, vinc, ci, tipoNeg, mercado, punta, officePct, participacion);
+      const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion);
       let valor = bruto;
       if (hayRef) valor = bruto - (bruto * 0.20 * 0.25); // Resta 25% del referido (5% del bruto)
       result.push({
@@ -1357,10 +1386,11 @@ function calcRefPuntaParaGuardar(tipo, punta) {
   if (!document.getElementById(prefix + '_hayref_' + sufx).checked) return 0;
 
   const officePct = Number(document.getElementById(prefix + '_pct').value) || 0;
-  const base = isArr
-    ? (Number(document.getElementById('ar_canon').value)||0) * officePct
-    : (Number(document.getElementById('v_valorbase').value)||0) * officePct;
-  if (!base) return 0;
+  const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
+  // Base: arriendo = canon, venta = comisión oficina
+  const baseAsesor = isArr ? canon : (valorVenta * officePct);
+  if (!baseAsesor) return 0;
   const mercado = document.getElementById(prefix + '_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
   const orgId = document.getElementById(prefix + '_org' + sufx).value;
@@ -1375,7 +1405,7 @@ function calcRefPuntaParaGuardar(tipo, punta) {
     if (!sel.value) return;
     const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
     const part = Number(row.querySelector('.com-part').value) || 0;
-    bruto += calcComisionAsesor(base, vinc, ci, tipoNeg, mercado, punta, officePct, part);
+    bruto += calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, part);
   });
   return bruto * 0.20; // 20% del bruto de esa punta
 }

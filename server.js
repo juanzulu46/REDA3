@@ -9,12 +9,13 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeBVMDSD9-giQaUTCIhvnL
 
 const MIME = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json','.xlsx':'application/octet-stream'};
 
-// Sigue redirects de Google Apps Script
+// Sigue redirects de Google Apps Script (importante: 302 debe seguirse con GET)
 function httpsRequest(reqUrl, options){
   return new Promise((resolve, reject)=>{
     const req = https.request(reqUrl, options, res=>{
       if(res.statusCode>=300 && res.statusCode<400 && res.headers.location){
-        httpsRequest(res.headers.location, options).then(resolve).catch(reject);
+        // En redirects, seguir con GET sin body (estándar HTTP para 302/303)
+        httpsRequest(res.headers.location, {method:'GET'}).then(resolve).catch(reject);
       } else {
         let body='';
         res.on('data', c=>body+=c);
