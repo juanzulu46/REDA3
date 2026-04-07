@@ -50,6 +50,15 @@ tbody tr:hover{background:rgba(26,58,92,.02)}
 .toast{padding:12px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:tin .3s;color:var(--blanco);min-width:260px;font-weight:500}
 .toast.ok{background:var(--verde)}.toast.er{background:var(--rojo)}
 @keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+
+.instr{background:var(--blanco);border-radius:var(--r);box-shadow:var(--sombra);padding:28px 32px;margin-bottom:24px}
+.instr h2{font-size:18px;color:var(--azul);margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.instr .lead{font-size:13px;color:var(--g600);margin-bottom:22px}
+.instr ol{list-style:none;counter-reset:s;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.instr ol li{counter-increment:s;background:var(--g50);border-radius:8px;padding:18px 18px 18px 56px;position:relative;font-size:13px;color:var(--g800);line-height:1.5}
+.instr ol li::before{content:counter(s);position:absolute;left:14px;top:14px;width:32px;height:32px;background:var(--azul);color:var(--blanco);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.instr ol li strong{color:var(--azul);display:block;margin-bottom:4px;font-size:14px}
+.instr .nota{margin-top:18px;padding:12px 16px;background:var(--azul-l);border-left:3px solid var(--azul);border-radius:6px;font-size:12px;color:var(--azul)}
 </style>
 </head>
 <body>
@@ -67,19 +76,17 @@ tbody tr:hover{background:rgba(26,58,92,.02)}
     <button class="btn btn-export" onclick="exportarExcel()" id="btnExport" disabled>&#128190; Descargar data_set_actualizado.xlsx</button>
   </div>
 
-  <div class="panel" id="panelArr">
-    <div class="panel-hd"><span>Arriendos</span><span class="count" id="cArr">0</span></div>
-    <div class="tbl-wrap"><table><thead id="thArr"></thead><tbody id="tbArr"></tbody></table></div>
-  </div>
-
-  <div class="panel" id="panelVnt">
-    <div class="panel-hd"><span>Ventas</span><span class="count" id="cVnt">0</span></div>
-    <div class="tbl-wrap"><table><thead id="thVnt"></thead><tbody id="tbVnt"></tbody></table></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-hd"><span>Comisiones</span><span class="count" id="cCom">0</span></div>
-    <div class="tbl-wrap"><table><thead id="thCom"></thead><tbody id="tbCom"></tbody></table></div>
+  <div class="instr">
+    <h2>&#128218; C&oacute;mo usar este panel</h2>
+    <p class="lead">Este panel sincroniza los datos del equipo desde Google Sheets y los exporta para que el tablero de Power BI quede actualizado.</p>
+    <ol>
+      <li><strong>Actualizar datos</strong>Haz clic en el bot&oacute;n azul para traer la informaci&oacute;n m&aacute;s reciente del Google Sheet (asesores, inmuebles, arriendos, ventas, comisiones, etc.).</li>
+      <li><strong>Revisar el resumen</strong>Verifica los indicadores de arriba: cantidad de asesores, inmuebles, negocios y comisiones. Si algo se ve raro, vuelve a actualizar.</li>
+      <li><strong>Descargar el archivo</strong>Haz clic en &laquo;Descargar data_set_actualizado.xlsx&raquo;. Se generar&aacute; un Excel con todas las tablas listas para Power BI.</li>
+      <li><strong>Reemplazar el archivo en Power BI</strong>Guarda el xlsx en la carpeta donde apunta el modelo (sobreescribe el anterior con el mismo nombre).</li>
+      <li><strong>Refrescar el tablero</strong>Abre Power BI Desktop y haz clic en &laquo;Actualizar&raquo;. Las visuales se recalculan con los datos nuevos.</li>
+    </ol>
+    <div class="nota">&#128161; Tip: actualiza al menos una vez por semana para que el tablero refleje el desempe&ntilde;o real del equipo. No es necesario hacerlo todos los d&iacute;as.</div>
   </div>
 </div>
 
@@ -133,15 +140,7 @@ async function cargarTodo(){
   document.getElementById('btnRefresh').textContent='\u21BB Actualizar datos';
 }
 
-function nomInm(id){const i=DATA.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id}
-function nomCli(id){const c=DATA.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id}
-function nomAse(id){const a=DATA.asesores.find(x=>x.id_asesor===id);return a?a.nombre:id}
-const MESES=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-
 function renderTodo(){
-  // Stats
-  const totalComArr=DATA.arriendos.reduce((s,a)=>s+(Number(a.comision_oficina)||0),0);
-  const totalComVnt=DATA.ventas.reduce((s,v)=>s+(Number(v.comision_oficina)||0),0);
   document.getElementById('stats').innerHTML=`
     <div class="stat"><div class="sv">${DATA.asesores.length}</div><div class="sl">Asesores</div></div>
     <div class="stat"><div class="sv">${DATA.inmuebles.length}</div><div class="sl">Inmuebles</div></div>
@@ -150,35 +149,6 @@ function renderTodo(){
     <div class="stat v"><div class="sv">${DATA.ventas.length}</div><div class="sl">Ventas</div></div>
     <div class="stat"><div class="sv">${DATA.comisiones.length}</div><div class="sl">Comisiones</div></div>
   `;
-
-  // Arriendos
-  document.getElementById('cArr').textContent=DATA.arriendos.length;
-  document.getElementById('thArr').innerHTML='<tr><th>ID</th><th>Mes</th><th>Mercado</th><th>Inmueble</th><th>Arrendador</th><th>Arrendatario</th><th>Canon</th><th>%Com</th><th>Comisi\u00f3n</th></tr>';
-  document.getElementById('tbArr').innerHTML=DATA.arriendos.map(a=>`<tr>
-    <td>${a.id_arriendo}</td><td>${MESES[a.mes]||a.mes}</td><td>${a.mercado}</td>
-    <td>${nomInm(a.id_inmueble)}</td><td>${nomCli(a.id_arrendador)}</td><td>${nomCli(a.id_arrendatario)}</td>
-    <td class="precio">${fmtP(a.valor_canon)}</td><td>${a.pct_comision_oficina?((a.pct_comision_oficina*100).toFixed(1)+'%'):''}</td>
-    <td class="precio">${fmtP(a.comision_oficina)}</td>
-  </tr>`).join('')||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--g400)">Sin arriendos</td></tr>';
-
-  // Ventas
-  document.getElementById('cVnt').textContent=DATA.ventas.length;
-  document.getElementById('thVnt').innerHTML='<tr><th>ID</th><th>Mes</th><th>Mercado</th><th>Inmueble</th><th>Vendedor</th><th>Comprador</th><th>Valor Base</th><th>%Com</th><th>Comisi\u00f3n</th></tr>';
-  document.getElementById('tbVnt').innerHTML=DATA.ventas.map(v=>`<tr>
-    <td>${v.id_venta}</td><td>${MESES[v.mes]||v.mes}</td><td>${v.mercado}</td>
-    <td>${nomInm(v.id_inmueble)}</td><td>${nomCli(v.id_vendedor)}</td><td>${nomCli(v.id_comprador)}</td>
-    <td class="precio">${fmtP(v.valor_base_comision)}</td><td>${v.pct_comision_oficina?((v.pct_comision_oficina*100).toFixed(1)+'%'):''}</td>
-    <td class="precio">${fmtP(v.comision_oficina)}</td>
-  </tr>`).join('')||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--g400)">Sin ventas</td></tr>';
-
-  // Comisiones
-  document.getElementById('cCom').textContent=DATA.comisiones.length;
-  document.getElementById('thCom').innerHTML='<tr><th>Asesor</th><th>Negocio</th><th>Valor Comisi\u00f3n</th><th>Punta</th></tr>';
-  document.getElementById('tbCom').innerHTML=DATA.comisiones.map(c=>`<tr>
-    <td>${nomAse(c.id_asesor)} (${c.id_asesor})</td><td>${c.id_negocio}</td>
-    <td class="precio">${fmtP(c.valor_comision)}</td>
-    <td><span class="badge ${c.punta==='Captador'?'b-cap':'b-cer'}">${c.punta}</span></td>
-  </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--g400)">Sin comisiones</td></tr>';
 }
 
 function exportarExcel(){
