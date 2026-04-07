@@ -44,7 +44,8 @@ const HOJAS = {
   oficina: 'Oficina',
   origen: 'Origen',
   zona: 'Zona',
-  acciones: 'Acciones'
+  acciones: 'Acciones',
+  tipos_accion: 'TipoAccion'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -76,7 +77,8 @@ const COLUMNAS = {
   oficina: ['id_oficina', 'nombre'],
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
-  acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion']
+  acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
+  tipos_accion: ['id_tipo', 'nombre', 'activo']
 };
 
 // ===== UTILIDADES =====
@@ -168,7 +170,8 @@ function doGet(e) {
         clientes: leerHoja(HOJAS.clientes),
         oficinas: leerHoja(HOJAS.oficina),
         origenes: leerHoja(HOJAS.origen),
-        zonas: leerHoja(HOJAS.zona)
+        zonas: leerHoja(HOJAS.zona),
+        tipos_accion: leerHoja(HOJAS.tipos_accion)
       });
     }
 

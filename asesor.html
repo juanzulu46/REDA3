@@ -577,15 +577,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
       <div class="ff"><label>Fecha <span class="req">*</span></label><input type="date" id="ac_fecha"></div>
       <div class="ff"><label>Tipo de acci&oacute;n <span class="req">*</span></label><select id="ac_tipo">
         <option value="">-- Tipo --</option>
-        <option>Captaci&oacute;n Venta</option>
-        <option>Captaci&oacute;n Arriendo</option>
-        <option>Video</option>
-        <option>Reel</option>
-        <option>Pieza Redes</option>
-        <option>Open House</option>
-        <option>Volantes</option>
-        <option>Promoci&oacute;n Local</option>
-        <option>Otra</option>
       </select></div>
       <div class="ff full"><label>Descripci&oacute;n <span class="opt">(opcional)</span></label><textarea id="ac_desc" placeholder="Detalle de la acci&oacute;n"></textarea></div>
     </div></div>
@@ -620,6 +611,7 @@ let inmuebles = [];
 let clientes = [];
 let oficinas = [];   // [{id_oficina, nombre}]
 let origenes = [];   // [{id_origen, nombre, circulo}] -> circulo: 'con' | 'sin'
+let tiposAccion = []; // [{id_tipo, nombre, activo}]
 let zonas = [];      // [{id_zona, comuna, ciudad}]
 
 // Catálogos fijos (los únicos que NO van a base de datos)
@@ -807,6 +799,10 @@ async function cargarCatalogos(){
       oficinas=r.oficinas||[];
       origenes=r.origenes||[];
       zonas=r.zonas||[];
+      tiposAccion=(r.tipos_accion||[]).filter(t=>{
+        const a=String(t.activo||'').toUpperCase();
+        return a==='' || a==='TRUE' || a==='SI' || a==='S\u00cd' || a==='1' || t.activo===true;
+      });
       prepararFormularios();
     }
   }catch(e){toast('Error cargando cat\u00e1logos','er')}
@@ -1478,7 +1474,12 @@ async function cargarBonificaciones(mes) {
 function prepararFormAccion() {
   const f = document.getElementById('ac_fecha');
   if (!f.value) { const h = new Date(); f.value = h.toISOString().slice(0,10); }
-  if (!document.getElementById('ac_tipo')._ssInit) makeSearchableById('ac_tipo');
+  // Llenar tipos de acción dinámicamente desde el catálogo
+  const sel = document.getElementById('ac_tipo');
+  sel.innerHTML = '<option value="">-- Tipo --</option>' +
+    tiposAccion.map(t => '<option value="'+t.nombre+'">'+t.nombre+'</option>').join('');
+  if (!sel._ssInit) makeSearchableById('ac_tipo');
+  else refreshSearchable('ac_tipo');
 }
 async function guardarAccion() {
   const fecha = val('ac_fecha','Escoja la fecha'); if (!fecha) return;
