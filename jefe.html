@@ -73,7 +73,7 @@ tbody tr:hover{background:rgba(26,58,92,.02)}
 
   <div class="toolbar">
     <button class="btn btn-refresh" onclick="cargarTodo()" id="btnRefresh">&#8635; Actualizar datos</button>
-    <button class="btn btn-export" onclick="exportarExcel()" id="btnExport" disabled>&#128190; Descargar data_set_actualizado.xlsx</button>
+    <button class="btn btn-export" onclick="exportarExcel()" id="btnExport" disabled>&#128190; Descargar data_set_final.xlsx</button>
   </div>
 
   <div class="instr">
@@ -173,7 +173,7 @@ function exportarExcel(){
   sheets.forEach(([name,data])=>{
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.length?data:[{}]),name);
   });
-  XLSX.writeFile(wb,'data_set_actualizado.xlsx');
+  XLSX.writeFile(wb,'data_set_final.xlsx');
   toast('Archivo descargado');
 }
 
