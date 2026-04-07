@@ -132,6 +132,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .neg-card .neg-detail strong{color:var(--g800)}
 .neg-card .neg-com{margin-top:8px;padding-top:8px;border-top:1px solid var(--g200);font-size:13px;font-weight:700;color:var(--verde)}
 .neg-empty{text-align:center;padding:40px;color:var(--g400);font-size:14px}
+.neg-filtros{display:flex;gap:14px;align-items:end;flex-wrap:wrap;background:var(--blanco);padding:14px 18px;border-radius:8px;box-shadow:var(--sombra);margin-bottom:16px}
+.neg-filtro-grupo{display:flex;flex-direction:column;gap:4px}
+.neg-filtro-grupo label{font-size:11px;font-weight:600;color:var(--g600);text-transform:uppercase;letter-spacing:.5px}
+.neg-filtro-grupo select{padding:8px 12px;border:2px solid var(--g200);border-radius:6px;font-size:13px;min-width:140px}
+.neg-filtro-grupo .btn{padding:8px 16px;font-size:12px}
 .neg-resumen{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px}
 .neg-stat{background:var(--blanco);border-radius:8px;padding:16px;box-shadow:var(--sombra);text-align:center}
 .neg-stat .ns-val{font-size:24px;font-weight:700;color:var(--azul)}
@@ -285,7 +290,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Valor y comisi&oacute;n oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor del canon mensual (COP) <span class="req">*</span></label><input type="number" id="ar_canon" min="0" placeholder="Ej: 1300000" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;nto paga el inquilino al mes</div></div>
+        <div class="ff"><label>Valor administraci&oacute;n (COP) <span class="opt">(opcional)</span></label><input type="number" id="ar_admon" min="0" placeholder="Ej: 200000"><div class="hint">Cuota de administraci&oacute;n mensual del inmueble</div></div>
         <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
+        <div class="ff">&nbsp;</div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="ar_ofcap"><option value="">-- Oficina --</option></select></div>
@@ -317,14 +324,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
                 <input type="checkbox" id="ar_hayref_cap" onchange="recalcComisiones('arr')">
                 <label for="ar_hayref_cap" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en captaci&oacute;n</label>
               </div>
-              <input type="text" id="ar_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('arr')">
+              <input type="text" id="ar_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px;margin-bottom:6px" oninput="recalcComisiones('arr')">
+              <input type="tel" id="ar_refnumero_cap" placeholder="N&uacute;mero de tel&eacute;fono" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
             </div>
             <div style="background:var(--g50);padding:12px;border-radius:6px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                 <input type="checkbox" id="ar_hayref_cer" onchange="recalcComisiones('arr')">
                 <label for="ar_hayref_cer" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en cierre</label>
               </div>
-              <input type="text" id="ar_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('arr')">
+              <input type="text" id="ar_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px;margin-bottom:6px" oninput="recalcComisiones('arr')">
+              <input type="tel" id="ar_refnumero_cer" placeholder="N&uacute;mero de tel&eacute;fono" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
             </div>
           </div>
           <p style="font-size:11px;color:var(--g600);margin-top:8px">El referido es 20% de la comisi&oacute;n bruta del asesor en esa punta. Empresa paga 75%, asesor paga 25%.</p>
@@ -399,14 +408,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
                 <input type="checkbox" id="v_hayref_cap" onchange="recalcComisiones('vnt')">
                 <label for="v_hayref_cap" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en captaci&oacute;n</label>
               </div>
-              <input type="text" id="v_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('vnt')">
+              <input type="text" id="v_refnombre_cap" placeholder="Nombre del referido (captador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px;margin-bottom:6px" oninput="recalcComisiones('vnt')">
+              <input type="tel" id="v_refnumero_cap" placeholder="N&uacute;mero de tel&eacute;fono" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
             </div>
             <div style="background:var(--g50);padding:12px;border-radius:6px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                 <input type="checkbox" id="v_hayref_cer" onchange="recalcComisiones('vnt')">
                 <label for="v_hayref_cer" style="font-size:12px;cursor:pointer;margin:0;font-weight:600">Referido en cierre</label>
               </div>
-              <input type="text" id="v_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="recalcComisiones('vnt')">
+              <input type="text" id="v_refnombre_cer" placeholder="Nombre del referido (cerrador)" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px;margin-bottom:6px" oninput="recalcComisiones('vnt')">
+              <input type="tel" id="v_refnumero_cer" placeholder="N&uacute;mero de tel&eacute;fono" style="width:100%;padding:8px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
             </div>
           </div>
           <p style="font-size:11px;color:var(--g600);margin-top:8px">El referido es 20% de la comisi&oacute;n bruta del asesor en esa punta. Empresa paga 75%, asesor paga 25%.</p>
@@ -943,17 +954,13 @@ function recalcComisiones(tipo) {
       ? `Base asesor (canon &times; ${(officePct*100).toFixed(0)}% &times; 10 = ${(factorArr*100).toFixed(0)}%)`
       : `Base asesor (canon completo)`;
     gridHtml = `
-      <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina mensual (${(officePct*100).toFixed(1)}%)</span><span class="crv">${fmtP(comisionOficina)}</span></div>
-      <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina anual (12 meses)</span><span class="crv">${fmtP(ingresoEmpresaAnual)}</span></div>
       <div class="com-r-item"><span class="crl">${baseLabel}</span><span class="crv">${fmtP(baseAsesor)}</span></div>
       <div class="com-r-item"><span class="crl">Asesores (pago &uacute;nico)</span><span class="crv">${fmtP(totalBruto)}</span></div>
-      <div class="com-r-item"><span class="crl">Empresa neta (anual)</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
     `;
   } else {
     gridHtml = `
       <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
       <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
-      <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
     `;
   }
   if (hayRefCap || hayRefCer) {
@@ -973,12 +980,6 @@ function recalcComisiones(tipo) {
     detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido cerrador:</strong> ${document.getElementById(prefix+'_refnombre_cer').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCer*0.20)}</strong></div>`;
   }
 
-  // Aviso de transparencia para arriendos
-  if (isArr && totalBruto > 0) {
-    detHtml += `<div style="margin-top:14px;padding:12px 14px;background:#fff8e1;border-left:4px solid #ffc107;border-radius:6px;font-size:12px;color:#795548">
-      <strong>&#9888; Transparencia:</strong> El asesor recibe su comisi&oacute;n (<strong>${fmtP(totalBruto)}</strong>, calculada sobre el <strong>canon completo</strong>) en un solo pago el <strong>primer mes</strong>. La empresa cobra ${fmtP(comisionOficina)} mensual al cliente durante 12 meses (total anual ${fmtP(ingresoEmpresaAnual)}). Por eso el primer mes la empresa paga al asesor con dinero propio y luego recupera mes a mes.
-    </div>`;
-  }
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
 }
 
@@ -1067,12 +1068,16 @@ async function guardarArriendo() {
         ['año']: new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         id_arrendador: arrendador, id_arrendatario: arrendatario,
-        valor_canon: Number(canon), pct_comision_oficina: Number(pct),
+        valor_canon: Number(canon),
+        administracion: Number(document.getElementById('ar_admon').value) || '',
+        pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
         referido_captador: document.getElementById('ar_hayref_cap').checked ? (document.getElementById('ar_refnombre_cap').value || '') : '',
+        numero_captador_r: document.getElementById('ar_hayref_cap').checked ? (document.getElementById('ar_refnumero_cap').value || '') : '',
         valor_ref_captador: calcRefPuntaParaGuardar('arr','Captador'),
         referido_cerrador: document.getElementById('ar_hayref_cer').checked ? (document.getElementById('ar_refnombre_cer').value || '') : '',
+        numero_cerrador_r: document.getElementById('ar_hayref_cer').checked ? (document.getElementById('ar_refnumero_cer').value || '') : '',
         valor_ref_cerrador: calcRefPuntaParaGuardar('arr','Cerrador')
       },
       comisiones_asesores: comisiones
@@ -1130,8 +1135,10 @@ async function guardarVenta() {
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
         referido_captador: document.getElementById('v_hayref_cap').checked ? (document.getElementById('v_refnombre_cap').value || '') : '',
+        numero_captador_r: document.getElementById('v_hayref_cap').checked ? (document.getElementById('v_refnumero_cap').value || '') : '',
         valor_ref_captador: calcRefPuntaParaGuardar('vnt','Captador'),
         referido_cerrador: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnombre_cer').value || '') : '',
+        numero_cerrador_r: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnumero_cer').value || '') : '',
         valor_ref_cerrador: calcRefPuntaParaGuardar('vnt','Cerrador')
       },
       comisiones_asesores: comisiones
@@ -1251,61 +1258,118 @@ async function checkDupliVnt(){
 }
 
 // ===== MIS NEGOCIOS =====
+let misNegociosData = null;
 async function cargarMisNegocios(){
   const cont=document.getElementById('misNegContent');
   cont.innerHTML='<div class="loading"><span class="spinner"></span> Cargando sus negocios...</div>';
   try{
     const r=await apiGet({action:'mis_negocios',id_asesor:asesorActual.id_asesor});
     if(!r||!r.ok){cont.innerHTML='<div class="neg-empty">Error al cargar</div>';return}
+    misNegociosData = r;
+    renderMisNegocios();
+  }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
+}
 
-    const totalCom=r.comisiones.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+function renderMisNegocios(){
+  const cont=document.getElementById('misNegContent');
+  const r = misNegociosData;
+  if(!r) return;
 
-    let html=`<div class="neg-resumen">
-      <div class="neg-stat"><div class="ns-val">${r.arriendos.length}</div><div class="ns-label">Arriendos</div></div>
-      <div class="neg-stat"><div class="ns-val">${r.ventas.length}</div><div class="ns-label">Ventas</div></div>
-      <div class="neg-stat v"><div class="ns-val">${fmtP(totalCom)}</div><div class="ns-label">Comisiones totales</div></div>
+  // Leer filtros
+  const fMes = Number(document.getElementById('negFiltroMes')?.value || 0);
+  const fPunta = document.getElementById('negFiltroPunta')?.value || '';
+
+  // Aplicar filtros
+  const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const nomMes=m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+  const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
+  const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
+
+  // Obtener IDs de negocios donde el asesor cumple el filtro de punta
+  let comisionesFiltradas = r.comisiones;
+  if (fPunta) comisionesFiltradas = comisionesFiltradas.filter(c => c.punta === fPunta);
+  const negocioIdsFiltrados = new Set(comisionesFiltradas.map(c=>c.id_negocio));
+
+  // Filtrar negocios
+  let arriendosFilt = r.arriendos.filter(a => negocioIdsFiltrados.has(a.id_arriendo));
+  let ventasFilt = r.ventas.filter(v => negocioIdsFiltrados.has(v.id_venta));
+  if (fMes) {
+    arriendosFilt = arriendosFilt.filter(a => Number(a.mes) === fMes);
+    ventasFilt = ventasFilt.filter(v => Number(v.mes) === fMes);
+  }
+
+  // Total comisiones (filtradas)
+  const negociosFiltradosIds = new Set([...arriendosFilt.map(a=>a.id_arriendo), ...ventasFilt.map(v=>v.id_venta)]);
+  const totalCom = comisionesFiltradas
+    .filter(c=>negociosFiltradosIds.has(c.id_negocio))
+    .reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+
+  // UI de filtros
+  let html = `
+    <div class="neg-filtros">
+      <div class="neg-filtro-grupo">
+        <label>Mes:</label>
+        <select id="negFiltroMes" onchange="renderMisNegocios()">
+          <option value="0">Todos</option>
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>'<option value="'+m+'"'+(m===fMes?' selected':'')+'>'+meses[m]+'</option>').join('')}
+        </select>
+      </div>
+      <div class="neg-filtro-grupo">
+        <label>Punta:</label>
+        <select id="negFiltroPunta" onchange="renderMisNegocios()">
+          <option value="">Todas</option>
+          <option value="Captador"${fPunta==='Captador'?' selected':''}>Captaci&oacute;n</option>
+          <option value="Cerrador"${fPunta==='Cerrador'?' selected':''}>Cierre</option>
+        </select>
+      </div>
+      <div class="neg-filtro-grupo">
+        <button class="btn btn-limpiar" onclick="document.getElementById('negFiltroMes').value=0;document.getElementById('negFiltroPunta').value='';renderMisNegocios()">Limpiar filtros</button>
+      </div>
+    </div>
+    <div class="neg-resumen">
+      <div class="neg-stat"><div class="ns-val">${arriendosFilt.length}</div><div class="ns-label">Arriendos</div></div>
+      <div class="neg-stat"><div class="ns-val">${ventasFilt.length}</div><div class="ns-label">Ventas</div></div>
+      <div class="neg-stat v"><div class="ns-val">${fmtP(totalCom)}</div><div class="ns-label">Comisiones</div></div>
     </div>`;
 
-    if(r.arriendos.length===0&&r.ventas.length===0){
-      html+='<div class="neg-empty">A&uacute;n no tiene negocios registrados.</div>';
-    } else {
-      // Helper para buscar nombre
-      const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
-      const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
-      const nomMes=m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+  if(arriendosFilt.length===0 && ventasFilt.length===0){
+    html+='<div class="neg-empty">No hay negocios con esos filtros.</div>';
+  } else {
+    arriendosFilt.forEach(a=>{
+      const misCom=comisionesFiltradas.filter(c=>c.id_negocio===a.id_arriendo);
+      const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+      const puntas=misCom.map(c=>c.punta).join(', ');
+      html+=`<div class="neg-card arriendo">
+        <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span></div>
+        <div class="neg-detail">
+          <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
+          <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
+          <div><strong>Arrendador:</strong> ${nomCli(a.id_arrendador)}</div>
+          <div><strong>Arrendatario:</strong> ${nomCli(a.id_arrendatario)}</div>
+          <div><strong>Mi punta:</strong> ${puntas}</div>
+        </div>
+        <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+      </div>`;
+    });
 
-      r.arriendos.forEach(a=>{
-        const misCom=r.comisiones.filter(c=>c.id_negocio===a.id_arriendo);
-        const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
-        html+=`<div class="neg-card arriendo">
-          <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)}</span></div>
-          <div class="neg-detail">
-            <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
-            <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
-            <div><strong>Arrendador:</strong> ${nomCli(a.id_arrendador)}</div>
-            <div><strong>Arrendatario:</strong> ${nomCli(a.id_arrendatario)}</div>
-          </div>
-          <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
-        </div>`;
-      });
-
-      r.ventas.forEach(v=>{
-        const misCom=r.comisiones.filter(c=>c.id_negocio===v.id_venta);
-        const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
-        html+=`<div class="neg-card venta">
-          <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)}</span></div>
-          <div class="neg-detail">
-            <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
-            <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
-            <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
-            <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
-          </div>
-          <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
-        </div>`;
-      });
-    }
-    cont.innerHTML=html;
-  }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
+    ventasFilt.forEach(v=>{
+      const misCom=comisionesFiltradas.filter(c=>c.id_negocio===v.id_venta);
+      const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
+      const puntas=misCom.map(c=>c.punta).join(', ');
+      html+=`<div class="neg-card venta">
+        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span></div>
+        <div class="neg-detail">
+          <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
+          <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
+          <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
+          <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
+          <div><strong>Mi punta:</strong> ${puntas}</div>
+        </div>
+        <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+      </div>`;
+    });
+  }
+  cont.innerHTML=html;
 }
 
 // ===== BONIFICACIONES =====
