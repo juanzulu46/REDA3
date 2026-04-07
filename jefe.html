@@ -98,7 +98,11 @@ tbody tr:hover{background:rgba(26,58,92,.02)}
 const SCRIPT_URL = '/api';
 // =====================================================================
 
-let DATA = { asesores:[], inmuebles:[], clientes:[], arriendos:[], ventas:[], pipeline:[], comisiones:[] };
+let DATA = {
+  asesores:[], inmuebles:[], clientes:[],
+  arriendos:[], ventas:[], pipeline:[], comisiones:[],
+  oficinas:[], origenes:[], zonas:[], acciones:[], tipos_accion:[]
+};
 
 function toast(m,t='ok'){const e=document.createElement('div');e.className='toast '+t;e.textContent=m;document.getElementById('toasts').appendChild(e);setTimeout(()=>e.remove(),4000)}
 function fmtP(n){return n!=null&&n!==''&&!isNaN(n)?'$ '+Math.round(Number(n)).toLocaleString('es-CO'):''}
@@ -113,23 +117,22 @@ async function cargarTodo(){
   document.getElementById('btnRefresh').disabled=true;
   document.getElementById('btnRefresh').textContent='Cargando...';
   try{
-    // Cargar catálogos
-    const [rCat, rLogin] = await Promise.all([
-      apiGet({action:'catalogos'}),
-      apiGet({action:'login'})
-    ]);
-    if(rCat&&rCat.ok){DATA.inmuebles=rCat.inmuebles;DATA.clientes=rCat.clientes}
-    if(rLogin&&rLogin.ok){DATA.asesores=rLogin.asesores}
-
-    // Cargar todos los negocios (via mis_negocios con un ID que no filtre - usamos un truco: pedir todos)
-    // Alternativa: cargar directo desde el sheet
-    // Para simplicidad, vamos a hacer un GET especial
     const rAll = await apiGet({action:'todos_los_datos'});
     if(rAll&&rAll.ok){
-      DATA.arriendos=rAll.arriendos||[];
-      DATA.ventas=rAll.ventas||[];
-      DATA.comisiones=rAll.comisiones||[];
-      DATA.pipeline=rAll.pipeline||[];
+      DATA.asesores     = rAll.asesores     || [];
+      DATA.inmuebles    = rAll.inmuebles    || [];
+      DATA.clientes     = rAll.clientes     || [];
+      DATA.arriendos    = rAll.arriendos    || [];
+      DATA.ventas       = rAll.ventas       || [];
+      DATA.pipeline     = rAll.pipeline     || [];
+      DATA.comisiones   = rAll.comisiones   || [];
+      DATA.oficinas     = rAll.oficinas     || [];
+      DATA.origenes     = rAll.origenes     || [];
+      DATA.zonas        = rAll.zonas        || [];
+      DATA.acciones     = rAll.acciones     || [];
+      DATA.tipos_accion = rAll.tipos_accion || [];
+    } else {
+      throw new Error((rAll&&rAll.error)||'No se pudieron cargar los datos');
     }
 
     renderTodo();
@@ -154,8 +157,18 @@ function renderTodo(){
 function exportarExcel(){
   const wb=XLSX.utils.book_new();
   const sheets=[
-    ['Asesores',DATA.asesores],['Inmuebles',DATA.inmuebles],['Clientes',DATA.clientes],
-    ['Arriendos',DATA.arriendos],['Ventas',DATA.ventas],['Pipeline',DATA.pipeline],['Comisiones',DATA.comisiones]
+    ['Asesores',   DATA.asesores],
+    ['Inmuebles',  DATA.inmuebles],
+    ['Clientes',   DATA.clientes],
+    ['Arriendos',  DATA.arriendos],
+    ['Ventas',     DATA.ventas],
+    ['Pipeline',   DATA.pipeline],
+    ['Comisiones', DATA.comisiones],
+    ['Oficina',    DATA.oficinas],
+    ['Origen',     DATA.origenes],
+    ['Zona',       DATA.zonas],
+    ['Acciones',   DATA.acciones],
+    ['TipoAccion', DATA.tipos_accion]
   ];
   sheets.forEach(([name,data])=>{
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.length?data:[{}]),name);

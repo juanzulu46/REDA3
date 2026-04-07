@@ -226,7 +226,8 @@ function doGet(e) {
         oficinas: leerHoja(HOJAS.oficina),
         origenes: leerHoja(HOJAS.origen),
         zonas: leerHoja(HOJAS.zona),
-        acciones: leerHoja(HOJAS.acciones)
+        acciones: leerHoja(HOJAS.acciones),
+        tipos_accion: leerHoja(HOJAS.tipos_accion)
       });
     }
 
