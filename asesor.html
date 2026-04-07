@@ -610,15 +610,19 @@ const CAT = {
 };
 
 // ===== LÓGICA DE COMISIONES =====
-// Tabla de % por punta (sobre comisión completa de oficina)
+// Tabla de % por punta (siempre sobre el TOTAL de la comisión oficina)
 //   arriendo:     15% / 17.5% (con CI)
 //   venta sec:    20% / 22.5%
 //   venta primario captador: 15% / 17.5%
 //   venta primario cerrador: 30% / 32.5%
 // Empleado: dividir entre 1.3
-// Si officePct < 10%: factor = officePct × 10
-// Comisión asesor = % × comOficina × factor × (participación/100)
+// Comisión asesor = % × comOficina × (participación/100)
+// Cuando hay varios asesores en la misma punta, dividen la punta entre ellos
+// según su participación negociada (suma debe dar 100%)
 // Si tiene referido en su punta: -25% del 20% de su comisión bruta
+// IMPORTANTE TRANSPARENCIA: en arriendos, la empresa paga al asesor desde el
+// primer mes con dinero propio, mientras el cliente paga la comisión durante
+// toda la duración del contrato.
 function calcComisionAsesor(comisionOficina, vinculacion, conCirculo, tipoNeg, mercado, punta, officePct, participacion) {
   let pctFree;
   if (tipoNeg === 'arriendo') {
@@ -635,10 +639,8 @@ function calcComisionAsesor(comisionOficina, vinculacion, conCirculo, tipoNeg, m
       }
     }
   }
-  // Factor para comisiones bajas (típico ventas con 3%)
-  const factor = (officePct && officePct < 0.10) ? officePct * 10 : 1;
   const part = (Number(participacion) || 0) / 100;
-  let valor = pctFree * comisionOficina * factor * part;
+  let valor = pctFree * comisionOficina * part;
   if (vinculacion !== 'Freelance') valor = valor / 1.3;
   return valor;
 }
@@ -918,7 +920,7 @@ function recalcComisiones(tipo) {
   let gridHtml = `
     <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
     <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
-    <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv">${fmtP(empresaRecibe)}</span></div>
+    <div class="com-r-item"><span class="crl">Recibe la empresa</span><span class="crv" style="color:${empresaRecibe<0?'var(--rojo)':'#2e7d32'}">${fmtP(empresaRecibe)}</span></div>
   `;
   if (hayRefCap || hayRefCer) {
     gridHtml += `<div class="com-r-item"><span class="crl">Asesores (neto)</span><span class="crv">${fmtP(totalNeto)}</span></div>`;
@@ -935,6 +937,13 @@ function recalcComisiones(tipo) {
   }
   if (hayRefCer) {
     detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido cerrador:</strong> ${document.getElementById(prefix+'_refnombre_cer').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCer*0.20)}</strong></div>`;
+  }
+
+  // Aviso de transparencia para arriendos: la empresa paga al asesor el primer mes
+  if (isArr && totalBruto > 0) {
+    detHtml += `<div style="margin-top:14px;padding:12px 14px;background:#fff8e1;border-left:4px solid #ffc107;border-radius:6px;font-size:12px;color:#795548">
+      <strong>&#9888; Transparencia:</strong> En arriendos, la empresa paga la comisi&oacute;n al asesor (<strong>${fmtP(totalBruto)}</strong>) el <strong>primer mes</strong> con dinero propio. La comisi&oacute;n del cliente (${fmtP(comisionOficina)}) se cobra mes a mes durante toda la duraci&oacute;n del contrato.
+    </div>`;
   }
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
 }
