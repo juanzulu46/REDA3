@@ -109,6 +109,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .btn-guardar:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
 .btn-limpiar{background:var(--g100);color:var(--g600);border:1px solid var(--g300)}
 .btn-limpiar:hover{background:var(--g200)}
+.btn-cc{background:var(--azul);color:#fff;font-size:12px;padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-weight:600}
+.btn-cc:hover{opacity:.9}
+.btn-cc:disabled{opacity:.6;cursor:not-allowed}
+.neg-card .neg-actions{margin-top:10px;display:flex;justify-content:flex-end}
 
 /* SUCCESS */
 .success-panel{background:var(--verde-l);border:2px solid #a5d6a7;border-radius:10px;padding:32px;text-align:center;display:none;margin-bottom:24px}
@@ -1357,6 +1361,7 @@ function renderMisNegocios(){
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        <div class="neg-actions"><button class="btn btn-cc" onclick="imprimirCuentaCobro('arriendo','${a.id_arriendo}',this)">Imprimir cuenta de cobro</button></div>
       </div>`;
     });
 
@@ -1374,10 +1379,35 @@ function renderMisNegocios(){
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        <div class="neg-actions"><button class="btn btn-cc" onclick="imprimirCuentaCobro('venta','${v.id_venta}',this)">Imprimir cuenta de cobro</button></div>
       </div>`;
     });
   }
   cont.innerHTML=html;
+}
+
+async function imprimirCuentaCobro(tipo, idNegocio, btn){
+  if (!confirm('Se generará la cuenta de cobro y se enviará al gerente con copia a tu correo. ¿Continuar?')) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    const r = await apiPost({
+      action:'imprimir_cuenta_cobro',
+      id_asesor: asesorActual.id_asesor,
+      id_negocio: idNegocio,
+      tipo: tipo
+    });
+    if (r && r.ok) {
+      toast(r.mensaje || 'Cuenta de cobro enviada');
+      btn.textContent = 'Enviada \u2713';
+    } else {
+      toast((r && r.error) || 'Error al generar', 'er');
+      btn.disabled = false; btn.textContent = original;
+    }
+  } catch(e){
+    toast('Error: '+e.message, 'er');
+    btn.disabled = false; btn.textContent = original;
+  }
 }
 
 // ===== BONIFICACIONES =====

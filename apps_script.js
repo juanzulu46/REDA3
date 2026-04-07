@@ -12,6 +12,25 @@
 // 6. Copia la URL generada y pégala en index.html (variable SCRIPT_URL)
 // =====================================================================
 
+// ===== CONFIGURACIÓN CUENTA DE COBRO =====
+// *** IMPORTANTE: reemplaza estos valores antes de usar "Imprimir cuenta de cobro" ***
+// 1. Sube "Cuenta Cobro.docx" a Google Drive
+// 2. Ábrelo con Google Docs (Abrir con → Google Docs) — se crea una copia editable
+// 3. Edita el template reemplazando los datos fijos por estos placeholders EXACTOS:
+//      {{ciudad_emision}}, {{fecha_texto}}
+//      {{empresa_razon_social}}, {{empresa_nit}}
+//      {{asesor_nombre}}, {{asesor_cedula}}, {{asesor_ciudad_cc}}
+//      {{valor_numero}}, {{valor_letras}}
+//      {{concepto}}
+//      {{asesor_direccion}}
+//      {{banco}}, {{tipo_cuenta}}, {{numero_cuenta}}
+// 4. Copia el ID del Google Doc (de la URL: /document/d/ID_AQUI/edit) y pégalo abajo
+const EMPRESA_RAZON_SOCIAL = 'BIENES S.A.S';        // TODO: confirmar razón social
+const EMPRESA_NIT          = '900.144.609-8';       // TODO: confirmar NIT
+const CIUDAD_EMISION       = 'Pereira';
+const GERENTE_EMAIL        = 'german.zuluaga@a3inmobiliarios.com';
+const TEMPLATE_CUENTA_COBRO_ID = '1AuwcoDnsX_NX3k-jFe6xSUNQfWtgLT4Oy3sTynGAx5c';
+
 // ===== CONFIGURACIÓN =====
 // Nombres de las hojas en tu Google Sheet (deben existir)
 const HOJAS = {
@@ -30,7 +49,8 @@ const HOJAS = {
 
 // Columnas de cada hoja (en orden exacto)
 const COLUMNAS = {
-  asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado'],
+  asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado',
+             'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email'],
   inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
   clientes: ['id_cliente', 'nombre', 'telefono', 'email'],
   arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
@@ -419,6 +439,115 @@ function doPost(e) {
       return jsonResponse({ ok: true, id: datos.id_cliente, mensaje: 'Cliente registrado' });
     }
 
+    // --- IMPRIMIR CUENTA DE COBRO ---
+    // body: { action, id_asesor, id_negocio, tipo: 'arriendo'|'venta' }
+    // Llena el template, exporta PDF y envía correo a gerente con copia al asesor
+    if (action === 'imprimir_cuenta_cobro') {
+      var idAsesor  = body.id_asesor;
+      var idNegocio = body.id_negocio;
+      var tipoNeg   = body.tipo; // 'arriendo' | 'venta'
+      if (!idAsesor || !idNegocio || !tipoNeg) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Faltan parámetros (id_asesor, id_negocio, tipo)' });
+      }
+      if (!TEMPLATE_CUENTA_COBRO_ID || TEMPLATE_CUENTA_COBRO_ID === 'PEGAR_ID_DEL_GOOGLE_DOC_AQUI') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Falta configurar TEMPLATE_CUENTA_COBRO_ID en apps_script.js' });
+      }
+
+      // Cargar asesor
+      var asesores = leerHoja(HOJAS.asesores);
+      var asesor = asesores.find(function(a){ return a.id_asesor === idAsesor; });
+      if (!asesor) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
+
+      // Cargar negocio + inmueble
+      var negocio, mesNeg, anoNeg, conceptoBase;
+      var inmuebles = leerHoja(HOJAS.inmuebles);
+      if (tipoNeg === 'arriendo') {
+        negocio = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idNegocio; });
+        if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo no encontrado' }); }
+        mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
+        var inmA = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
+        conceptoBase = 'Comisión por arriendo del inmueble ' + (inmA ? inmA.nombre : negocio.id_inmueble);
+      } else {
+        negocio = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idNegocio; });
+        if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta no encontrada' }); }
+        mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
+        var inmV = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
+        conceptoBase = 'Comisión por venta del inmueble ' + (inmV ? inmV.nombre : negocio.id_inmueble);
+      }
+
+      // Sumar comisiones del asesor en este negocio (puede tener varias puntas)
+      var comisiones = leerHoja(HOJAS.comisiones);
+      var misCom = comisiones.filter(function(c){
+        return c.id_asesor === idAsesor && c.id_negocio === idNegocio;
+      });
+      if (misCom.length === 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No hay comisión registrada para este asesor en este negocio' });
+      }
+      var valorTotal = misCom.reduce(function(s,c){ return s + (Number(c.valor_comision)||0); }, 0);
+      valorTotal = Math.round(valorTotal);
+
+      // Fecha + concepto final
+      var hoy = new Date();
+      var mesesNom = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      var fechaTexto = hoy.getDate() + ' de ' + mesesNom[hoy.getMonth()] + ' de ' + hoy.getFullYear();
+      var concepto = conceptoBase + (mesNeg ? ' — mes de ' + mesesNom[mesNeg-1] + ' de ' + (anoNeg||hoy.getFullYear()) : '');
+
+      // Reemplazos
+      var reemplazos = {
+        'ciudad_emision':       CIUDAD_EMISION,
+        'fecha_texto':          fechaTexto,
+        'empresa_razon_social': EMPRESA_RAZON_SOCIAL,
+        'empresa_nit':          EMPRESA_NIT,
+        'asesor_nombre':        asesor.nombre || '',
+        'asesor_cedula':        asesor.cedula || '',
+        'asesor_ciudad_cc':     asesor.ciudad_cc || '',
+        'valor_numero':         '$' + Number(valorTotal).toLocaleString('es-CO'),
+        'valor_letras':         numeroALetras(valorTotal) + ' pesos M/cte.',
+        'concepto':             concepto,
+        'asesor_direccion':     asesor.direccion || '',
+        'banco':                asesor.banco || '',
+        'tipo_cuenta':          asesor.tipo_cuenta || '',
+        'numero_cuenta':        asesor.numero_cuenta || ''
+      };
+
+      // Copiar template, reemplazar, exportar PDF
+      var templateFile = DriveApp.getFileById(TEMPLATE_CUENTA_COBRO_ID);
+      var nombreCopia = 'Cuenta de cobro ' + (asesor.nombre||'') + ' - ' + idNegocio;
+      var copia = templateFile.makeCopy(nombreCopia);
+      var doc = DocumentApp.openById(copia.getId());
+      var docBody = doc.getBody();
+      Object.keys(reemplazos).forEach(function(k){
+        docBody.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazos[k]));
+      });
+      doc.saveAndClose();
+
+      var pdfBlob = copia.getAs('application/pdf').setName(nombreCopia + '.pdf');
+
+      // Enviar correo
+      var asunto = 'Cuenta de cobro — ' + (asesor.nombre||'') + ' — ' + idNegocio;
+      var cuerpo = 'Adjunto cuenta de cobro generada automáticamente por el portal REDA3.\n\n' +
+                   'Asesor: ' + (asesor.nombre||'') + '\n' +
+                   'Negocio: ' + idNegocio + ' (' + tipoNeg + ')\n' +
+                   'Concepto: ' + concepto + '\n' +
+                   'Valor: ' + reemplazos.valor_numero + '\n';
+      var opts = { attachments: [pdfBlob] };
+      if (asesor.email) opts.cc = asesor.email;
+      MailApp.sendEmail(GERENTE_EMAIL, asunto, cuerpo, opts);
+
+      // Borrar copia temporal del Doc (el PDF ya fue enviado)
+      copia.setTrashed(true);
+
+      lock.releaseLock();
+      return jsonResponse({
+        ok:true,
+        mensaje:'Cuenta de cobro enviada al gerente' + (asesor.email ? ' (con copia a ' + asesor.email + ')' : ''),
+        valor: valorTotal
+      });
+    }
+
     // --- REGISTRAR ACCIÓN COMERCIAL ---
     if (action === 'registrar_accion') {
       const datos = body.datos;
@@ -440,6 +569,52 @@ function doPost(e) {
     lock.releaseLock();
     return jsonResponse({ ok: false, error: err.message });
   }
+}
+
+// ===== NÚMERO A LETRAS (español, enteros positivos hasta miles de millones) =====
+function numeroALetras(num) {
+  num = Math.floor(Math.abs(Number(num) || 0));
+  if (num === 0) return 'Cero';
+  var UNI = ['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez',
+             'once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve',
+             'veinte','veintiuno','veintidós','veintitrés','veinticuatro','veinticinco','veintiséis','veintisiete','veintiocho','veintinueve'];
+  var DEC = ['','','','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+  var CEN = ['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
+
+  function menor1000(n) {
+    if (n === 0) return '';
+    if (n === 100) return 'cien';
+    var c = Math.floor(n/100), r = n%100;
+    var s = '';
+    if (c) s += CEN[c];
+    if (r) {
+      if (s) s += ' ';
+      if (r < 30) s += UNI[r];
+      else {
+        var d = Math.floor(r/10), u = r%10;
+        s += DEC[d] + (u ? ' y ' + UNI[u] : '');
+      }
+    }
+    return s;
+  }
+
+  var partes = [];
+  var millones = Math.floor(num / 1000000);
+  var miles    = Math.floor((num % 1000000) / 1000);
+  var resto    = num % 1000;
+
+  if (millones) {
+    partes.push(millones === 1 ? 'un millón' : menor1000(millones) + ' millones');
+  }
+  if (miles) {
+    partes.push(miles === 1 ? 'mil' : menor1000(miles) + ' mil');
+  }
+  if (resto) {
+    partes.push(menor1000(resto));
+  }
+  var txt = partes.join(' ').trim();
+  // Capitalizar primera letra
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
 }
 
 // ===== INICIALIZAR HOJAS =====
