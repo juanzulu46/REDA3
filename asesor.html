@@ -290,7 +290,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Valor y comisi&oacute;n oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor del canon mensual (COP) <span class="req">*</span></label><input type="number" id="ar_canon" min="0" placeholder="Ej: 1300000" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;nto paga el inquilino al mes</div></div>
-        <div class="ff"><label>Valor administraci&oacute;n (COP) <span class="opt">(opcional)</span></label><input type="number" id="ar_admon" min="0" placeholder="Ej: 200000"><div class="hint">Cuota de administraci&oacute;n mensual del inmueble</div></div>
+        <div class="ff"><label>Valor administraci&oacute;n (COP) <span class="req">*</span></label><input type="number" id="ar_admon" min="0" placeholder="Ej: 200000" oninput="calcularComisionArr()"><div class="hint">Cuota de administraci&oacute;n mensual del inmueble (si no aplica, escriba 0)</div></div>
         <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
         <div class="ff">&nbsp;</div>
 
@@ -871,13 +871,16 @@ function recalcComisiones(tipo) {
     ? (Number(document.getElementById('ar_pct').value)||0)
     : (Number(document.getElementById('v_pct').value)||0);
   const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const admon = isArr ? (Number(document.getElementById('ar_admon').value)||0) : 0;
+  // En arriendo, la base completa es canon + administración
+  const canonTotal = canon + admon;
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
-  const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
+  const comisionOficina = isArr ? canonTotal * officePct : valorVenta * officePct;
   // Base para cálculo de comisión del asesor:
-  //   arriendo → canon × factor (factor = officePct × 10 si ≤ 20%, sino 1)
+  //   arriendo → (canon + admon) × factor (factor = officePct × 10 si ≤ 20%, sino 1)
   //   venta    → comisión de la oficina
   const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canon * factorArr : comisionOficina;
+  const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
 
   if (!comisionOficina && !baseAsesor) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
@@ -993,10 +996,12 @@ function recolectarComisiones(tipo) {
     ? (Number(document.getElementById('ar_pct').value)||0)
     : (Number(document.getElementById('v_pct').value)||0);
   const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const admon = isArr ? (Number(document.getElementById('ar_admon').value)||0) : 0;
+  const canonTotal = canon + admon;
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
-  const comisionOficina = isArr ? canon * officePct : valorVenta * officePct;
+  const comisionOficina = isArr ? canonTotal * officePct : valorVenta * officePct;
   const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canon * factorArr : comisionOficina;
+  const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
   const prefix = isArr ? 'ar' : 'v';
@@ -1041,6 +1046,9 @@ async function guardarArriendo() {
   const arrendador=val('ar_arrendador','Escoja el arrendador');if(!arrendador)return;
   const arrendatario=val('ar_arrendatario','Escoja el arrendatario');if(!arrendatario)return;
   const canon=val('ar_canon','Escriba el valor del canon');if(!canon)return;
+  const admonRaw=document.getElementById('ar_admon').value.trim();
+  if(admonRaw===''){toast('Escriba el valor de administraci\u00f3n (use 0 si no aplica)','er');document.getElementById('ar_admon').focus();return}
+  const admon=Number(admonRaw);
   const pct=val('ar_pct','Escoja el porcentaje de comisi\u00f3n');if(!pct)return;
   const ofcap=val('ar_ofcap','Escoja la oficina de captaci\u00f3n');if(!ofcap)return;
   const orgcap=val('ar_orgcap','Escoja el origen de captaci\u00f3n');if(!orgcap)return;
@@ -1069,7 +1077,7 @@ async function guardarArriendo() {
         mes: Number(mes), mercado, id_inmueble: inmueble,
         id_arrendador: arrendador, id_arrendatario: arrendatario,
         valor_canon: Number(canon),
-        administracion: Number(document.getElementById('ar_admon').value) || '',
+        administracion: admon,
         pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
@@ -1460,10 +1468,12 @@ function calcRefPuntaParaGuardar(tipo, punta) {
 
   const officePct = Number(document.getElementById(prefix + '_pct').value) || 0;
   const canon = isArr ? (Number(document.getElementById('ar_canon').value)||0) : 0;
+  const admon = isArr ? (Number(document.getElementById('ar_admon').value)||0) : 0;
+  const canonTotal = canon + admon;
   const valorVenta = !isArr ? (Number(document.getElementById('v_valorbase').value)||0) : 0;
-  // Base: arriendo = canon × factor, venta = comisión oficina
+  // Base: arriendo = (canon+admon) × factor, venta = comisión oficina
   const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canon * factorArr : (valorVenta * officePct);
+  const baseAsesor = isArr ? canonTotal * factorArr : (valorVenta * officePct);
   if (!baseAsesor) return 0;
   const mercado = document.getElementById(prefix + '_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
