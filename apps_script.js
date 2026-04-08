@@ -212,25 +212,6 @@ function doGet(e) {
       return jsonResponse({ ok: true, id: siguienteId(hoja, prefijo) });
     }
 
-    // --- TODOS LOS DATOS (para jefe comercial) ---
-    if (action === 'todos_los_datos') {
-      return jsonResponse({
-        ok: true,
-        asesores: leerHoja(HOJAS.asesores),
-        inmuebles: leerHoja(HOJAS.inmuebles),
-        clientes: leerHoja(HOJAS.clientes),
-        arriendos: leerHoja(HOJAS.arriendos),
-        ventas: leerHoja(HOJAS.ventas),
-        pipeline: leerHoja(HOJAS.pipeline),
-        comisiones: leerHoja(HOJAS.comisiones),
-        oficinas: leerHoja(HOJAS.oficina),
-        origenes: leerHoja(HOJAS.origen),
-        zonas: leerHoja(HOJAS.zona),
-        acciones: leerHoja(HOJAS.acciones),
-        tipos_accion: leerHoja(HOJAS.tipos_accion)
-      });
-    }
-
     // --- MIS BONIFICACIONES: calcula bonificación del mes para un asesor ---
     if (action === 'mis_bonificaciones') {
       var idAsesorB = params.id_asesor || '';

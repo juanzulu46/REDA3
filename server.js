@@ -5,7 +5,7 @@ const path = require('path');
 const url = require('url');
 
 const PORT = process.env.PORT || 8080;
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwvk6g9qhm_fqLbyjMspkvTf4MitW0gd0K-kvAU0KSmpYngxquq0XWV5mWS8EU8ATwk/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeBVMDSD9-giQaUTCIhvnLu6RlQLqDC3t8dtGMfUPi-cULruHc-_QrISZqPUXXfog_/exec';
 
 const MIME = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json','.xlsx':'application/octet-stream'};
 
