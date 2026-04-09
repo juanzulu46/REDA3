@@ -192,33 +192,33 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
     return (Number(a.orden) || 0) - (Number(b.orden) || 0);
   });
 
-  // Evaluación en cascada: el primer escalón cuyas condiciones cumple el asesor
+  // Evaluación en cascada: el primer escalón cuyas condiciones cumple el asesor.
+  // Nota: PIEDRA tiene un caso especial — si cumple acciones pero no el umbral monetario,
+  // y generó comisión > 0, cae en PIEDRA con fijo medio (PIEDRA 1/2). Esto se evalúa
+  // dentro del mismo paso de PIEDRA para que tenga prioridad sobre ARENA en la cascada.
   var escalonAsignado = null;
   var esMedio = false;
   for (var i = 0; i < escalones.length; i++) {
     var e = escalones[i];
     var minCom = Number(e.min_comision_oficina) || 0;
     var minAcc = Number(e.min_acciones) || 0;
+
+    // Caso normal: cumple ambos umbrales
     if (comisionGeneradaOficina >= minCom && numAcciones >= minAcc) {
       escalonAsignado = e;
       esMedio = false;
       break;
     }
-  }
 
-  // Caso especial PIEDRA media: si no cumplió el umbral monetario de ningún escalón
-  // pero sí hizo las acciones mínimas de PIEDRA Y generó algo de comisión, cae en PIEDRA con fijo medio.
-  // Si comisión == 0, NO es PIEDRA media → cae en ARENA (solo hizo acciones, no comisionó).
-  if (!escalonAsignado && comisionGeneradaOficina > 0) {
-    for (var j = 0; j < escalones.length; j++) {
-      var ej = escalones[j];
-      if (String(ej.categoria).toUpperCase() === 'PIEDRA' &&
-          Number(ej.fijo_medio) > 0 &&
-          numAcciones >= (Number(ej.min_acciones) || 0)) {
-        escalonAsignado = ej;
-        esMedio = true;
-        break;
-      }
+    // Caso especial PIEDRA medio: cumple acciones y generó comisión > 0 pero no llegó al umbral
+    if (String(e.categoria).toUpperCase() === 'PIEDRA' &&
+        Number(e.fijo_medio) > 0 &&
+        numAcciones >= minAcc &&
+        comisionGeneradaOficina > 0 &&
+        comisionGeneradaOficina < minCom) {
+      escalonAsignado = e;
+      esMedio = true;
+      break;
     }
   }
 
