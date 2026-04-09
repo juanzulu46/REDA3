@@ -85,6 +85,38 @@ const COLUMNAS = {
 
 // ===== UTILIDADES =====
 
+// Función de un solo uso para forzar la autorización de Drive, Documents y Gmail.
+// Ejecútala manualmente desde el editor de Apps Script (▶ Ejecutar → autorizarPermisos)
+// la primera vez. SIN try/catch para que el primer error de permisos dispare el popup
+// de autorización. Después de aceptar permisos, vuelve a ejecutarla y debería terminar OK.
+function autorizarPermisos() {
+  // 1) Drive: leer carpeta raíz para forzar scope drive
+  Logger.log('Probando DriveApp...');
+  var rootName = DriveApp.getRootFolder().getName();
+  Logger.log('DriveApp OK - root: ' + rootName);
+
+  // 2) Drive + Documents: abrir el template para forzar scope documents
+  Logger.log('Probando template del Doc...');
+  var f = DriveApp.getFileById(TEMPLATE_CUENTA_COBRO_ID);
+  Logger.log('Template encontrado: ' + f.getName());
+  var doc = DocumentApp.openById(TEMPLATE_CUENTA_COBRO_ID);
+  Logger.log('DocumentApp OK - doc: ' + doc.getName());
+
+  // 2b) Forzar scope drive COMPLETO (no solo readonly): hacer una copia y borrarla
+  // Esto es necesario porque el flujo real de cuenta de cobro usa makeCopy().
+  Logger.log('Probando makeCopy (scope drive completo)...');
+  var copiaTemp = f.makeCopy('__test_autorizacion_borrar__');
+  copiaTemp.setTrashed(true);
+  Logger.log('makeCopy OK - copia temporal creada y borrada');
+
+  // 3) Mail: consultar cuota para forzar scope send_mail
+  Logger.log('Probando MailApp...');
+  var quota = MailApp.getRemainingDailyQuota();
+  Logger.log('MailApp OK - cuota restante: ' + quota);
+
+  Logger.log('=== Autorización completada exitosamente ===');
+}
+
 function getSheet(nombre) {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombre);
 }
