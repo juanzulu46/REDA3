@@ -45,7 +45,9 @@ const HOJAS = {
   origen: 'Origen',
   zona: 'Zona',
   acciones: 'Acciones',
-  tipos_accion: 'TipoAccion'
+  tipos_accion: 'TipoAccion',
+  bonificaciones: 'Bonificaciones',
+  parametros: 'Parametros'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -122,6 +124,114 @@ function agregarFila(nombreHoja, columnas, datos) {
   if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
   const fila = columnas.map(col => datos[col] !== undefined ? datos[col] : '');
   sheet.appendRow(fila);
+}
+
+// Calcula la categoría de bonificación de un asesor en un mes específico.
+// Usa los datos pre-cargados (datos.arriendos, ventas, comisiones, acciones, bonificaciones)
+// para evitar releer las hojas.
+// Retorna: { categoria, esMedio, escalon, comisionGeneradaOficina, totalRecibido, numAcciones }
+function calcularCategoriaMes(idAsesor, mes, datos) {
+  var arriendos = datos.arriendos;
+  var ventas = datos.ventas;
+  var comisiones = datos.comisiones;
+  var acciones = datos.acciones;
+  var bonificaciones = datos.bonificaciones;
+
+  // Comisiones del asesor
+  var misCom = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
+  var negociosIds = misCom.map(function(c) { return c.id_negocio; });
+
+  // Comisión generada a la oficina por las puntas que participa (50% por punta)
+  var comisionGeneradaOficina = 0;
+  arriendos.forEach(function(a) {
+    if (parseInt(a.mes, 10) !== mes) return;
+    if (negociosIds.indexOf(a.id_arriendo) === -1) return;
+    var puntas = misCom.filter(function(c) { return c.id_negocio === a.id_arriendo; }).length;
+    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * puntas;
+  });
+  ventas.forEach(function(v) {
+    if (parseInt(v.mes, 10) !== mes) return;
+    if (negociosIds.indexOf(v.id_venta) === -1) return;
+    var puntas = misCom.filter(function(c) { return c.id_negocio === v.id_venta; }).length;
+    comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * puntas;
+  });
+
+  // Total recibido del mes (lo que efectivamente cobra)
+  var totalRecibido = 0;
+  misCom.forEach(function(c) {
+    var negocio = arriendos.find(function(a) { return a.id_arriendo === c.id_negocio; }) ||
+                  ventas.find(function(v) { return v.id_venta === c.id_negocio; });
+    if (negocio && parseInt(negocio.mes, 10) === mes) {
+      totalRecibido += Number(c.valor_comision) || 0;
+    }
+  });
+
+  // Acciones comerciales del mes
+  var numAcciones = acciones.filter(function(ac) {
+    return ac.id_asesor === idAsesor && parseInt(ac.mes, 10) === mes;
+  }).length;
+
+  // Filtrar escalones vigentes para el mes consultado y ordenar por 'orden' asc
+  // (asume año actual; vigente_desde/vigente_hasta son strings YYYY-MM-DD)
+  var escalones = bonificaciones.slice().sort(function(a, b) {
+    return (Number(a.orden) || 0) - (Number(b.orden) || 0);
+  });
+
+  // Evaluación en cascada: el primer escalón cuyas condiciones cumple el asesor
+  var escalonAsignado = null;
+  var esMedio = false;
+  for (var i = 0; i < escalones.length; i++) {
+    var e = escalones[i];
+    var minCom = Number(e.min_comision_oficina) || 0;
+    var minAcc = Number(e.min_acciones) || 0;
+    if (comisionGeneradaOficina >= minCom && numAcciones >= minAcc) {
+      escalonAsignado = e;
+      esMedio = false;
+      break;
+    }
+  }
+
+  // Caso especial PIEDRA media: si no cumplió el umbral monetario de ningún escalón
+  // pero sí hizo las acciones mínimas de PIEDRA Y generó algo de comisión, cae en PIEDRA con fijo medio.
+  // Si comisión == 0, NO es PIEDRA media → cae en ARENA (solo hizo acciones, no comisionó).
+  if (!escalonAsignado && comisionGeneradaOficina > 0) {
+    for (var j = 0; j < escalones.length; j++) {
+      var ej = escalones[j];
+      if (String(ej.categoria).toUpperCase() === 'PIEDRA' &&
+          Number(ej.fijo_medio) > 0 &&
+          numAcciones >= (Number(ej.min_acciones) || 0)) {
+        escalonAsignado = ej;
+        esMedio = true;
+        break;
+      }
+    }
+  }
+
+  // Si aún no cae en ninguno: ARENA (cumple acciones mínimas pero no comisión) o ARENA MOVEDIZA
+  var categoria;
+  if (escalonAsignado) {
+    categoria = String(escalonAsignado.categoria).toUpperCase();
+  } else {
+    // Buscar fila ARENA en la tabla para usar su min_acciones
+    var arenaRow = escalones.find(function(e) { return String(e.categoria).toUpperCase() === 'ARENA'; });
+    var arenaMin = arenaRow ? (Number(arenaRow.min_acciones) || 5) : 5;
+    if (numAcciones >= arenaMin) {
+      categoria = 'ARENA';
+      escalonAsignado = arenaRow || null;
+    } else {
+      categoria = 'ARENA MOVEDIZA';
+      escalonAsignado = null;
+    }
+  }
+
+  return {
+    categoria: categoria,
+    esMedio: esMedio,
+    escalon: escalonAsignado,
+    comisionGeneradaOficina: comisionGeneradaOficina,
+    totalRecibido: totalRecibido,
+    numAcciones: numAcciones
+  };
 }
 
 // Respuesta JSON con CORS
@@ -218,80 +328,41 @@ function doGet(e) {
       var mesB = parseInt(params.mes || '0', 10);
       if (!idAsesorB || !mesB) return jsonResponse({ ok: false, error: 'Faltan parámetros (id_asesor, mes)' });
 
-      var arriendosB = leerHoja(HOJAS.arriendos);
-      var ventasB = leerHoja(HOJAS.ventas);
-      var comisionesB = leerHoja(HOJAS.comisiones);
-      var accionesB = leerHoja(HOJAS.acciones);
+      var datosBon = {
+        arriendos: leerHoja(HOJAS.arriendos),
+        ventas: leerHoja(HOJAS.ventas),
+        comisiones: leerHoja(HOJAS.comisiones),
+        acciones: leerHoja(HOJAS.acciones),
+        bonificaciones: leerHoja(HOJAS.bonificaciones)
+      };
 
-      // Identificar negocios del mes donde participa el asesor
-      var misCom = comisionesB.filter(function(c) { return c.id_asesor === idAsesorB; });
-      var negociosIds = misCom.map(function(c) { return c.id_negocio; });
+      // Categoría del mes actual
+      var actual = calcularCategoriaMes(idAsesorB, mesB, datosBon);
 
-      // Comisión generada a la oficina por las puntas que participa (50% por punta)
-      var comisionGeneradaOficina = 0;
-      var totalRecibido = 0;
-
-      // Arriendos del mes
-      arriendosB.forEach(function(a) {
-        if (parseInt(a.mes, 10) !== mesB) return;
-        if (negociosIds.indexOf(a.id_arriendo) === -1) return;
-        // Cuántas puntas tiene el asesor en este negocio
-        var puntas = misCom.filter(function(c) { return c.id_negocio === a.id_arriendo; }).length;
-        comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * puntas;
-      });
-      // Ventas del mes
-      ventasB.forEach(function(v) {
-        if (parseInt(v.mes, 10) !== mesB) return;
-        if (negociosIds.indexOf(v.id_venta) === -1) return;
-        var puntas = misCom.filter(function(c) { return c.id_negocio === v.id_venta; }).length;
-        comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * puntas;
-      });
-
-      // Total recibido del mes (lo que efectivamente cobra)
-      misCom.forEach(function(c) {
-        var negocio = arriendosB.find(function(a) { return a.id_arriendo === c.id_negocio; }) ||
-                      ventasB.find(function(v) { return v.id_venta === c.id_negocio; });
-        if (negocio && parseInt(negocio.mes, 10) === mesB) {
-          totalRecibido += Number(c.valor_comision) || 0;
+      // Determinar pct_variable según continuidad con el mes anterior
+      // Regla: enero (mes 1) siempre arranca en pct_variable_inicial (4%)
+      var esContinuidad = false;
+      var catAnterior = null;
+      if (mesB > 1 && actual.escalon) {
+        var anterior = calcularCategoriaMes(idAsesorB, mesB - 1, datosBon);
+        catAnterior = anterior.categoria;
+        // PIEDRA y PIEDRA con fijo medio cuentan como la misma categoría
+        if (anterior.categoria === actual.categoria) {
+          esContinuidad = true;
         }
-      });
+      }
 
-      // Acciones comerciales del mes
-      var misAcciones = accionesB.filter(function(ac) {
-        return ac.id_asesor === idAsesorB && parseInt(ac.mes, 10) === mesB;
-      });
-      var numAcciones = misAcciones.length;
-
-      // Determinar categoría
-      var categoria = 'ARENA MOVEDIZA';
+      var pctVariable = 0;
       var fijo = 0;
-      var pctVariable = mesB === 1 ? 0.04 : 0.05;
       var variable = 0;
-
-      if (comisionGeneradaOficina >= 14085000 && numAcciones >= 10) {
-        categoria = 'ORO';
-        fijo = 563400;
-        variable = comisionGeneradaOficina * pctVariable;
-      } else if (comisionGeneradaOficina >= 10955000 && numAcciones >= 10) {
-        categoria = 'PLATA';
-        fijo = 438200;
-        variable = comisionGeneradaOficina * pctVariable;
-      } else if (comisionGeneradaOficina >= 7825000 && numAcciones >= 5) {
-        categoria = 'BRONCE';
-        fijo = 313000;
-        variable = comisionGeneradaOficina * pctVariable;
-      } else if (comisionGeneradaOficina >= 3260417 && numAcciones >= 5) {
-        categoria = 'PIEDRA';
-        fijo = 156500;
-        variable = comisionGeneradaOficina * pctVariable;
-      } else if (comisionGeneradaOficina < 3260417 && numAcciones >= 5) {
-        categoria = 'PIEDRA (medio)';
-        fijo = 78250;
-        variable = comisionGeneradaOficina * pctVariable;
-      } else if (numAcciones >= 5) {
-        categoria = 'ARENA';
-        fijo = 0;
-        variable = 0;
+      if (actual.escalon) {
+        pctVariable = esContinuidad
+          ? Number(actual.escalon.pct_variable_continuidad) || 0
+          : Number(actual.escalon.pct_variable_inicial) || 0;
+        fijo = actual.esMedio
+          ? (Number(actual.escalon.fijo_medio) || 0)
+          : (Number(actual.escalon.fijo) || 0);
+        variable = actual.comisionGeneradaOficina * pctVariable;
       }
 
       var bonificacionTotal = fijo + variable;
@@ -299,14 +370,17 @@ function doGet(e) {
       return jsonResponse({
         ok: true,
         mes: mesB,
-        comision_generada_oficina: comisionGeneradaOficina,
-        total_recibido: totalRecibido,
-        num_acciones: numAcciones,
-        categoria: categoria,
+        comision_generada_oficina: actual.comisionGeneradaOficina,
+        total_recibido: actual.totalRecibido,
+        num_acciones: actual.numAcciones,
+        categoria: actual.categoria,
+        es_medio: actual.esMedio,
         bonificacion_fija: fijo,
         bonificacion_variable: variable,
         bonificacion_total: bonificacionTotal,
-        pct_variable: pctVariable
+        pct_variable: pctVariable,
+        es_continuidad: esContinuidad,
+        categoria_mes_anterior: catAnterior
       });
     }
 

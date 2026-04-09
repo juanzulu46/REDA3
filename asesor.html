@@ -1436,8 +1436,12 @@ async function cargarBonificaciones(mes) {
     if (!r || !r.ok) { cont.innerHTML = '<div class="neg-empty">Error: '+(r&&r.error||'desconocido')+'</div>'; return; }
 
     const cat = r.categoria || 'ARENA MOVEDIZA';
+    const catLabel = r.es_medio ? cat + ' (1/2 fijo)' : cat;
     const catKey = cat.replace(/[ ()]/g, '_');
     const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const continuidadLabel = r.es_continuidad
+      ? 'Continuidad en ' + cat + ' &rarr; 5%'
+      : (r.pct_variable > 0 ? 'Primer mes en ' + cat + ' &rarr; 4%' : '');
 
     let html = `
       <div class="bon-mes-sel">
@@ -1448,22 +1452,25 @@ async function cargarBonificaciones(mes) {
       </div>
       <div class="bon-hero cat-${catKey}">
         <div class="bon-mes">Bonificaci&oacute;n de ${meses[mes]}</div>
-        <div class="bon-cat">${cat}</div>
+        <div class="bon-cat">${catLabel}</div>
         <div class="bon-total">${fmtP(r.bonificacion_total)}</div>
+        ${continuidadLabel ? '<div style="font-size:12px;opacity:0.85;margin-top:6px">'+continuidadLabel+'</div>' : ''}
       </div>
       <div class="bon-grid">
         <div class="bon-stat"><div class="bs-label">Comisi&oacute;n generada a oficina</div><div class="bs-val">${fmtP(r.comision_generada_oficina)}</div></div>
         <div class="bon-stat"><div class="bs-label">Acciones comerciales</div><div class="bs-val">${r.num_acciones}</div></div>
         <div class="bon-stat v"><div class="bs-label">Total recibido (comisiones)</div><div class="bs-val">${fmtP(r.total_recibido)}</div></div>
-        <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n fija</div><div class="bs-val">${fmtP(r.bonificacion_fija)}</div></div>
+        <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n fija${r.es_medio?' (1/2)':''}</div><div class="bs-val">${fmtP(r.bonificacion_fija)}</div></div>
         <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n variable (${(r.pct_variable*100).toFixed(0)}%)</div><div class="bs-val">${fmtP(r.bonificacion_variable)}</div></div>
       </div>
       <div style="background:var(--g50);padding:18px;border-radius:8px;font-size:12px;color:var(--g600)">
         <strong style="color:var(--azul);font-size:13px">Cómo se calcula:</strong><br>
         &bull; <strong>ORO</strong>: ≥ $14.085.000 + 10 acciones &nbsp;&bull; <strong>PLATA</strong>: ≥ $10.955.000 + 10 acciones<br>
-        &bull; <strong>BRONCE</strong>: ≥ $7.825.000 + 5 acciones &nbsp;&bull; <strong>PIEDRA</strong>: ≥ $3.260.417 + 5 acciones<br>
-        &bull; <strong>ARENA</strong>: cualquier comisi&oacute;n + 5 acciones (sin bonificaci&oacute;n)<br>
-        &bull; Variable = % sobre comisi&oacute;n generada a oficina (4% mes 1, 5% siguientes)
+        &bull; <strong>BRONCE</strong>: ≥ $7.825.000 + 5 acciones &nbsp;&bull; <strong>PIEDRA</strong>: ≥ $3.912.500 + 5 acciones<br>
+        &bull; <strong>PIEDRA 1/2 fijo</strong>: 5 acciones + comisi&oacute;n inferior al umbral &rarr; medio fijo + variable<br>
+        &bull; <strong>ARENA</strong>: 5 acciones sin generar comisi&oacute;n (sin bonificaci&oacute;n)<br>
+        &bull; <strong>Variable</strong>: 4% el primer mes en una categor&iacute;a, 5% si contin&uacute;a en la misma. Si cambia de categor&iacute;a vuelve a 4%.<br>
+        &bull; Enero siempre arranca en 4%.
       </div>
     `;
     cont.innerHTML = html;
