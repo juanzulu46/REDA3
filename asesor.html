@@ -1429,6 +1429,7 @@ async function imprimirCuentaCobro(tipo, idNegocio, btn){
 // ===== BONIFICACIONES =====
 async function cargarBonificaciones(mes) {
   const cont = document.getElementById('bonContent');
+  mes = parseInt(mes, 10);
   if (!mes) mes = (new Date()).getMonth() + 1;
   cont.innerHTML = '<div class="loading"><span class="spinner"></span> Cargando bonificaci&oacute;n...</div>';
   try {
