@@ -141,19 +141,34 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   var misCom = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
   var negociosIds = misCom.map(function(c) { return c.id_negocio; });
 
-  // Comisión generada a la oficina por las puntas que participa (50% por punta)
+  // Comisión generada a la oficina (50% por punta, ponderado por participación del asesor en cada punta).
+  // Cada fila en Comisiones representa una punta del asesor en un negocio. El campo 'participacion'
+  // (entre 0 y 1) indica qué fracción de esa punta le corresponde cuando es compartida con otros asesores.
+  // Si participacion está vacío, se asume 1 (punta completa).
   var comisionGeneradaOficina = 0;
   arriendos.forEach(function(a) {
     if (parseInt(a.mes, 10) !== mes) return;
     if (negociosIds.indexOf(a.id_arriendo) === -1) return;
-    var puntas = misCom.filter(function(c) { return c.id_negocio === a.id_arriendo; }).length;
-    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * puntas;
+    var sumPart = misCom
+      .filter(function(c) { return c.id_negocio === a.id_arriendo; })
+      .reduce(function(acc, c) {
+        var p = c.participacion === '' || c.participacion === null || c.participacion === undefined
+          ? 1 : (Number(c.participacion) || 0);
+        return acc + p;
+      }, 0);
+    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * sumPart;
   });
   ventas.forEach(function(v) {
     if (parseInt(v.mes, 10) !== mes) return;
     if (negociosIds.indexOf(v.id_venta) === -1) return;
-    var puntas = misCom.filter(function(c) { return c.id_negocio === v.id_venta; }).length;
-    comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * puntas;
+    var sumPart = misCom
+      .filter(function(c) { return c.id_negocio === v.id_venta; })
+      .reduce(function(acc, c) {
+        var p = c.participacion === '' || c.participacion === null || c.participacion === undefined
+          ? 1 : (Number(c.participacion) || 0);
+        return acc + p;
+      }, 0);
+    comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * sumPart;
   });
 
   // Total recibido del mes (lo que efectivamente cobra)
