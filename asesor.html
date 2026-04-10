@@ -1459,27 +1459,9 @@ function renderMisNegocios(){
       const misCom=comisionesFiltradas.filter(c=>c.id_negocio===v.id_venta);
       const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
       const puntas=misCom.map(c=>c.punta).join(', ');
-      // Calcular estado desde pagos
+      // Calcular estado desde pagos (el backend ya calculó p.efectuado)
       const pagosVenta=(r.pagos||[]).filter(p=>p.id_venta===v.id_venta);
-      const hoyDate=new Date();
-      const hoyStr=hoyDate.getFullYear()+'-'+String(hoyDate.getMonth()+1).padStart(2,'0')+'-'+String(hoyDate.getDate()).padStart(2,'0');
-      // Función para comparar fechas de pago con hoy (solo año-mes-dia, sin horas)
-      function pagoYaPaso(p){
-        if(!p.fecha_pago)return true;
-        // Si tiene año_pago y mes_pago, comparar directamente sin parsear fecha
-        var ap=Number(p.año_pago)||Number(p['año_pago'])||0;
-        var mp=Number(p.mes_pago)||0;
-        if(ap&&mp){
-          var fp=ap+'-'+String(mp).padStart(2,'0')+'-01';
-          return fp<=hoyStr;
-        }
-        // Fallback: intentar parsear la fecha
-        var d=new Date(p.fecha_pago);
-        if(isNaN(d.getTime()))return true; // si no se puede parsear, asumir ya pagado
-        var ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-        return ds<=hoyStr;
-      }
-      const pagosEfectuados=pagosVenta.filter(pagoYaPaso);
+      const pagosEfectuados=pagosVenta.filter(p=>p.efectuado);
       const totalPagado=pagosEfectuados.reduce((s,p)=>s+(Number(p.valor_cobrado)||0),0);
       const comOficina=Number(v.comision_oficina)||0;
       const estado=comOficina>0&&totalPagado>=comOficina?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
@@ -1488,16 +1470,11 @@ function renderMisNegocios(){
       // Detalle de cuotas
       let cuotasHTML='';
       pagosVenta.forEach((p,i)=>{
-        const cobrable=pagoYaPaso(p);
-        // Construir texto de fecha desde año_pago + mes_pago si la fecha no parsea bien
-        let fechaTxt='(sin fecha)';
-        var ap=Number(p.año_pago)||Number(p['año_pago'])||0;
-        var mp=Number(p.mes_pago)||0;
-        if(ap&&mp){fechaTxt=nomMes(mp)+' '+ap;}
-        if(p.fecha_pago){
-          var fpd=new Date(p.fecha_pago);
-          if(!isNaN(fpd.getTime())){fechaTxt=fpd.getDate()+' '+nomMes(fpd.getMonth()+1)+' '+fpd.getFullYear();}
-        }
+        const cobrable=!!p.efectuado;
+        // Mostrar fecha: usar mes_pago + año_pago que siempre existen
+        const mp=Number(p.mes_pago)||0;
+        const ap=Number(p.año_pago)||Number(p['año_pago'])||0;
+        const fechaTxt=(mp&&ap)?nomMes(mp)+' '+ap:'(sin fecha)';
         const valorCom=Number(p.valor_cobrado)||0;
         const miComPago=comOficina>0?(valorCom/comOficina)*miCom:0;
         const estadoPago=cobrable

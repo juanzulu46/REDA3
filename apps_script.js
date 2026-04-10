@@ -376,6 +376,23 @@ function doGet(e) {
       var misVentaIds = misVentas.map(function(v) { return v.id_venta; });
       var misPagos = pagos.filter(function(p) { return misVentaIds.indexOf(p.id_venta) !== -1; });
 
+      // Calcular flag 'efectuado' para cada pago (el backend maneja fechas nativas)
+      var hoyNegocios = new Date();
+      misPagos.forEach(function(p) {
+        if (!p.fecha_pago || p.fecha_pago === '') {
+          p.efectuado = true;
+        } else {
+          var fp = new Date(p.fecha_pago);
+          if (isNaN(fp.getTime())) {
+            var ap = Number(p['año_pago']) || 0;
+            var mp = Number(p.mes_pago) || 0;
+            p.efectuado = (ap && mp) ? (ap * 12 + mp) <= (hoyNegocios.getFullYear() * 12 + hoyNegocios.getMonth() + 1) : true;
+          } else {
+            p.efectuado = fp <= hoyNegocios;
+          }
+        }
+      });
+
       return jsonResponse({
         ok: true,
         arriendos: misArriendos,
