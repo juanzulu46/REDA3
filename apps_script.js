@@ -193,8 +193,19 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   // --- Ventas: filtran por mes_pago de cada pago efectuado (fecha_pago <= hoy) ---
   var pagosDelMes = pagos.filter(function(p) {
     if (parseInt(p.mes_pago, 10) !== mes) return false;
-    if (!p.fecha_pago || p.fecha_pago === '') return true; // sin fecha = ya pagado (datos migrados)
+    if (!p.fecha_pago || p.fecha_pago === '') return true;
+    // Comparar usando año_pago y mes_pago si la fecha no parsea bien
     var fp = new Date(p.fecha_pago);
+    if (isNaN(fp.getTime())) {
+      // Fallback: si tiene año_pago y mes_pago, comparar solo año-mes
+      var ap = Number(p.año_pago) || 0;
+      var mp = Number(p.mes_pago) || 0;
+      if (ap && mp) {
+        var hoyAM = hoy.getFullYear() * 100 + (hoy.getMonth() + 1);
+        return (ap * 100 + mp) <= hoyAM;
+      }
+      return true;
+    }
     return fp <= hoy;
   });
 
