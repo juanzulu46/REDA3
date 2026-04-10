@@ -1244,7 +1244,19 @@ async function guardarVenta() {
       pagos: pagos
     });
     if (r && r.ok) {
-      document.getElementById('okVntMsg').textContent = r.id + ' \u2014 Valor: ' + fmtP(Number(valorbase));
+      const comOficina = Number(valorbase) * Number(pct);
+      const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      let pagosDetalle = '';
+      pagos.forEach(function(p, i) {
+        const fp = new Date(p.fecha_pago + 'T12:00:00');
+        const fechaTxt = fp.getDate() + ' ' + meses[fp.getMonth()+1] + ' ' + fp.getFullYear();
+        const comCuota = Number(valorbase) > 0 ? (p.valor_pago / Number(valorbase)) * comOficina : 0;
+        pagosDetalle += '\nCuota ' + (i+1) + ': ' + fmtP(p.valor_pago) + ' (' + fechaTxt + ') \u2192 Comisi\u00f3n: ' + fmtP(comCuota);
+      });
+      document.getElementById('okVntMsg').innerHTML = '<strong>' + r.id + '</strong> \u2014 Valor: ' + fmtP(Number(valorbase)) +
+        ' \u2014 Comisi\u00f3n oficina: ' + fmtP(comOficina) +
+        '<div style="margin-top:8px;font-size:12px;text-align:left;line-height:1.8">' +
+        pagosDetalle.split('\n').filter(Boolean).join('<br>') + '</div>';
       document.getElementById('okVnt').classList.add('show');
       document.getElementById('formVntWrap').style.display = 'none';
       toast('Venta registrada: ' + r.id);
