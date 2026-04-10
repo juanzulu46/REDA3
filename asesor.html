@@ -265,6 +265,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
     <div class="nav-sep">Mi informaci&oacute;n</div>
     <button class="nav-item" data-s="misnegocios"><span class="nav-icon">&#128200;</span> Mis Negocios</button>
     <button class="nav-item" data-s="bonificaciones"><span class="nav-icon">&#127942;</span> Mis Bonificaciones</button>
+    <button class="nav-item" data-s="gestion" id="navGestion" style="display:none"><span class="nav-icon">&#128736;</span> Gesti&oacute;n</button>
   </nav>
   <div class="sidebar-ft"><button class="btn-logout" onclick="cerrarSesion()">Cerrar sesi&oacute;n</button></div>
 </aside>
@@ -593,6 +594,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
   <div id="bonContent"><div class="loading"><span class="spinner"></span> Cargando bonificaciones...</div></div>
 </div>
 
+<!-- ============ GESTIÓN (solo gerente) ============ -->
+<div class="section" id="sec-gestion">
+  <div class="fcard">
+    <div class="fcard-hd"><h3>Gesti&oacute;n de negocios</h3><p>Vista general de todas las ventas de la empresa.</p></div>
+    <div class="fcard-bd">
+      <div id="gestionContent"><div class="neg-empty">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
 </div></div></div>
 
 <div class="toast-c" id="toasts"></div>
@@ -768,6 +779,10 @@ async function hacerLogin(){
     const b=document.getElementById('userBadge');
     b.textContent=asesorActual.vinculacion;
     b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
+    // Mostrar navegación de gerencia si tiene rol gerente
+    if(String(asesorActual.rol).toLowerCase()==='gerente'){
+      document.getElementById('navGestion').style.display='';
+    }
     btn.textContent='Cargando datos...';
     await cargarCatalogos();
     btn.disabled=false; btn.textContent='Ingresar';
@@ -817,7 +832,8 @@ const navTitles={
   inmueble:'Nuevo Inmueble',
   cliente:'Nuevo Cliente',
   misnegocios:'Mis Negocios',
-  bonificaciones:'Mis Bonificaciones'
+  bonificaciones:'Mis Bonificaciones',
+  gestion:'Gesti\u00f3n'
 };
 document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>{
   const s=n.dataset.s;
@@ -830,6 +846,7 @@ document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=
   if(s==='misnegocios')cargarMisNegocios();
   if(s==='bonificaciones')cargarBonificaciones();
   if(s==='accion')prepararFormAccion();
+  if(s==='gestion')cargarGestion();
 }));
 document.getElementById('menuBtn').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('open'));
 
@@ -1244,6 +1261,11 @@ async function guardarVenta() {
 
   const pagos = recolectarPagos();
   if (pagos.length === 0) { toast('Agregue al menos una cuota de pago', 'er'); return; }
+  const sumaPagos = pagos.reduce((s,p) => s + p.valor_pago, 0);
+  if (Math.abs(sumaPagos - Number(valorbase)) > 1) {
+    toast('Las cuotas de pago ($' + sumaPagos.toLocaleString() + ') no cuadran con el valor base ($' + Number(valorbase).toLocaleString() + '). Corrija antes de guardar.', 'er');
+    return;
+  }
 
   const btn = document.getElementById('btnGuardarVnt');
   btn.disabled = true; btn.textContent = 'Guardando...';
@@ -1374,6 +1396,7 @@ document.getElementById('ar_inmueble').addEventListener('change', checkDupliArr)
 document.getElementById('ar_mes').addEventListener('change', checkDupliArr);
 document.getElementById('v_inmueble').addEventListener('change', checkDupliVnt);
 document.getElementById('v_mes').addEventListener('change', checkDupliVnt);
+document.getElementById('v_comprador').addEventListener('change', checkDupliVnt);
 
 async function checkDupliArr(){
   const inm=document.getElementById('ar_inmueble').value;
@@ -1388,9 +1411,10 @@ async function checkDupliArr(){
 async function checkDupliVnt(){
   const inm=document.getElementById('v_inmueble').value;
   const mes=document.getElementById('v_mes').value;
+  const comprador=document.getElementById('v_comprador').value;
   if(!inm||!mes){document.getElementById('dupliVnt').classList.remove('show');return}
   try{
-    const r=await apiGet({action:'verificar_duplicado',tipo:'ventas',id_inmueble:inm,mes:mes});
+    const r=await apiGet({action:'verificar_duplicado',tipo:'ventas',id_inmueble:inm,mes:mes,id_comprador:comprador});
     if(r&&r.duplicado)document.getElementById('dupliVnt').classList.add('show');
     else document.getElementById('dupliVnt').classList.remove('show');
   }catch(e){}
@@ -1512,29 +1536,39 @@ function renderMisNegocios(){
       const estado=comOficina>0&&totalPagado>=comOficina-1?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
       const estadoClass=estado==='COBRADO'?'color:#10b981':estado==='PARCIAL'?'color:#f59e0b':'color:#ef4444';
 
+      // Verificar si es cancelada
+      const cancelada=String(v.estado_venta||'').toUpperCase()==='CANCELADA';
+      const estadoFinal=cancelada?'CANCELADA':estado;
+      const estadoClassFinal=cancelada?'color:#888':estadoClass;
+      const cardStyle=cancelada?'opacity:0.5':'';
+      const esGerente=asesorActual.rol==='gerente';
+
       // Detalle de cuotas
       let cuotasHTML='';
-      pagosVenta.forEach((p,i)=>{
-        const cobrable=pagoEfectuado(p);
-        const mp=Number(p.mes_pago)||0;
-        const ap=Number(p.año_pago)||Number(p['año_pago'])||Number(p['ano_pago'])||0;
-        const fechaTxt=(mp&&ap)?nomMes(mp)+' '+ap:'(sin fecha)';
-        const valorCom=numVal(p.valor_cobrado);
-        const miComPago=comOficina>0?(valorCom/comOficina)*miCom:0;
-        const estadoPago=cobrable
-          ?''
-          :'<span style="color:#f59e0b;font-weight:600">Pendiente</span>';
-        cuotasHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #eee;font-size:12px">
-          <span>Cuota ${i+1}: ${fmtP(valorCom)} <small>(${fechaTxt})</small> ${estadoPago}</span>
-          <span style="display:flex;align-items:center;gap:8px">
-            <strong>Mi com: ${fmtP(miComPago)}</strong>
-            ${cobrable?'<button class="btn btn-cc" style="font-size:10px;padding:3px 8px" onclick="imprimirCuentaCobro(\'venta_pago\',\''+p.id_pago+'\',this)">Cuenta de cobro</button>':''}
-          </span>
-        </div>`;
-      });
+      if(!cancelada){
+        pagosVenta.forEach((p,i)=>{
+          const cobrable=pagoEfectuado(p);
+          const mp=Number(p.mes_pago)||0;
+          const ap=Number(p.año_pago)||Number(p['año_pago'])||Number(p['ano_pago'])||0;
+          const fechaTxt=(mp&&ap)?nomMes(mp)+' '+ap:'(sin fecha)';
+          const valorCom=numVal(p.valor_cobrado);
+          const miComPago=comOficina>0?(valorCom/comOficina)*miCom:0;
+          const estadoPago=cobrable
+            ?''
+            :'<span style="color:#f59e0b;font-weight:600">Pendiente</span>';
+          cuotasHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #eee;font-size:12px">
+            <span>Cuota ${i+1}: ${fmtP(valorCom)} <small>(${fechaTxt})</small> ${estadoPago}</span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <strong>Mi com: ${fmtP(miComPago)}</strong>
+              ${cobrable?'<button class="btn btn-cc" style="font-size:10px;padding:3px 8px" onclick="imprimirCuentaCobro(\'venta_pago\',\''+p.id_pago+'\',this)">Cuenta de cobro</button>':''}
+              <button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarPago('${p.id_pago}','${v.id_venta}',this)">Editar</button>
+            </span>
+          </div>`;
+        });
+      }
 
-      html+=`<div class="neg-card venta">
-        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span><span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClass}">${estado}</span></div>
+      html+=`<div class="neg-card venta" style="${cardStyle}">
+        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span><span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
           <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
@@ -1544,10 +1578,152 @@ function renderMisNegocios(){
         </div>
         <div class="neg-com">Mi comisi&oacute;n total: ${fmtP(miCom)}</div>
         <div style="padding:8px 16px">${cuotasHTML}</div>
+        ${!cancelada?'<div class="neg-actions"><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar venta</button></div>':''}
       </div>`;
     });
   }
   cont.innerHTML=html;
+}
+
+// ===== GESTIÓN (solo gerente) =====
+let gestionData=null;
+async function cargarGestion(){
+  const cont=document.getElementById('gestionContent');
+  cont.innerHTML='<div class="loading"><span class="spinner"></span> Cargando todos los negocios...</div>';
+  try{
+    const r=await apiGet({action:'todos_negocios',id_asesor:asesorActual.id_asesor});
+    if(!r||!r.ok){cont.innerHTML='<div class="neg-empty">'+(r?.error||'Error al cargar')+'</div>';return}
+    gestionData=r;
+    renderGestion();
+  }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi\u00f3n</div>'}
+}
+
+function renderGestion(){
+  const cont=document.getElementById('gestionContent');
+  const r=gestionData;
+  if(!r)return;
+
+  const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
+  const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
+  const nomAse=id=>{const a=r.asesores.find(x=>x.id_asesor===id);return a?a.nombre:id};
+  const nomMes=m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+  function numVal(v){if(typeof v==='string'){if(v.indexOf(',')>-1)v=v.replace(/\./g,'').replace(',','.');}return Number(v)||0;}
+  const hoyAM=new Date().getFullYear()*12+(new Date().getMonth()+1);
+
+  // Filtros
+  const fMes=Number(document.getElementById('gFiltroMes')?.value||0);
+  const fAsesor=document.getElementById('gFiltroAsesor')?.value||'';
+  const fEstado=document.getElementById('gFiltroEstado')?.value||'';
+
+  // Filtrar ventas
+  let ventasFilt=r.ventas.slice();
+  if(fMes)ventasFilt=ventasFilt.filter(v=>Number(v.mes)===fMes);
+  if(fEstado==='CANCELADA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()==='CANCELADA');
+  else if(fEstado==='ACTIVA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()!=='CANCELADA');
+  if(fAsesor){
+    const idsNeg=new Set(r.comisiones.filter(c=>c.id_asesor===fAsesor).map(c=>c.id_negocio));
+    ventasFilt=ventasFilt.filter(v=>idsNeg.has(v.id_venta));
+  }
+
+  // Construir filtros HTML
+  const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  let html=`<div class="neg-filtros">
+    <div class="neg-filtro-grupo"><label>Mes:</label>
+      <select id="gFiltroMes" onchange="renderGestion()">
+        <option value="0">Todos</option>
+        ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>'<option value="'+m+'"'+(m===fMes?' selected':'')+'>'+meses[m]+'</option>').join('')}
+      </select>
+    </div>
+    <div class="neg-filtro-grupo"><label>Asesor:</label>
+      <select id="gFiltroAsesor" onchange="renderGestion()">
+        <option value="">Todos</option>
+        ${r.asesores.map(a=>'<option value="'+a.id_asesor+'"'+(a.id_asesor===fAsesor?' selected':'')+'>'+a.nombre+'</option>').join('')}
+      </select>
+    </div>
+    <div class="neg-filtro-grupo"><label>Estado:</label>
+      <select id="gFiltroEstado" onchange="renderGestion()">
+        <option value="">Todos</option>
+        <option value="ACTIVA"${fEstado==='ACTIVA'?' selected':''}>Activas</option>
+        <option value="CANCELADA"${fEstado==='CANCELADA'?' selected':''}>Canceladas</option>
+      </select>
+    </div>
+    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';renderGestion()">Limpiar</button></div>
+  </div>
+  <div class="neg-resumen">
+    <div class="neg-stat"><div class="ns-val">${ventasFilt.length}</div><div class="ns-label">Ventas</div></div>
+    <div class="neg-stat v"><div class="ns-val">${fmtP(ventasFilt.reduce((s,v)=>s+numVal(v.comision_oficina),0))}</div><div class="ns-label">Comisi\u00f3n total</div></div>
+  </div>`;
+
+  ventasFilt.forEach(v=>{
+    const cancelada=String(v.estado_venta||'').toUpperCase()==='CANCELADA';
+    const pagosV=(r.pagos||[]).filter(p=>p.id_venta===v.id_venta);
+    const comOficina=numVal(v.comision_oficina);
+    const asesoresVenta=r.comisiones.filter(c=>c.id_negocio===v.id_venta).map(c=>nomAse(c.id_asesor)+' ('+c.punta+')').join(', ');
+    // Estado
+    let estado='PENDIENTE';
+    if(!cancelada){
+      const pagadoTotal=pagosV.filter(p=>{const mp=Number(p.mes_pago)||0;const ap=Number(p.año_pago)||Number(p['año_pago'])||0;return(!mp||!ap)||(ap*12+mp)<=hoyAM}).reduce((s,p)=>s+numVal(p.valor_cobrado),0);
+      estado=comOficina>0&&pagadoTotal>=comOficina-1?'COBRADO':pagadoTotal>0?'PARCIAL':'PENDIENTE';
+    }else{estado='CANCELADA'}
+    const colores={COBRADO:'#10b981',PARCIAL:'#f59e0b',PENDIENTE:'#ef4444',CANCELADA:'#888'};
+
+    html+=`<div class="neg-card venta" style="${cancelada?'opacity:0.5':''}">
+      <div class="neg-top">
+        <span class="neg-id">${v.id_venta}</span>
+        <span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>
+        <span style="margin-left:auto;font-weight:700;font-size:11px;color:${colores[estado]}">${estado}</span>
+      </div>
+      <div class="neg-detail">
+        <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
+        <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
+        <div><strong>Comisi\u00f3n oficina:</strong> ${fmtP(comOficina)}</div>
+        <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
+        <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
+        <div><strong>Asesores:</strong> ${asesoresVenta}</div>
+        <div><strong>Cuotas:</strong> ${pagosV.length}</div>
+      </div>
+      ${!cancelada?'<div class="neg-actions"><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar venta</button></div>':''}
+    </div>`;
+  });
+
+  if(ventasFilt.length===0) html+='<div class="neg-empty">No hay ventas con esos filtros.</div>';
+  cont.innerHTML=html;
+}
+
+async function editarPago(idPago, idVenta, btn) {
+  const fecha = prompt('Nueva fecha de pago (YYYY-MM-DD):');
+  if (fecha === null) return;
+  const valorStr = prompt('Nuevo monto del pago del inmueble ($):');
+  if (valorStr === null) return;
+  const obs = prompt('Observación (dejar vacío para no cambiar):');
+
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const datos = { action: 'actualizar_pago', id_pago: idPago };
+    if (fecha) datos.fecha_pago = fecha;
+    if (valorStr) datos.valor_pago = Number(valorStr.replace(/\./g,'').replace(',','.')) || 0;
+    if (obs !== null && obs !== '') datos.observacion = obs;
+    const r = await apiPost(datos);
+    if (r && r.ok) {
+      toast('Pago actualizado');
+      cargarMisNegocios();
+    } else { toast(r?.error || 'Error al actualizar', 'er'); }
+  } catch (e) { toast('Error: ' + e.message, 'er'); }
+  btn.disabled = false; btn.textContent = 'Editar';
+}
+
+async function cancelarVenta(idVenta, btn) {
+  const confirmacion = prompt('Esta acción cancelará la venta y afectará bonificaciones. Escriba CANCELAR para confirmar:');
+  if (confirmacion !== 'CANCELAR') { toast('Cancelación no confirmada', 'er'); return; }
+  btn.disabled = true; btn.textContent = 'Cancelando...';
+  try {
+    const r = await apiPost({ action: 'cancelar_venta', id_venta: idVenta });
+    if (r && r.ok) {
+      toast('Venta cancelada');
+      cargarMisNegocios();
+    } else { toast(r?.error || 'Error al cancelar', 'er'); }
+  } catch (e) { toast('Error: ' + e.message, 'er'); }
+  btn.disabled = false; btn.textContent = 'Cancelar venta';
 }
 
 async function imprimirCuentaCobro(tipo, idNegocio, btn){

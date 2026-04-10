@@ -54,7 +54,7 @@ const HOJAS = {
 const COLUMNAS = {
   asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado',
              'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email',
-             'password'],
+             'password', 'rol'],
   inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
   clientes: ['id_cliente', 'nombre', 'telefono', 'email'],
   arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
@@ -67,7 +67,8 @@ const COLUMNAS = {
            'comision_por_punta',
            'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
            'referido_captador', 'numero_captador_r', 'valor_ref_captador',
-           'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador'],
+           'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
+           'estado_venta'],
   pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion'],
   oficina: ['id_oficina', 'nombre'],
@@ -152,6 +153,26 @@ function agregarFila(nombreHoja, columnas, datos) {
   sheet.appendRow(fila);
 }
 
+// Actualiza una fila existente buscando por ID
+function actualizarFila(nombreHoja, colId, idBuscado, datos) {
+  var sheet = getSheet(nombreHoja);
+  if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var colIdx = headers.indexOf(colId);
+  if (colIdx === -1) throw new Error('Columna "' + colId + '" no encontrada');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][colIdx]) === String(idBuscado)) {
+      Object.keys(datos).forEach(function(key) {
+        var ci = headers.indexOf(key);
+        if (ci !== -1) sheet.getRange(i + 1, ci + 1).setValue(datos[key]);
+      });
+      return true;
+    }
+  }
+  throw new Error(colId + ' "' + idBuscado + '" no encontrado');
+}
+
 // Calcula la categoría de bonificación de un asesor en un mes específico.
 // Usa los datos pre-cargados (datos.arriendos, ventas, comisiones, acciones, bonificaciones)
 // para evitar releer las hojas.
@@ -212,6 +233,7 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   pagosDelMes.forEach(function(p) {
     var venta = ventas.find(function(v) { return v.id_venta === p.id_venta; });
     if (!venta) return;
+    if (String(venta.estado_venta).toUpperCase() === 'CANCELADA') return;
     if (negociosIds.indexOf(venta.id_venta) === -1) return;
     // El pago representa dinero que entró a la oficina
     comisionGeneradaOficina += (Number(p.valor_cobrado) || 0) * 0.5 * sumParticipacion(venta.id_venta);
@@ -228,6 +250,7 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   pagosDelMes.forEach(function(p) {
     var venta = ventas.find(function(v) { return v.id_venta === p.id_venta; });
     if (!venta) return;
+    if (String(venta.estado_venta).toUpperCase() === 'CANCELADA') return;
     var comOficina = Number(venta.comision_oficina) || 0;
     if (comOficina === 0) return;
     var fraccion = (Number(p.valor_cobrado) || 0) / comOficina;
@@ -473,17 +496,47 @@ function doGet(e) {
       return jsonResponse({ ok: true, acciones: filt });
     }
 
+    // --- TODOS LOS NEGOCIOS (solo gerente) ---
+    if (action === 'todos_negocios') {
+      var idAsesorG = params.id_asesor || '';
+      // Verificar que sea gerente
+      var asesoresG = leerHoja(HOJAS.asesores);
+      var asesorG = asesoresG.find(function(a) { return a.id_asesor === idAsesorG; });
+      if (!asesorG || String(asesorG.rol).toLowerCase() !== 'gerente') {
+        return jsonResponse({ ok: false, error: 'Acceso denegado' });
+      }
+      return jsonResponse({
+        ok: true,
+        arriendos: leerHoja(HOJAS.arriendos),
+        ventas: leerHoja(HOJAS.ventas),
+        pagos: leerHoja(HOJAS.pagos),
+        comisiones: leerHoja(HOJAS.comisiones),
+        inmuebles: leerHoja(HOJAS.inmuebles),
+        clientes: leerHoja(HOJAS.clientes),
+        asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre }; })
+      });
+    }
+
     // --- VERIFICAR DUPLICADO ---
     if (action === 'verificar_duplicado') {
       var tipoDup = params.tipo || '';
       var idInmueble = params.id_inmueble || '';
       var mesDup = params.mes || '';
+      var idComprador = params.id_comprador || '';
       var hojaDup = tipoDup === 'arriendos' ? HOJAS.arriendos : HOJAS.ventas;
       var datosDup = leerHoja(hojaDup);
       var duplicado = null;
       for (var i = 0; i < datosDup.length; i++) {
-        if (String(datosDup[i].id_inmueble) === String(idInmueble) && String(datosDup[i].mes) === String(mesDup)) {
-          duplicado = datosDup[i];
+        var d = datosDup[i];
+        // Verificar inmueble + mes (original)
+        if (String(d.id_inmueble) === String(idInmueble) && String(d.mes) === String(mesDup)) {
+          duplicado = d;
+          break;
+        }
+        // Verificar inmueble + comprador (ventas)
+        if (tipoDup === 'ventas' && idComprador &&
+            String(d.id_inmueble) === String(idInmueble) && String(d.id_comprador) === String(idComprador)) {
+          duplicado = d;
           break;
         }
       }
@@ -577,6 +630,7 @@ function doPost(e) {
       if (!datos['año']) datos['año'] = new Date().getFullYear();
       datos.comision_oficina = (datos.valor_base_comision || 0) * (datos.pct_comision_oficina || 0);
       datos.comision_por_punta = datos.comision_oficina / 2;
+      datos.estado_venta = 'ACTIVA';
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
 
       if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
@@ -775,6 +829,46 @@ function doPost(e) {
       agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
+    }
+
+    // --- ACTUALIZAR PAGO ---
+    if (action === 'actualizar_pago') {
+      var idPago = body.id_pago;
+      if (!idPago) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_pago' }); }
+      // Buscar el pago para obtener id_venta
+      var pagoActual = leerHoja(HOJAS.pagos).find(function(p) { return p.id_pago === idPago; });
+      if (!pagoActual) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Pago no encontrado' }); }
+      // Buscar la venta para calcular comisión proporcional
+      var ventaPago = leerHoja(HOJAS.ventas).find(function(v) { return v.id_venta === pagoActual.id_venta; });
+      if (!ventaPago) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta no encontrada' }); }
+
+      var datosUpdate = {};
+      if (body.fecha_pago !== undefined) {
+        datosUpdate.fecha_pago = body.fecha_pago;
+        var fp = body.fecha_pago ? new Date(body.fecha_pago + 'T12:00:00') : null;
+        datosUpdate['año_pago'] = fp ? fp.getFullYear() : '';
+        datosUpdate.mes_pago = fp ? (fp.getMonth() + 1) : '';
+      }
+      if (body.valor_pago !== undefined) {
+        var valorBase = Number(ventaPago.valor_base_comision) || 0;
+        var comOficina = Number(ventaPago.comision_oficina) || 0;
+        var valorPago = Number(body.valor_pago) || 0;
+        datosUpdate.valor_cobrado = valorBase > 0 ? Math.round((valorPago / valorBase) * comOficina) : 0;
+      }
+      if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
+
+      actualizarFila(HOJAS.pagos, 'id_pago', idPago, datosUpdate);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Pago actualizado' });
+    }
+
+    // --- CANCELAR VENTA ---
+    if (action === 'cancelar_venta') {
+      var idVentaCancel = body.id_venta;
+      if (!idVentaCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
+      actualizarFila(HOJAS.ventas, 'id_venta', idVentaCancel, { estado_venta: 'CANCELADA' });
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Venta cancelada' });
     }
 
     lock.releaseLock();
