@@ -1075,6 +1075,31 @@ function recalcComisiones(tipo) {
     detHtml += `<div class="com-detalle-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #c8e6c9"><span><strong>Referido cerrador:</strong> ${document.getElementById(prefix+'_refnombre_cer').value||''} (20% bruto)</span><strong>${fmtP(totalBrutoCer*0.20)}</strong></div>`;
   }
 
+  // Agregar detalle de cuotas de pago al resumen (solo ventas)
+  if (!isArr) {
+    const pagosRows = document.querySelectorAll('#pagosVntList .com-row');
+    if (pagosRows.length > 0) {
+      detHtml += '<div style="margin-top:12px;padding-top:10px;border-top:2px solid #c8e6c9"><strong style="font-size:12px">Plan de pagos:</strong></div>';
+      const mesesN = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      const hoyP = new Date();
+      pagosRows.forEach(function(r, i) {
+        const fecha = r.querySelector('.pago-fecha').value;
+        const valor = Number(r.querySelector('.pago-valor').value) || 0;
+        const obs = r.querySelector('.pago-obs').value || '';
+        const comCuota = valorVenta > 0 ? (valor / valorVenta) * comisionOficina : 0;
+        let fechaTxt = '(sin fecha)';
+        if (fecha) {
+          const fp = new Date(fecha + 'T12:00:00');
+          fechaTxt = fp.getDate() + ' ' + mesesN[fp.getMonth()+1] + ' ' + fp.getFullYear();
+        }
+        const fp2 = fecha ? new Date(fecha + 'T12:00:00') : null;
+        const pendiente = fp2 && fp2 > hoyP;
+        const estadoTxt = pendiente ? ' <span style="color:#f59e0b;font-weight:600">(Pendiente)</span>' : '';
+        detHtml += '<div class="com-detalle-row" style="font-size:11px"><span>Cuota ' + (i+1) + ': ' + fmtP(valor) + ' <small>(' + fechaTxt + ')</small>' + (obs ? ' - ' + obs : '') + estadoTxt + '</span><strong>' + fmtP(comCuota) + '</strong></div>';
+      });
+    }
+  }
+
   document.getElementById(isArr?'resumenArrDet':'resumenVntDet').innerHTML = detHtml;
 }
 
