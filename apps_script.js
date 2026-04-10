@@ -580,17 +580,22 @@ function doPost(e) {
       }
 
       // Registrar pagos/cuotas
+      // El frontend envía valor_pago (monto del inmueble que se paga).
+      // Convertimos a valor_cobrado (comisión proporcional que entra a la oficina).
       if (body.pagos && body.pagos.length > 0) {
+        var valorBase = Number(datos.valor_base_comision) || 0;
         body.pagos.forEach(function(pago) {
           var idPago = siguienteId(HOJAS.pagos, 'PAG');
           var fechaPago = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
+          var valorPago = Number(pago.valor_pago) || 0;
+          var valorComision = valorBase > 0 ? (valorPago / valorBase) * datos.comision_oficina : 0;
           agregarFila(HOJAS.pagos, COLUMNAS.pagos, {
             id_pago: idPago,
             id_venta: datos.id_venta,
             fecha_pago: pago.fecha_pago || '',
             año_pago: fechaPago ? fechaPago.getFullYear() : '',
             mes_pago: fechaPago ? (fechaPago.getMonth() + 1) : '',
-            valor_cobrado: Number(pago.valor_cobrado) || 0,
+            valor_cobrado: Math.round(valorComision),
             observacion: pago.observacion || ''
           });
         });
@@ -620,12 +625,12 @@ function doPost(e) {
     }
 
     // --- IMPRIMIR CUENTA DE COBRO ---
-    // body: { action, id_asesor, id_negocio, tipo: 'arriendo'|'venta' }
-    // Llena el template, exporta PDF y envía correo a gerente con copia al asesor
+    // body: { action, id_asesor, id_negocio, tipo: 'arriendo'|'venta'|'venta_pago' }
+    // tipo 'venta_pago': id_negocio es un id_pago, calcula comisión proporcional al pago
     if (action === 'imprimir_cuenta_cobro') {
       var idAsesor  = body.id_asesor;
       var idNegocio = body.id_negocio;
-      var tipoNeg   = body.tipo; // 'arriendo' | 'venta'
+      var tipoNeg   = body.tipo; // 'arriendo' | 'venta' | 'venta_pago'
       if (!idAsesor || !idNegocio || !tipoNeg) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Faltan parámetros (id_asesor, id_negocio, tipo)' });
@@ -649,6 +654,17 @@ function doPost(e) {
         mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
         var inmA = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
         conceptoBase = 'Comisión por arriendo del inmueble ' + (inmA ? inmA.nombre : negocio.id_inmueble);
+      } else if (tipoNeg === 'venta_pago') {
+        // Cuenta de cobro por pago individual
+        var pago = leerHoja(HOJAS.pagos).find(function(p){ return p.id_pago === idNegocio; });
+        if (!pago) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Pago no encontrado' }); }
+        negocio = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === pago.id_venta; });
+        if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta no encontrada' }); }
+        idNegocio = negocio.id_venta; // para buscar comisiones
+        mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
+        var inmP = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
+        conceptoBase = 'Comisión por venta del inmueble ' + (inmP ? inmP.nombre : negocio.id_inmueble) +
+          ' — Cuota ' + pago.id_pago + (pago.observacion ? ' (' + pago.observacion + ')' : '');
       } else {
         negocio = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idNegocio; });
         if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta no encontrada' }); }
@@ -667,6 +683,13 @@ function doPost(e) {
         return jsonResponse({ ok:false, error:'No hay comisión registrada para este asesor en este negocio' });
       }
       var valorTotal = misCom.reduce(function(s,c){ return s + (Number(c.valor_comision)||0); }, 0);
+
+      // Si es cuenta de cobro por pago, aplicar proporción
+      if (tipoNeg === 'venta_pago') {
+        var comOficina = Number(negocio.comision_oficina) || 0;
+        var fraccion = comOficina > 0 ? (Number(pago.valor_cobrado) || 0) / comOficina : 0;
+        valorTotal = valorTotal * fraccion;
+      }
       valorTotal = Math.round(valorTotal);
 
       // Fecha + concepto final
