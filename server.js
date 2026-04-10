@@ -37,8 +37,32 @@ http.createServer(async (req, res)=>{
       if(req.method==='GET'){
         const gasUrl = GAS_URL+'?'+new url.URL(req.url,'http://localhost').searchParams.toString();
         const r = await httpsRequest(gasUrl, {method:'GET'});
+        // Enriquecer respuesta de mis_negocios: calcular flag 'efectuado' en cada pago
+        let responseBody = r.body;
+        try {
+          const data = JSON.parse(r.body);
+          if (data && data.ok && data.pagos) {
+            const hoy = new Date();
+            data.pagos.forEach(function(p) {
+              if (!p.fecha_pago || p.fecha_pago === '') {
+                p.efectuado = true;
+              } else {
+                const fp = new Date(p.fecha_pago);
+                if (isNaN(fp.getTime())) {
+                  // Fecha no parseable: usar año_pago y mes_pago
+                  const ap = Number(p['año_pago']) || Number(p['ano_pago']) || 0;
+                  const mp = Number(p.mes_pago) || 0;
+                  p.efectuado = (ap && mp) ? (ap * 12 + mp) <= (hoy.getFullYear() * 12 + hoy.getMonth() + 1) : true;
+                } else {
+                  p.efectuado = fp <= hoy;
+                }
+              }
+            });
+            responseBody = JSON.stringify(data);
+          }
+        } catch(e) { /* si no es JSON válido o no tiene pagos, pasar como está */ }
         res.writeHead(200,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-        res.end(r.body);
+        res.end(responseBody);
       } else if(req.method==='POST'){
         let body='';
         req.on('data',c=>body+=c);
