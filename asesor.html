@@ -382,10 +382,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Valor y comisi&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor base comisi&oacute;n (COP) <span class="req">*</span></label><input type="number" id="v_valorbase" min="0" placeholder="Ej: 350000000" oninput="calcularComisionVnt()"></div>
         <div class="ff"><label>% Comisi&oacute;n oficina <span class="req">*</span></label><select id="v_pct" onchange="calcularComisionVnt()"><option value="">-- % --</option><option value="0.01">1%</option><option value="0.015">1.5%</option><option value="0.02">2%</option><option value="0.025">2.5%</option><option value="0.0252">2.52%</option><option value="0.03">3%</option></select></div>
-        <div class="ff"><label>Comisiones facturadas <span class="opt">(opcional)</span></label><input type="number" id="v_facturadas" min="0" placeholder="0"></div>
-        <div class="ff"><label>Pagos efectuados <span class="opt">(opcional)</span></label><input type="number" id="v_pagos" min="0" placeholder="0"></div>
-        <div class="ff"><label>Pendiente por cobrar <span class="opt">(opcional)</span></label><input type="number" id="v_pendiente" min="0" placeholder="0"></div>
-        <div class="ff"><label>Fecha cobro comisi&oacute;n <span class="opt">(opcional)</span></label><input type="date" id="v_fechacobro"></div>
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Cuotas de pago</span><span class="fd-line"></span></div>
+        <div id="pagosVntList"></div>
+        <div class="com-add"><button type="button" onclick="addPagoRow()">+ Agregar cuota de pago</button></div>
+        <div id="pagosVntResumen" style="font-size:12px;color:var(--g600);margin-top:4px"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="v_ofcap"><option value="">-- Oficina --</option></select></div>
@@ -867,6 +867,46 @@ function prepararFormularios(){
 }
 
 // ===== ASESOR ROWS (comisiones) =====
+function addPagoRow() {
+  const container = document.getElementById('pagosVntList');
+  const row = document.createElement('div');
+  row.className = 'com-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `
+    <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required>
+    <input type="number" class="pago-valor" min="0" placeholder="Valor de la cuota" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
+    <input type="text" class="pago-obs" placeholder="Observaci\u00f3n (opcional)" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
+    <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
+  `;
+  container.appendChild(row);
+  resumenPagos();
+}
+
+function resumenPagos() {
+  const rows = document.querySelectorAll('#pagosVntList .com-row');
+  let total = 0;
+  rows.forEach(function(r) { total += Number(r.querySelector('.pago-valor').value) || 0; });
+  const comOficina = (Number(document.getElementById('v_valorbase').value) || 0) * (Number(document.getElementById('v_pct').value) || 0);
+  const div = document.getElementById('pagosVntResumen');
+  if (rows.length === 0) { div.textContent = ''; return; }
+  const diff = comOficina - total;
+  div.innerHTML = rows.length + ' cuota(s) &mdash; Total: ' + fmtP(total) +
+    (comOficina > 0 ? ' / Comisi\u00f3n oficina: ' + fmtP(comOficina) +
+    (Math.abs(diff) > 1 ? ' <span style="color:var(--r500)">(' + (diff > 0 ? 'Faltan ' : 'Sobran ') + fmtP(Math.abs(diff)) + ')</span>' : ' <span style="color:var(--g500)">\u2713 Cuadra</span>') : '');
+}
+
+function recolectarPagos() {
+  const rows = document.querySelectorAll('#pagosVntList .com-row');
+  const pagos = [];
+  rows.forEach(function(r) {
+    const fecha = r.querySelector('.pago-fecha').value;
+    const valor = Number(r.querySelector('.pago-valor').value) || 0;
+    const obs = r.querySelector('.pago-obs').value || '';
+    if (fecha && valor > 0) pagos.push({ fecha_pago: fecha, valor_cobrado: valor, observacion: obs });
+  });
+  return pagos;
+}
+
 function addAsesorRow(containerId, punta, tipo) {
   const container = document.getElementById(containerId);
   const row = document.createElement('div');
@@ -1145,6 +1185,9 @@ async function guardarVenta() {
   const comisiones = recolectarComisiones('vnt');
   if (comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
 
+  const pagos = recolectarPagos();
+  if (pagos.length === 0) { toast('Agregue al menos una cuota de pago', 'er'); return; }
+
   const btn = document.getElementById('btnGuardarVnt');
   btn.disabled = true; btn.textContent = 'Guardando...';
 
@@ -1156,10 +1199,6 @@ async function guardarVenta() {
         mes: Number(mes), mercado, id_inmueble: inmueble,
         id_vendedor: vendedor, id_comprador: comprador,
         valor_base_comision: Number(valorbase), pct_comision_oficina: Number(pct),
-        comisiones_facturadas: Number(document.getElementById('v_facturadas').value) || '',
-        pagos_efectuados: Number(document.getElementById('v_pagos').value) || '',
-        pendiente_por_cobrar: Number(document.getElementById('v_pendiente').value) || '',
-        fechas_cobro_comision: document.getElementById('v_fechacobro').value || '',
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
         referido_captador: document.getElementById('v_hayref_cap').checked ? (document.getElementById('v_refnombre_cap').value || '') : '',
@@ -1169,7 +1208,8 @@ async function guardarVenta() {
         numero_cerrador_r: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnumero_cer').value || '') : '',
         valor_ref_cerrador: calcRefPuntaParaGuardar('vnt','Cerrador')
       },
-      comisiones_asesores: comisiones
+      comisiones_asesores: comisiones,
+      pagos: pagos
     });
     if (r && r.ok) {
       document.getElementById('okVntMsg').textContent = r.id + ' \u2014 Valor: ' + fmtP(Number(valorbase));
@@ -1244,6 +1284,8 @@ function resetVenta(){
   document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
   document.getElementById('capVntList').innerHTML='';
   document.getElementById('cerVntList').innerHTML='';
+  document.getElementById('pagosVntList').innerHTML='';
+  document.getElementById('pagosVntResumen').textContent='';
   document.getElementById('resumenVnt').classList.remove('show');
   document.getElementById('dupliVnt').classList.remove('show');
 }
@@ -1385,14 +1427,24 @@ function renderMisNegocios(){
       const misCom=comisionesFiltradas.filter(c=>c.id_negocio===v.id_venta);
       const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
       const puntas=misCom.map(c=>c.punta).join(', ');
+      // Calcular estado desde pagos
+      const pagosVenta=(r.pagos||[]).filter(p=>p.id_venta===v.id_venta);
+      const hoy=new Date();
+      const pagosEfectuados=pagosVenta.filter(p=>{const fp=new Date(p.fecha_pago);return fp<=hoy});
+      const totalPagado=pagosEfectuados.reduce((s,p)=>s+(Number(p.valor_cobrado)||0),0);
+      const comOficina=Number(v.comision_oficina)||0;
+      const estado=comOficina>0&&totalPagado>=comOficina?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
+      const estadoClass=estado==='COBRADO'?'color:#10b981':estado==='PARCIAL'?'color:#f59e0b':'color:#ef4444';
+      const pctPagado=comOficina>0?Math.round(totalPagado/comOficina*100):0;
       html+=`<div class="neg-card venta">
-        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span></div>
+        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span><span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClass}">${estado}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
           <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
           <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
           <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
           <div><strong>Mi punta:</strong> ${puntas}</div>
+          <div><strong>Pagos:</strong> ${fmtP(totalPagado)} / ${fmtP(comOficina)} (${pctPagado}%) &mdash; ${pagosEfectuados.length}/${pagosVenta.length} cuotas</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
         <div class="neg-actions"><button class="btn btn-cc" onclick="imprimirCuentaCobro('venta','${v.id_venta}',this)">Imprimir cuenta de cobro</button></div>
