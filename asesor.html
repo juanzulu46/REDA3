@@ -1472,7 +1472,7 @@ function renderMisNegocios(){
       function numVal(v){if(typeof v==='string'){if(v.indexOf(',')>-1)v=v.replace(/\./g,'').replace(',','.');}return Number(v)||0;}
       const totalPagado=pagosEfectuados.reduce((s,p)=>s+numVal(p.valor_cobrado),0);
       const comOficina=numVal(v.comision_oficina);
-      const estado=comOficina>0&&totalPagado>=comOficina?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
+      const estado=comOficina>0&&totalPagado>=comOficina-1?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
       const estadoClass=estado==='COBRADO'?'color:#10b981':estado==='PARCIAL'?'color:#f59e0b':'color:#ef4444';
 
       // Detalle de cuotas
