@@ -1469,8 +1469,9 @@ function renderMisNegocios(){
         return (ap*12+mp)<=hoyAM;
       }
       const pagosEfectuados=pagosVenta.filter(pagoEfectuado);
-      const totalPagado=pagosEfectuados.reduce((s,p)=>s+(Number(p.valor_cobrado)||0),0);
-      const comOficina=Number(v.comision_oficina)||0;
+      function numVal(v){if(typeof v==='string')v=v.replace(/\./g,'').replace(',','.');return Number(v)||0;}
+      const totalPagado=pagosEfectuados.reduce((s,p)=>s+numVal(p.valor_cobrado),0);
+      const comOficina=numVal(v.comision_oficina);
       const estado=comOficina>0&&totalPagado>=comOficina?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
       const estadoClass=estado==='COBRADO'?'color:#10b981':estado==='PARCIAL'?'color:#f59e0b':'color:#ef4444';
 
@@ -1481,7 +1482,7 @@ function renderMisNegocios(){
         const mp=Number(p.mes_pago)||0;
         const ap=Number(p.año_pago)||Number(p['año_pago'])||Number(p['ano_pago'])||0;
         const fechaTxt=(mp&&ap)?nomMes(mp)+' '+ap:'(sin fecha)';
-        const valorCom=Number(p.valor_cobrado)||0;
+        const valorCom=numVal(p.valor_cobrado);
         const miComPago=comOficina>0?(valorCom/comOficina)*miCom:0;
         const estadoPago=cobrable
           ?''
