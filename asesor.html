@@ -1462,7 +1462,7 @@ function renderMisNegocios(){
       // Calcular estado desde pagos
       const pagosVenta=(r.pagos||[]).filter(p=>p.id_venta===v.id_venta);
       const hoy=new Date();
-      const pagosEfectuados=pagosVenta.filter(p=>{const fp=new Date(p.fecha_pago);return fp<=hoy});
+      const pagosEfectuados=pagosVenta.filter(p=>{if(!p.fecha_pago)return true;const fp=new Date(p.fecha_pago);return fp<=hoy});
       const totalPagado=pagosEfectuados.reduce((s,p)=>s+(Number(p.valor_cobrado)||0),0);
       const comOficina=Number(v.comision_oficina)||0;
       const estado=comOficina>0&&totalPagado>=comOficina?'COBRADO':totalPagado>0?'PARCIAL':'PENDIENTE';
@@ -1471,9 +1471,10 @@ function renderMisNegocios(){
       // Detalle de cuotas
       let cuotasHTML='';
       pagosVenta.forEach((p,i)=>{
-        const fp=new Date(p.fecha_pago);
-        const cobrable=fp<=hoy;
-        const fechaTxt=fp.getDate()+' '+nomMes(fp.getMonth()+1)+' '+fp.getFullYear();
+        const tieneFecha=!!p.fecha_pago;
+        const fp=tieneFecha?new Date(p.fecha_pago):null;
+        const cobrable=!tieneFecha||(fp&&fp<=hoy);
+        const fechaTxt=fp?(fp.getDate()+' '+nomMes(fp.getMonth()+1)+' '+fp.getFullYear()):'(sin fecha)';
         const valorCom=Number(p.valor_cobrado)||0;
         const miComPago=comOficina>0?(valorCom/comOficina)*miCom:0;
         const estadoPago=cobrable

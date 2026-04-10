@@ -193,6 +193,7 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   // --- Ventas: filtran por mes_pago de cada pago efectuado (fecha_pago <= hoy) ---
   var pagosDelMes = pagos.filter(function(p) {
     if (parseInt(p.mes_pago, 10) !== mes) return false;
+    if (!p.fecha_pago || p.fecha_pago === '') return true; // sin fecha = ya pagado (datos migrados)
     var fp = new Date(p.fecha_pago);
     return fp <= hoy;
   });
