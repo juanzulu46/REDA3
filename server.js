@@ -37,39 +37,82 @@ http.createServer(async (req, res)=>{
       if(req.method==='GET'){
         const gasUrl = GAS_URL+'?'+new url.URL(req.url,'http://localhost').searchParams.toString();
         const r = await httpsRequest(gasUrl, {method:'GET'});
+
+        // Si GAS respondió con error HTTP, propagar al frontend
+        if (r.status >= 400) {
+          console.error('[proxy GET] GAS devolvió HTTP', r.status, r.body.slice(0, 500));
+          res.writeHead(502,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+          res.end(JSON.stringify({ ok:false, error:'Backend GAS HTTP '+r.status, detalle:r.body.slice(0,500) }));
+          return;
+        }
+
+        // Intentar parsear; si no es JSON, propagar 502 en vez de tragar
+        let data;
+        try { data = JSON.parse(r.body); }
+        catch (e) {
+          console.error('[proxy GET] Respuesta no-JSON de GAS:', r.body.slice(0, 500));
+          res.writeHead(502,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+          res.end(JSON.stringify({ ok:false, error:'Respuesta inválida del backend (no-JSON)', detalle:r.body.slice(0,500) }));
+          return;
+        }
+
         // Enriquecer respuesta de mis_negocios: calcular flag 'efectuado' en cada pago
-        let responseBody = r.body;
-        try {
-          const data = JSON.parse(r.body);
-          if (data && data.ok && data.pagos) {
-            const hoy = new Date();
-            data.pagos.forEach(function(p) {
-              if (!p.fecha_pago || p.fecha_pago === '') {
-                p.efectuado = true;
+        if (data && data.ok && data.pagos) {
+          const hoy = new Date();
+          const warnings = [];
+          data.pagos.forEach(function(p) {
+            if (!p.fecha_pago || p.fecha_pago === '') {
+              p.efectuado = true;
+              return;
+            }
+            const fp = new Date(p.fecha_pago);
+            if (isNaN(fp.getTime())) {
+              const ap = Number(p['año_pago']) || Number(p['ano_pago']) || 0;
+              const mp = Number(p.mes_pago) || 0;
+              if (ap && mp) {
+                p.efectuado = (ap * 12 + mp) <= (hoy.getFullYear() * 12 + hoy.getMonth() + 1);
               } else {
-                const fp = new Date(p.fecha_pago);
-                if (isNaN(fp.getTime())) {
-                  // Fecha no parseable: usar año_pago y mes_pago
-                  const ap = Number(p['año_pago']) || Number(p['ano_pago']) || 0;
-                  const mp = Number(p.mes_pago) || 0;
-                  p.efectuado = (ap && mp) ? (ap * 12 + mp) <= (hoy.getFullYear() * 12 + hoy.getMonth() + 1) : true;
-                } else {
-                  p.efectuado = fp <= hoy;
-                }
+                p.efectuado = true;
+                warnings.push('Pago '+p.id_pago+': fecha_pago inválida y sin año_pago/mes_pago');
               }
-            });
-            responseBody = JSON.stringify(data);
+            } else {
+              p.efectuado = fp <= hoy;
+            }
+          });
+          if (warnings.length) {
+            console.warn('[proxy GET] Warnings mis_negocios:', warnings);
+            data.warnings = warnings;
           }
-        } catch(e) { /* si no es JSON válido o no tiene pagos, pasar como está */ }
+        }
         res.writeHead(200,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-        res.end(responseBody);
+        res.end(JSON.stringify(data));
       } else if(req.method==='POST'){
         let body='';
         req.on('data',c=>body+=c);
         req.on('end', async()=>{
-          const r = await httpsRequest(GAS_URL, {method:'POST',headers:{'Content-Type':'text/plain'},body});
-          res.writeHead(200,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
-          res.end(r.body);
+          try {
+            const r = await httpsRequest(GAS_URL, {method:'POST',headers:{'Content-Type':'text/plain'},body});
+            if (r.status >= 400) {
+              console.error('[proxy POST] GAS devolvió HTTP', r.status, r.body.slice(0, 500));
+              res.writeHead(502,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+              res.end(JSON.stringify({ ok:false, error:'Backend GAS HTTP '+r.status, detalle:r.body.slice(0,500) }));
+              return;
+            }
+            // Validar que sea JSON antes de devolver
+            try { JSON.parse(r.body); }
+            catch (e) {
+              console.error('[proxy POST] Respuesta no-JSON de GAS:', r.body.slice(0, 500));
+              res.writeHead(502,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+              res.end(JSON.stringify({ ok:false, error:'Respuesta inválida del backend (no-JSON)', detalle:r.body.slice(0,500) }));
+              return;
+            }
+            res.writeHead(200,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+            res.end(r.body);
+          } catch (err) {
+            console.error('[proxy POST] Error de red:', err);
+            res.writeHead(502,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+            res.end(JSON.stringify({ ok:false, error:'Error de red al contactar backend: '+err.message }));
+          }
         });
       } else if(req.method==='OPTIONS'){
         res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST','Access-Control-Allow-Headers':'Content-Type'});

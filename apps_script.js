@@ -70,7 +70,7 @@ const COLUMNAS = {
            'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
            'estado_venta'],
   pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion'],
-  comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion'],
+  comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
   oficina: ['id_oficina', 'nombre'],
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
@@ -114,6 +114,17 @@ function autorizarPermisos() {
 
 function getSheet(nombre) {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombre);
+}
+
+// Parseo numérico tolerante a formato español ("1.234,56") y valores vacíos.
+function numVal(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  var s = String(v).trim();
+  if (s === '') return 0;
+  if (s.indexOf(',') > -1) s = s.replace(/\./g, '').replace(',', '.');
+  var n = Number(s);
+  return isFinite(n) ? n : 0;
 }
 
 // Lee todos los datos de una hoja y devuelve array de objetos
@@ -185,8 +196,12 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   var acciones = datos.acciones;
   var bonificaciones = datos.bonificaciones;
 
-  // Comisiones del asesor
-  var misCom = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
+  // Comisiones del asesor (excluye ANULADAS por cancelación de venta)
+  var misCom = comisiones.filter(function(c) {
+    if (c.id_asesor !== idAsesor) return false;
+    if (String(c.estado || '').toUpperCase() === 'ANULADA') return false;
+    return true;
+  });
   var negociosIds = misCom.map(function(c) { return c.id_negocio; });
 
   // Función auxiliar para sumar participación del asesor en un negocio
@@ -338,6 +353,8 @@ function jsonResponse(data) {
 // ===== ENDPOINTS =====
 
 function doGet(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
   try {
     // Manejo seguro de parámetros (a veces e o e.parameter pueden venir vacíos)
     var params = {};
@@ -552,6 +569,8 @@ function doGet(e) {
 
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message, stack: err.stack });
+  } finally {
+    try { lock.releaseLock(); } catch(_) {}
   }
 }
 
@@ -597,12 +616,45 @@ function doPost(e) {
     // --- REGISTRAR ARRIENDO ---
     if (action === 'registrar_arriendo') {
       const datos = body.datos;
-      // Generar ID
-      datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
       // Año automático
       if (!datos['año']) datos['año'] = new Date().getFullYear();
-      // Calcular comisión
-      datos.comision_oficina = (datos.valor_canon || 0) * (datos.pct_comision_oficina || 0);
+
+      // Validar integridad referencial: inmueble, arrendador, arrendatario
+      var inmRef = leerHoja(HOJAS.inmuebles);
+      var cliRef = leerHoja(HOJAS.clientes);
+      if (!inmRef.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
+      }
+      if (datos.id_arrendador && !cliRef.some(function(c){ return String(c.id_cliente) === String(datos.id_arrendador); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Arrendador "' + datos.id_arrendador + '" no existe' });
+      }
+      if (datos.id_arrendatario && !cliRef.some(function(c){ return String(c.id_cliente) === String(datos.id_arrendatario); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Arrendatario "' + datos.id_arrendatario + '" no existe' });
+      }
+
+      // Bloquear duplicado: mismo inmueble + mes + año
+      var arrExist = leerHoja(HOJAS.arriendos);
+      var dup = arrExist.find(function(a){
+        return String(a.id_inmueble) === String(datos.id_inmueble)
+            && String(a.mes) === String(datos.mes)
+            && String(a['año']) === String(datos['año']);
+      });
+      if (dup) {
+        lock.releaseLock();
+        return jsonResponse({
+          ok:false,
+          error:'Ya existe un arriendo para este inmueble en ' + datos.mes + '/' + datos['año'] + ' (' + dup.id_arriendo + ')',
+          duplicado: dup
+        });
+      }
+
+      // Generar ID
+      datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
+      // Calcular comisión (usar numVal para tolerar coma decimal)
+      datos.comision_oficina = numVal(datos.valor_canon) * numVal(datos.pct_comision_oficina);
       // Guardar arriendo
       agregarFila(HOJAS.arriendos, COLUMNAS.arriendos, datos);
 
@@ -614,7 +666,8 @@ function doPost(e) {
             id_negocio: datos.id_arriendo,
             valor_comision: com.valor_comision,
             punta: com.punta,
-            participacion: com.participacion || 100
+            participacion: com.participacion || 100,
+            estado: 'ACTIVA'
           });
         });
       }
@@ -626,9 +679,26 @@ function doPost(e) {
     // --- REGISTRAR VENTA ---
     if (action === 'registrar_venta') {
       const datos = body.datos;
-      datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
       if (!datos['año']) datos['año'] = new Date().getFullYear();
-      datos.comision_oficina = (datos.valor_base_comision || 0) * (datos.pct_comision_oficina || 0);
+
+      // Integridad referencial: inmueble, vendedor, comprador
+      var inmRefV = leerHoja(HOJAS.inmuebles);
+      var cliRefV = leerHoja(HOJAS.clientes);
+      if (!inmRefV.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
+      }
+      if (datos.id_vendedor && !cliRefV.some(function(c){ return String(c.id_cliente) === String(datos.id_vendedor); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Vendedor "' + datos.id_vendedor + '" no existe' });
+      }
+      if (datos.id_comprador && !cliRefV.some(function(c){ return String(c.id_cliente) === String(datos.id_comprador); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Comprador "' + datos.id_comprador + '" no existe' });
+      }
+
+      datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
+      datos.comision_oficina = numVal(datos.valor_base_comision) * numVal(datos.pct_comision_oficina);
       datos.comision_por_punta = datos.comision_oficina / 2;
       datos.estado_venta = 'ACTIVA';
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
@@ -640,7 +710,8 @@ function doPost(e) {
             id_negocio: datos.id_venta,
             valor_comision: com.valor_comision,
             punta: com.punta,
-            participacion: com.participacion || 100
+            participacion: com.participacion || 100,
+            estado: 'ACTIVA'
           });
         });
       }
@@ -649,11 +720,11 @@ function doPost(e) {
       // El frontend envía valor_pago (monto del inmueble que se paga).
       // Convertimos a valor_cobrado (comisión proporcional que entra a la oficina).
       if (body.pagos && body.pagos.length > 0) {
-        var valorBase = Number(datos.valor_base_comision) || 0;
+        var valorBase = numVal(datos.valor_base_comision);
         body.pagos.forEach(function(pago) {
           var idPago = siguienteId(HOJAS.pagos, 'PAG');
           var fechaPago = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
-          var valorPago = Number(pago.valor_pago) || 0;
+          var valorPago = numVal(pago.valor_pago);
           var valorComision = valorBase > 0 ? (valorPago / valorBase) * datos.comision_oficina : 0;
           agregarFila(HOJAS.pagos, COLUMNAS.pagos, {
             id_pago: idPago,
@@ -737,6 +808,13 @@ function doPost(e) {
         mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
         var inmV = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
         conceptoBase = 'Comisión por venta del inmueble ' + (inmV ? inmV.nombre : negocio.id_inmueble);
+      }
+
+      // Bloquear cuenta de cobro si la venta está CANCELADA
+      if ((tipoNeg === 'venta' || tipoNeg === 'venta_pago') &&
+          String(negocio.estado_venta).toUpperCase() === 'CANCELADA') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No se puede generar cuenta de cobro: la venta está cancelada' });
       }
 
       // Sumar comisiones del asesor en este negocio (puede tener varias puntas)
@@ -850,9 +928,13 @@ function doPost(e) {
         datosUpdate.mes_pago = fp ? (fp.getMonth() + 1) : '';
       }
       if (body.valor_pago !== undefined) {
-        var valorBase = Number(ventaPago.valor_base_comision) || 0;
-        var comOficina = Number(ventaPago.comision_oficina) || 0;
-        var valorPago = Number(body.valor_pago) || 0;
+        var valorBase = numVal(ventaPago.valor_base_comision);
+        var comOficina = numVal(ventaPago.comision_oficina);
+        var valorPago = numVal(body.valor_pago);
+        if (valorBase > 0 && valorPago > valorBase) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'El valor del pago (' + valorPago + ') excede el valor base de la venta (' + valorBase + ')' });
+        }
         datosUpdate.valor_cobrado = valorBase > 0 ? Math.round((valorPago / valorBase) * comOficina) : 0;
       }
       if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
@@ -866,9 +948,35 @@ function doPost(e) {
     if (action === 'cancelar_venta') {
       var idVentaCancel = body.id_venta;
       if (!idVentaCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
+
+      // Verificar que la venta exista y no esté ya cancelada
+      var ventaC = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idVentaCancel; });
+      if (!ventaC) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta "' + idVentaCancel + '" no encontrada' }); }
+      if (String(ventaC.estado_venta).toUpperCase() === 'CANCELADA') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'La venta ya estaba cancelada' });
+      }
+
       actualizarFila(HOJAS.ventas, 'id_venta', idVentaCancel, { estado_venta: 'CANCELADA' });
+
+      // Marcar todas las comisiones relacionadas como ANULADA (auditable, no se borran)
+      var comSheet = getSheet(HOJAS.comisiones);
+      var comData = comSheet.getDataRange().getValues();
+      var comHeaders = comData[0];
+      var idxNeg = comHeaders.indexOf('id_negocio');
+      var idxEstado = comHeaders.indexOf('estado');
+      var anuladas = 0;
+      if (idxNeg !== -1 && idxEstado !== -1) {
+        for (var r = 1; r < comData.length; r++) {
+          if (String(comData[r][idxNeg]) === String(idVentaCancel)) {
+            comSheet.getRange(r + 1, idxEstado + 1).setValue('ANULADA');
+            anuladas++;
+          }
+        }
+      }
+
       lock.releaseLock();
-      return jsonResponse({ ok:true, mensaje:'Venta cancelada' });
+      return jsonResponse({ ok:true, mensaje:'Venta cancelada. ' + anuladas + ' comision(es) anuladas.' });
     }
 
     lock.releaseLock();
