@@ -745,6 +745,24 @@ function doPost(e) {
     // --- REGISTRAR INMUEBLE ---
     if (action === 'registrar_inmueble') {
       const datos = body.datos;
+
+      // Bloquear duplicado por codigo_plataforma (si viene)
+      var codigo = String(datos.codigo_plataforma || '').trim();
+      if (codigo) {
+        var inmExist = leerHoja(HOJAS.inmuebles);
+        var dupInm = inmExist.find(function(i){
+          return String(i.codigo_plataforma || '').trim().toLowerCase() === codigo.toLowerCase();
+        });
+        if (dupInm) {
+          lock.releaseLock();
+          return jsonResponse({
+            ok:false,
+            error:'Ya existe un inmueble con código de plataforma "' + codigo + '" (' + dupInm.id_inmueble + ' — ' + (dupInm.nombre || '') + '). Use ese en vez de crear uno nuevo.',
+            duplicado: dupInm
+          });
+        }
+      }
+
       datos.id_inmueble = siguienteId(HOJAS.inmuebles, 'INM');
       datos.estado = 'Disponible';
       agregarFila(HOJAS.inmuebles, COLUMNAS.inmuebles, datos);
