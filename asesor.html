@@ -88,6 +88,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .com-row input.com-part{text-align:center;font-weight:600;color:var(--azul)}
 .com-row .com-val{font-weight:700;color:var(--verde);font-size:13px;text-align:right}
 .com-add{margin-top:6px}
+.partes-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.parte-row{display:grid;grid-template-columns:1fr 90px 32px;gap:8px;align-items:center;padding:8px 10px;background:var(--g50);border-radius:6px}
+.parte-row .parte-cli{font-size:12px}
+.parte-row input.parte-pct{padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px;text-align:right}
+.parte-row .parte-del{background:#ef4444;color:#fff;border:none;border-radius:5px;width:28px;height:28px;cursor:pointer;font-size:16px;line-height:1}
+.btn-add-parte{margin-top:6px;background:none;border:1px dashed var(--g300);color:var(--azul2);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;transition:all .15s}
+.btn-add-parte:hover{background:var(--azul-l);border-color:var(--azul2)}
+.partes-sum{font-size:11px;margin-top:4px;padding:4px 8px;border-radius:4px;display:inline-block}
+.partes-sum.ok{background:#d1fae5;color:#065f46}
+.partes-sum.bad{background:#fee2e2;color:#991b1b}
 .com-add button{background:none;border:1px dashed var(--g300);color:var(--azul2);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;transition:all .15s}
 .com-add button:hover{background:var(--azul-l);border-color:var(--azul2)}
 .com-del{background:none;border:none;color:var(--rojo);cursor:pointer;font-size:16px;padding:2px 6px}
@@ -293,9 +303,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="ff">&nbsp;</div>
         <div class="dupli-warn" id="dupliArr"><strong>&#9888; Posible duplicado:</strong> Ya existe un arriendo para este inmueble en este mes. Verifique antes de continuar.</div>
 
-        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Arrendador y arrendatario</span><span class="fd-line"></span></div>
-        <div class="ff"><label>Arrendador (due&ntilde;o) <span class="req">*</span></label><select id="ar_arrendador"><option value="">-- Due&ntilde;o del inmueble --</option></select></div>
-        <div class="ff"><label>Arrendatario (inquilino) <span class="req">*</span></label><select id="ar_arrendatario"><option value="">-- Quien arrienda --</option></select></div>
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Arrendador(es) y arrendatario(s)</span><span class="fd-line"></span></div>
+        <div class="ff" style="grid-column:1 / -1">
+          <label>Arrendador(es) <span class="req">*</span> <small style="font-weight:400;color:var(--g600)">&mdash; puede agregar varios; la suma de participaci&oacute;n debe dar 100%</small></label>
+          <div id="partesArrList_arrendador" class="partes-list"></div>
+          <button type="button" class="btn-add-parte" onclick="addParteRow('arr','arrendador')">+ Agregar arrendador</button>
+        </div>
+        <div class="ff" style="grid-column:1 / -1">
+          <label>Arrendatario(s) <span class="req">*</span> <small style="font-weight:400;color:var(--g600)">&mdash; puede agregar varios; la suma de participaci&oacute;n debe dar 100%</small></label>
+          <div id="partesArrList_arrendatario" class="partes-list"></div>
+          <button type="button" class="btn-add-parte" onclick="addParteRow('arr','arrendatario')">+ Agregar arrendatario</button>
+        </div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Valor y comisi&oacute;n oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor del canon mensual (COP) <span class="req">*</span></label><input type="number" id="ar_canon" min="0" placeholder="Ej: 1300000" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;nto paga el inquilino al mes</div></div>
@@ -377,8 +395,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="ff"><label>Inmueble <span class="req">*</span></label><select id="v_inmueble"><option value="">-- Escoja --</option></select></div>
         <div class="ff">&nbsp;</div>
         <div class="dupli-warn" id="dupliVnt"><strong>&#9888; Posible duplicado:</strong> Ya existe una venta para este inmueble en este mes.</div>
-        <div class="ff"><label>Vendedor <span class="req">*</span></label><select id="v_vendedor"><option value="">-- Quien vende --</option></select></div>
-        <div class="ff"><label>Comprador <span class="req">*</span></label><select id="v_comprador"><option value="">-- Quien compra --</option></select></div>
+        <div class="ff" style="grid-column:1 / -1">
+          <label>Vendedor(es) <span class="req">*</span> <small style="font-weight:400;color:var(--g600)">&mdash; puede agregar varios; la suma de participaci&oacute;n debe dar 100%</small></label>
+          <div id="partesVntList_vendedor" class="partes-list"></div>
+          <button type="button" class="btn-add-parte" onclick="addParteRow('vnt','vendedor')">+ Agregar vendedor</button>
+        </div>
+        <div class="ff" style="grid-column:1 / -1">
+          <label>Comprador(es) <span class="req">*</span> <small style="font-weight:400;color:var(--g600)">&mdash; puede agregar varios; la suma de participaci&oacute;n debe dar 100%</small></label>
+          <div id="partesVntList_comprador" class="partes-list"></div>
+          <button type="button" class="btn-add-parte" onclick="addParteRow('vnt','comprador')">+ Agregar comprador</button>
+        </div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Valor y comisi&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor base comisi&oacute;n (COP) <span class="req">*</span></label><input type="number" id="v_valorbase" min="0" placeholder="Ej: 350000000" oninput="calcularComisionVnt()"></div>
@@ -856,8 +882,13 @@ function prepararFormularios(){
   ['ar_mes','v_mes'].forEach(id=>fillSel(id,CAT.meses,'-- Mes --'));
   // Inmuebles
   ['ar_inmueble','v_inmueble'].forEach(id=>fillSelectInmuebles(id,'-- Escoja el inmueble --'));
-  // Clientes
-  ['ar_arrendador','ar_arrendatario','v_vendedor','v_comprador'].forEach(id=>fillSelectClientes(id,'-- Escoja --'));
+  // Partes (multi-cliente por rol) — una fila inicial por rol
+  ['arr_arrendador','arr_arrendatario','vnt_vendedor','vnt_comprador'].forEach(key=>{
+    const [tipo,rol] = key.split('_');
+    const list = document.getElementById('partes'+(tipo==='arr'?'Arr':'Vnt')+'List_'+rol);
+    if (list) list.innerHTML = '';
+    addParteRow(tipo, rol);
+  });
   // Oficinas y origenes (dinámicos desde backend)
   ['ar_ofcap','ar_ofcie','v_ofcap','v_ofcie'].forEach(id=>{ fillSelectOficinas(id,'-- Oficina --'); refreshSearchable(id); });
   ['ar_orgcap','ar_orgcie','v_orgcap','v_orgcie'].forEach(id=>{ fillSelectOrigenes(id,'-- Origen --'); refreshSearchable(id); });
@@ -875,12 +906,116 @@ function prepararFormularios(){
   });
   // Make all selects searchable
   ['ar_mes','v_mes','ar_mercado','v_mercado',
-   'ar_inmueble','v_inmueble','ar_arrendador','ar_arrendatario','v_vendedor','v_comprador',
+   'ar_inmueble','v_inmueble',
    'ar_pct','v_pct',
    'ar_ofcap','ar_ofcie','v_ofcap','v_ofcie',
    'ar_orgcap','ar_orgcie','v_orgcap','v_orgcie',
    'i_ciudad','i_zona','i_tipo','i_rc'
   ].forEach(makeSearchableById);
+}
+
+// ===== PARTES (multi-cliente por rol) =====
+function partesListaId(tipo, rol){
+  return 'partes' + (tipo==='arr'?'Arr':'Vnt') + 'List_' + rol;
+}
+
+function addParteRow(tipo, rol){
+  const listId = partesListaId(tipo, rol);
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const idx = list.querySelectorAll('.parte-row').length;
+  const row = document.createElement('div');
+  row.className = 'parte-row';
+  // Cliente select + % participación + eliminar
+  const selId = 'parte_' + tipo + '_' + rol + '_' + idx + '_cli';
+  row.innerHTML = `
+    <select id="${selId}" class="parte-cli"><option value="">-- Escoja cliente --</option></select>
+    <input type="number" class="parte-pct" min="0" max="100" step="0.01" placeholder="%" oninput="redistribuirParte(this);actualizarSumaPartes('${tipo}','${rol}')">
+    <button type="button" class="parte-del" onclick="eliminarParteRow(this,'${tipo}','${rol}')">&times;</button>
+  `;
+  list.appendChild(row);
+  // Llenar select con clientes
+  fillSelectClientes(selId, '-- Escoja cliente --');
+  makeSearchableById(selId);
+  // Redistribuir % equitativamente al agregar
+  redistribuirEquitativo(tipo, rol);
+  actualizarSumaPartes(tipo, rol);
+}
+
+function eliminarParteRow(btn, tipo, rol){
+  const list = document.getElementById(partesListaId(tipo, rol));
+  const rows = list.querySelectorAll('.parte-row');
+  if (rows.length <= 1) { toast('Debe haber al menos un cliente en este rol','er'); return; }
+  btn.closest('.parte-row').remove();
+  redistribuirEquitativo(tipo, rol);
+  actualizarSumaPartes(tipo, rol);
+}
+
+function redistribuirEquitativo(tipo, rol){
+  const list = document.getElementById(partesListaId(tipo, rol));
+  if (!list) return;
+  const rows = list.querySelectorAll('.parte-row');
+  const n = rows.length;
+  if (n === 0) return;
+  const base = Math.floor(10000/n)/100; // 2 decimales
+  let acum = 0;
+  rows.forEach((r, i) => {
+    const inp = r.querySelector('.parte-pct');
+    let v = (i === n-1) ? Number((100 - acum).toFixed(2)) : base;
+    acum += v;
+    inp.value = v;
+  });
+}
+
+function redistribuirParte(inputChanged){
+  // Si el usuario edita manualmente un %, no tocamos los demás — solo actualizamos la suma
+  // (la validación al guardar exige suma=100 o avisa)
+}
+
+function actualizarSumaPartes(tipo, rol){
+  const list = document.getElementById(partesListaId(tipo, rol));
+  if (!list) return;
+  const rows = list.querySelectorAll('.parte-row');
+  let suma = 0;
+  rows.forEach(r => { suma += Number(r.querySelector('.parte-pct').value) || 0; });
+  suma = Math.round(suma * 100) / 100;
+  let tag = list.parentElement.querySelector('.partes-sum');
+  if (!tag) {
+    tag = document.createElement('span');
+    tag.className = 'partes-sum';
+    list.parentElement.appendChild(tag);
+  }
+  const ok = Math.abs(suma - 100) < 0.01;
+  tag.className = 'partes-sum ' + (ok ? 'ok' : 'bad');
+  tag.textContent = 'Suma: ' + suma.toFixed(2) + '%' + (ok ? ' \u2713' : ' (debe ser 100)');
+}
+
+function recolectarPartes(tipo){
+  const roles = tipo === 'arr' ? ['arrendador','arrendatario'] : ['vendedor','comprador'];
+  const partes = [];
+  let errorMsg = null;
+  roles.forEach(rol => {
+    const list = document.getElementById(partesListaId(tipo, rol));
+    if (!list) return;
+    const rows = list.querySelectorAll('.parte-row');
+    let suma = 0;
+    const vistos = {};
+    rows.forEach(r => {
+      const id_cliente = r.querySelector('.parte-cli').value;
+      const pct = Number(r.querySelector('.parte-pct').value) || 0;
+      if (!id_cliente) { errorMsg = errorMsg || 'Falta escoger cliente en rol "' + rol + '"'; return; }
+      if (vistos[id_cliente]) { errorMsg = errorMsg || 'Cliente duplicado en rol "' + rol + '"'; return; }
+      vistos[id_cliente] = true;
+      suma += pct;
+      partes.push({ rol, id_cliente, participacion_pct: pct / 100 });
+    });
+    if (rows.length === 0) errorMsg = errorMsg || 'Agregue al menos un cliente en rol "' + rol + '"';
+    if (!errorMsg && Math.abs(suma - 100) > 0.01) {
+      errorMsg = 'La participaci\u00f3n de los ' + rol + 'es debe sumar 100% (actual: ' + suma.toFixed(2) + '%)';
+    }
+  });
+  if (errorMsg) return { error: errorMsg };
+  return { partes };
 }
 
 // ===== ASESOR ROWS (comisiones) =====
@@ -1177,8 +1312,8 @@ async function guardarArriendo() {
   const mes=val('ar_mes','Escoja el mes');if(!mes)return;
   const mercado=val('ar_mercado','Escoja el tipo de mercado');if(!mercado)return;
   const inmueble=val('ar_inmueble','Escoja el inmueble');if(!inmueble)return;
-  const arrendador=val('ar_arrendador','Escoja el arrendador');if(!arrendador)return;
-  const arrendatario=val('ar_arrendatario','Escoja el arrendatario');if(!arrendatario)return;
+  const resPartes = recolectarPartes('arr');
+  if (resPartes.error) { toast(resPartes.error, 'er'); return; }
   const canon=val('ar_canon','Escriba el valor del canon');if(!canon)return;
   const admonRaw=document.getElementById('ar_admon').value.trim();
   if(admonRaw===''){toast('Escriba el valor de administraci\u00f3n (use 0 si no aplica)','er');document.getElementById('ar_admon').focus();return}
@@ -1206,10 +1341,10 @@ async function guardarArriendo() {
   try {
     const r = await apiPost({
       action: 'registrar_arriendo',
+      partes: resPartes.partes,
       datos: {
         ['año']: new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
-        id_arrendador: arrendador, id_arrendatario: arrendatario,
         valor_canon: Number(canon),
         administracion: admon,
         pct_comision_oficina: Number(pct),
@@ -1240,8 +1375,8 @@ async function guardarVenta() {
   const mes=val('v_mes','Escoja el mes');if(!mes)return;
   const mercado=val('v_mercado','Escoja el mercado');if(!mercado)return;
   const inmueble=val('v_inmueble','Escoja el inmueble');if(!inmueble)return;
-  const vendedor=val('v_vendedor','Escoja el vendedor');if(!vendedor)return;
-  const comprador=val('v_comprador','Escoja el comprador');if(!comprador)return;
+  const resPartesV = recolectarPartes('vnt');
+  if (resPartesV.error) { toast(resPartesV.error, 'er'); return; }
   const valorbase=val('v_valorbase','Escriba el valor base');if(!valorbase)return;
   const pct=val('v_pct','Escoja el porcentaje');if(!pct)return;
   const ofcap=val('v_ofcap','Escoja oficina captaci\u00f3n');if(!ofcap)return;
@@ -1273,10 +1408,10 @@ async function guardarVenta() {
   try {
     const r = await apiPost({
       action: 'registrar_venta',
+      partes: resPartesV.partes,
       datos: {
         ['año']: new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
-        id_vendedor: vendedor, id_comprador: comprador,
         valor_base_comision: Number(valorbase), pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
@@ -1349,8 +1484,14 @@ async function guardarCliente() {
       datos: { nombre, telefono: document.getElementById('c_tel').value || '', email: document.getElementById('c_email').value || '' }
     });
     if (r && r.ok) {
-      clientes.push({ id_cliente: r.id, nombre, telefono: '', email: '' });
-      ['ar_arrendador', 'ar_arrendatario', 'v_vendedor', 'v_comprador'].forEach(id => { fillSelectClientes(id, '-- Escoja --'); refreshSearchable(id); });
+      clientes.push({ id_cliente: r.id, nombre, telefono: '', email: '', activo: true });
+      // Refrescar todos los selects dinámicos de partes existentes
+      document.querySelectorAll('.parte-cli').forEach(sel => {
+        const prev = sel.value;
+        fillSelectClientes(sel.id, '-- Escoja cliente --');
+        if (prev) sel.value = prev;
+        refreshSearchable(sel.id);
+      });
       document.getElementById('okCliMsg').textContent = r.id + ' \u2014 ' + nombre;
       document.getElementById('okCli').classList.add('show');
       document.getElementById('formCliWrap').style.display = 'none';
@@ -1366,6 +1507,10 @@ function resetArriendo(){
   document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
   document.getElementById('capArrList').innerHTML='';
   document.getElementById('cerArrList').innerHTML='';
+  ['arrendador','arrendatario'].forEach(rol => {
+    const lst = document.getElementById('partesArrList_'+rol);
+    if (lst) { lst.innerHTML=''; addParteRow('arr',rol); }
+  });
   document.getElementById('resumenArr').classList.remove('show');
   document.getElementById('dupliArr').classList.remove('show');
 }
@@ -1375,6 +1520,10 @@ function resetVenta(){
   document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
   document.getElementById('capVntList').innerHTML='';
   document.getElementById('cerVntList').innerHTML='';
+  ['vendedor','comprador'].forEach(rol => {
+    const lst = document.getElementById('partesVntList_'+rol);
+    if (lst) { lst.innerHTML=''; addParteRow('vnt',rol); }
+  });
   document.getElementById('pagosVntList').innerHTML='';
   document.getElementById('pagosVntResumen').textContent='';
   document.getElementById('resumenVnt').classList.remove('show');
@@ -1396,7 +1545,7 @@ document.getElementById('ar_inmueble').addEventListener('change', checkDupliArr)
 document.getElementById('ar_mes').addEventListener('change', checkDupliArr);
 document.getElementById('v_inmueble').addEventListener('change', checkDupliVnt);
 document.getElementById('v_mes').addEventListener('change', checkDupliVnt);
-document.getElementById('v_comprador').addEventListener('change', checkDupliVnt);
+// Los compradores se checkean on-demand desde los selects dinámicos (no hay un único v_comprador)
 
 async function checkDupliArr(){
   const inm=document.getElementById('ar_inmueble').value;
@@ -1411,10 +1560,13 @@ async function checkDupliArr(){
 async function checkDupliVnt(){
   const inm=document.getElementById('v_inmueble').value;
   const mes=document.getElementById('v_mes').value;
-  const comprador=document.getElementById('v_comprador').value;
+  // Recolectar compradores seleccionados en los selects dinámicos
+  const compradoresSel = Array.from(document.querySelectorAll('#partesVntList_comprador .parte-cli'))
+    .map(s => s.value).filter(Boolean);
+  const csv = compradoresSel.join(',');
   if(!inm||!mes){document.getElementById('dupliVnt').classList.remove('show');return}
   try{
-    const r=await apiGet({action:'verificar_duplicado',tipo:'ventas',id_inmueble:inm,mes:mes,id_comprador:comprador});
+    const r=await apiGet({action:'verificar_duplicado',tipo:'ventas',id_inmueble:inm,mes:mes,id_comprador:csv});
     if(r&&r.duplicado)document.getElementById('dupliVnt').classList.add('show');
     else document.getElementById('dupliVnt').classList.remove('show');
   }catch(e){}
@@ -1502,13 +1654,16 @@ function renderMisNegocios(){
       const misCom=comisionesFiltradas.filter(c=>c.id_negocio===a.id_arriendo);
       const miCom=misCom.reduce((s,c)=>s+(Number(c.valor_comision)||0),0);
       const puntas=misCom.map(c=>c.punta).join(', ');
+      const partesArr = (r.partes||[]).filter(p=>p.id_negocio===a.id_arriendo);
+      const arrendadores = partesArr.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
+      const arrendatarios = partesArr.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
       html+=`<div class="neg-card arriendo">
         <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
           <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
-          <div><strong>Arrendador:</strong> ${nomCli(a.id_arrendador)}</div>
-          <div><strong>Arrendatario:</strong> ${nomCli(a.id_arrendatario)}</div>
+          <div><strong>Arrendador:</strong> ${arrendadores}</div>
+          <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
@@ -1567,13 +1722,16 @@ function renderMisNegocios(){
         });
       }
 
+      const partesV = (r.partes||[]).filter(p=>p.id_negocio===v.id_venta);
+      const vendedores = partesV.filter(p=>p.rol==='vendedor').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
+      const compradores = partesV.filter(p=>p.rol==='comprador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
       html+=`<div class="neg-card venta" style="${cardStyle}">
         <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt">Venta &mdash; ${nomMes(v.mes)} ${v['año']||''}</span><span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
           <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
-          <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
-          <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
+          <div><strong>Vendedor:</strong> ${vendedores}</div>
+          <div><strong>Comprador:</strong> ${compradores}</div>
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n total: ${fmtP(miCom)}</div>
@@ -1667,6 +1825,9 @@ function renderGestion(){
     }else{estado='CANCELADA'}
     const colores={COBRADO:'#10b981',PARCIAL:'#f59e0b',PENDIENTE:'#ef4444',CANCELADA:'#888'};
 
+    const partesV = (r.partes||[]).filter(p=>p.id_negocio===v.id_venta);
+    const vendedoresG = partesV.filter(p=>p.rol==='vendedor').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
+    const compradoresG = partesV.filter(p=>p.rol==='comprador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
     html+=`<div class="neg-card venta" style="${cancelada?'opacity:0.5':''}">
       <div class="neg-top">
         <span class="neg-id">${v.id_venta}</span>
@@ -1677,8 +1838,8 @@ function renderGestion(){
         <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
         <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
         <div><strong>Comisi\u00f3n oficina:</strong> ${fmtP(comOficina)}</div>
-        <div><strong>Vendedor:</strong> ${nomCli(v.id_vendedor)}</div>
-        <div><strong>Comprador:</strong> ${nomCli(v.id_comprador)}</div>
+        <div><strong>Vendedor:</strong> ${vendedoresG}</div>
+        <div><strong>Comprador:</strong> ${compradoresG}</div>
         <div><strong>Asesores:</strong> ${asesoresVenta}</div>
         <div><strong>Cuotas:</strong> ${pagosV.length}</div>
       </div>

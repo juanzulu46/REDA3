@@ -41,6 +41,7 @@ const HOJAS = {
   ventas: 'Ventas',
   pagos: 'Pagos',
   comisiones: 'Comisiones',
+  partes: 'Partes',
   oficina: 'Oficina',
   origen: 'Origen',
   zona: 'Zona',
@@ -56,13 +57,13 @@ const COLUMNAS = {
              'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email',
              'password', 'rol'],
   inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
-  clientes: ['id_cliente', 'nombre', 'telefono', 'email'],
-  arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble', 'id_arrendador', 'id_arrendatario',
+  clientes: ['id_cliente', 'nombre', 'telefono', 'email', 'tipo_persona', 'tipo_documento', 'numero_documento', 'activo'],
+  arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble',
               'valor_canon', 'administracion', 'pct_comision_oficina', 'comision_oficina',
               'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
               'referido_captador', 'numero_captador_r', 'valor_ref_captador',
               'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador'],
-  ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble', 'id_vendedor', 'id_comprador',
+  ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble',
            'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
            'comision_por_punta',
            'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
@@ -71,6 +72,7 @@ const COLUMNAS = {
            'estado_venta'],
   pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
+  partes: ['id_parte', 'id_negocio', 'tipo_negocio', 'rol', 'id_cliente', 'participacion_pct'],
   oficina: ['id_oficina', 'nombre'],
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
@@ -154,6 +156,87 @@ function siguienteId(nombreHoja, prefijo) {
     if (!isNaN(num) && num > max) max = num;
   });
   return prefijo + '-' + String(max + 1).padStart(3, '0');
+}
+
+// ===== PARTES (N clientes por rol por negocio) =====
+// Valida un arreglo de partes y las escribe en la hoja Partes.
+// partes = [{rol, id_cliente, participacion_pct}, ...]
+// rolesRequeridos = ['arrendador','arrendatario'] | ['vendedor','comprador']
+// Retorna null si ok, string de error si falla.
+function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, clientesRef) {
+  if (!partes || !Array.isArray(partes) || partes.length === 0) {
+    return 'Debe haber al menos un cliente por rol (' + rolesRequeridos.join(', ') + ')';
+  }
+  // Chequear que haya al menos 1 por rol requerido
+  for (var i = 0; i < rolesRequeridos.length; i++) {
+    var rol = rolesRequeridos[i];
+    if (!partes.some(function(p){ return p.rol === rol; })) {
+      return 'Falta al menos un cliente con rol "' + rol + '"';
+    }
+  }
+  // Integridad referencial
+  for (var j = 0; j < partes.length; j++) {
+    var p = partes[j];
+    if (rolesRequeridos.indexOf(p.rol) === -1) {
+      return 'Rol inválido "' + p.rol + '". Permitidos: ' + rolesRequeridos.join(', ');
+    }
+    if (!clientesRef.some(function(c){ return String(c.id_cliente) === String(p.id_cliente); })) {
+      return 'Cliente "' + p.id_cliente + '" no existe';
+    }
+  }
+  // Suma de participacion_pct por rol = 1.0 (decimal 0-1) con tolerancia ±0.01
+  for (var k = 0; k < rolesRequeridos.length; k++) {
+    var r = rolesRequeridos[k];
+    var suma = partes.filter(function(pp){ return pp.rol === r; })
+      .reduce(function(acc, pp){ return acc + numVal(pp.participacion_pct); }, 0);
+    if (Math.abs(suma - 1) > 0.01) {
+      return 'La suma de participación para rol "' + r + '" debe ser 100% (actual: ' + Math.round(suma*100) + '%)';
+    }
+  }
+  // Duplicados: un mismo cliente no puede aparecer 2 veces en el mismo rol
+  for (var m = 0; m < rolesRequeridos.length; m++) {
+    var rr = rolesRequeridos[m];
+    var vistos = {};
+    var parDup = partes.filter(function(pp){ return pp.rol === rr; });
+    for (var n = 0; n < parDup.length; n++) {
+      var id = String(parDup[n].id_cliente);
+      if (vistos[id]) return 'Cliente "' + id + '" está duplicado en rol "' + rr + '"';
+      vistos[id] = true;
+    }
+  }
+  // Escribir
+  partes.forEach(function(p) {
+    var idParte = siguienteId(HOJAS.partes, 'PRT');
+    agregarFila(HOJAS.partes, COLUMNAS.partes, {
+      id_parte: idParte,
+      id_negocio: idNegocio,
+      tipo_negocio: tipoNegocio,
+      rol: p.rol,
+      id_cliente: p.id_cliente,
+      participacion_pct: numVal(p.participacion_pct)
+    });
+  });
+  return null;
+}
+
+// Borra todas las partes de un negocio (para editar)
+function borrarPartesDeNegocio(idNegocio) {
+  var sheet = getSheet(HOJAS.partes);
+  if (!sheet) return 0;
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  var headers = data[0];
+  var idxNeg = headers.indexOf('id_negocio');
+  if (idxNeg === -1) return 0;
+  var borradas = 0;
+  // Recorrer de abajo hacia arriba para no desfasar índices
+  for (var r = data.length - 1; r >= 1; r--) {
+    if (String(data[r][idxNeg]) === String(idNegocio)) {
+      sheet.deleteRow(r + 1);
+      borradas++;
+    }
+  }
+  return borradas;
 }
 
 // Agrega una fila a una hoja
@@ -385,10 +468,16 @@ function doGet(e) {
 
     // --- CATALOGOS: devuelve todos los catálogos para los selects ---
     if (action === 'catalogos') {
+      // Sólo clientes activos (activo != FALSE) para los selects del formulario
+      var clientesCat = leerHoja(HOJAS.clientes).filter(function(c){
+        var a = c.activo;
+        if (a === false || String(a).toUpperCase() === 'FALSE') return false;
+        return true;
+      });
       return jsonResponse({
         ok: true,
         inmuebles: leerHoja(HOJAS.inmuebles),
-        clientes: leerHoja(HOJAS.clientes),
+        clientes: clientesCat,
         oficinas: leerHoja(HOJAS.oficina),
         origenes: leerHoja(HOJAS.origen),
         zonas: leerHoja(HOJAS.zona),
@@ -407,6 +496,7 @@ function doGet(e) {
       var comisiones = leerHoja(HOJAS.comisiones);
       var inmuebles = leerHoja(HOJAS.inmuebles);
       var clientes = leerHoja(HOJAS.clientes);
+      var partes = leerHoja(HOJAS.partes);
 
       var misComisiones = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
       var misNegocioIds = misComisiones.map(function(c) { return c.id_negocio; });
@@ -415,6 +505,7 @@ function doGet(e) {
       var misVentas = ventas.filter(function(v) { return misNegocioIds.indexOf(v.id_venta) !== -1; });
       var misVentaIds = misVentas.map(function(v) { return v.id_venta; });
       var misPagos = pagos.filter(function(p) { return misVentaIds.indexOf(p.id_venta) !== -1; });
+      var misPartes = partes.filter(function(p) { return misNegocioIds.indexOf(p.id_negocio) !== -1; });
 
       return jsonResponse({
         ok: true,
@@ -423,14 +514,15 @@ function doGet(e) {
         pagos: misPagos,
         comisiones: misComisiones,
         inmuebles: inmuebles,
-        clientes: clientes
+        clientes: clientes,
+        partes: misPartes
       });
     }
 
     // --- SIGUIENTE ID ---
     if (action === 'siguiente_id') {
       var tipo = params.tipo || '';
-      var prefijos = { arriendos: 'ARR', ventas: 'VNT', inmuebles: 'INM', clientes: 'CLI', pagos: 'PAG' };
+      var prefijos = { arriendos: 'ARR', ventas: 'VNT', inmuebles: 'INM', clientes: 'CLI', pagos: 'PAG', partes: 'PRT' };
       var hoja = HOJAS[tipo];
       var prefijo = prefijos[tipo];
       if (!hoja || !prefijo) return jsonResponse({ ok: false, error: 'Tipo inválido' });
@@ -530,6 +622,7 @@ function doGet(e) {
         comisiones: leerHoja(HOJAS.comisiones),
         inmuebles: leerHoja(HOJAS.inmuebles),
         clientes: leerHoja(HOJAS.clientes),
+        partes: leerHoja(HOJAS.partes),
         asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre }; })
       });
     }
@@ -539,24 +632,40 @@ function doGet(e) {
       var tipoDup = params.tipo || '';
       var idInmueble = params.id_inmueble || '';
       var mesDup = params.mes || '';
-      var idComprador = params.id_comprador || '';
+      // compradores/vendedores pueden venir como CSV: "CLI-001,CLI-003"
+      var compradoresCSV = params.id_comprador || '';
+      var compradoresList = compradoresCSV
+        ? String(compradoresCSV).split(',').map(function(s){ return s.trim(); }).filter(Boolean)
+        : [];
       var hojaDup = tipoDup === 'arriendos' ? HOJAS.arriendos : HOJAS.ventas;
       var datosDup = leerHoja(hojaDup);
       var duplicado = null;
+
+      // 1) Duplicado por inmueble + mes
       for (var i = 0; i < datosDup.length; i++) {
         var d = datosDup[i];
-        // Verificar inmueble + mes (original)
         if (String(d.id_inmueble) === String(idInmueble) && String(d.mes) === String(mesDup)) {
           duplicado = d;
           break;
         }
-        // Verificar inmueble + comprador (ventas)
-        if (tipoDup === 'ventas' && idComprador &&
-            String(d.id_inmueble) === String(idInmueble) && String(d.id_comprador) === String(idComprador)) {
-          duplicado = d;
-          break;
+      }
+
+      // 2) Duplicado por inmueble + comprador (ventas): usa hoja Partes
+      if (!duplicado && tipoDup === 'ventas' && compradoresList.length > 0) {
+        var partesAll = leerHoja(HOJAS.partes);
+        var ventasConInm = datosDup.filter(function(v){
+          return String(v.id_inmueble) === String(idInmueble);
+        });
+        for (var vi = 0; vi < ventasConInm.length && !duplicado; vi++) {
+          var compsVenta = partesAll.filter(function(p){
+            return String(p.id_negocio) === String(ventasConInm[vi].id_venta) && p.rol === 'comprador';
+          }).map(function(p){ return String(p.id_cliente); });
+          for (var ci = 0; ci < compradoresList.length; ci++) {
+            if (compsVenta.indexOf(compradoresList[ci]) !== -1) { duplicado = ventasConInm[vi]; break; }
+          }
         }
       }
+
       return jsonResponse({ ok: true, duplicado: !!duplicado, negocio: duplicado });
     }
 
@@ -619,20 +728,20 @@ function doPost(e) {
       // Año automático
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
-      // Validar integridad referencial: inmueble, arrendador, arrendatario
+      // Integridad referencial del inmueble
       var inmRef = leerHoja(HOJAS.inmuebles);
       var cliRef = leerHoja(HOJAS.clientes);
       if (!inmRef.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
       }
-      if (datos.id_arrendador && !cliRef.some(function(c){ return String(c.id_cliente) === String(datos.id_arrendador); })) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Arrendador "' + datos.id_arrendador + '" no existe' });
-      }
-      if (datos.id_arrendatario && !cliRef.some(function(c){ return String(c.id_cliente) === String(datos.id_arrendatario); })) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Arrendatario "' + datos.id_arrendatario + '" no existe' });
+
+      // Retrocompat: si no vienen partes[] pero sí id_arrendador/id_arrendatario legacy, convertir
+      var partesArr = body.partes;
+      if ((!partesArr || partesArr.length === 0) && (datos.id_arrendador || datos.id_arrendatario)) {
+        partesArr = [];
+        if (datos.id_arrendador) partesArr.push({ rol:'arrendador', id_cliente:datos.id_arrendador, participacion_pct:1 });
+        if (datos.id_arrendatario) partesArr.push({ rol:'arrendatario', id_cliente:datos.id_arrendatario, participacion_pct:1 });
       }
 
       // Bloquear duplicado: mismo inmueble + mes + año
@@ -655,6 +764,16 @@ function doPost(e) {
       datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
       // Calcular comisión (usar numVal para tolerar coma decimal)
       datos.comision_oficina = numVal(datos.valor_canon) * numVal(datos.pct_comision_oficina);
+
+      // Validar y guardar partes (arrendador + arrendatario, suma=100% por rol)
+      var errPartes = validarYGuardarPartes(
+        datos.id_arriendo, 'arriendo', ['arrendador','arrendatario'], partesArr, cliRef
+      );
+      if (errPartes) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errPartes });
+      }
+
       // Guardar arriendo
       agregarFila(HOJAS.arriendos, COLUMNAS.arriendos, datos);
 
@@ -681,26 +800,36 @@ function doPost(e) {
       const datos = body.datos;
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
-      // Integridad referencial: inmueble, vendedor, comprador
+      // Integridad referencial del inmueble
       var inmRefV = leerHoja(HOJAS.inmuebles);
       var cliRefV = leerHoja(HOJAS.clientes);
       if (!inmRefV.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
       }
-      if (datos.id_vendedor && !cliRefV.some(function(c){ return String(c.id_cliente) === String(datos.id_vendedor); })) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Vendedor "' + datos.id_vendedor + '" no existe' });
-      }
-      if (datos.id_comprador && !cliRefV.some(function(c){ return String(c.id_cliente) === String(datos.id_comprador); })) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Comprador "' + datos.id_comprador + '" no existe' });
+
+      // Retrocompat: si no vienen partes[] pero sí id_vendedor/id_comprador legacy, convertir
+      var partesArrV = body.partes;
+      if ((!partesArrV || partesArrV.length === 0) && (datos.id_vendedor || datos.id_comprador)) {
+        partesArrV = [];
+        if (datos.id_vendedor) partesArrV.push({ rol:'vendedor', id_cliente:datos.id_vendedor, participacion_pct:1 });
+        if (datos.id_comprador) partesArrV.push({ rol:'comprador', id_cliente:datos.id_comprador, participacion_pct:1 });
       }
 
       datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
       datos.comision_oficina = numVal(datos.valor_base_comision) * numVal(datos.pct_comision_oficina);
       datos.comision_por_punta = datos.comision_oficina / 2;
       datos.estado_venta = 'ACTIVA';
+
+      // Validar y guardar partes (vendedor + comprador, suma=100% por rol)
+      var errPartesV = validarYGuardarPartes(
+        datos.id_venta, 'venta', ['vendedor','comprador'], partesArrV, cliRefV
+      );
+      if (errPartesV) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errPartesV });
+      }
+
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
 
       if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
