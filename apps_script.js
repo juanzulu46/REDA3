@@ -785,7 +785,7 @@ function doPost(e) {
             id_negocio: datos.id_arriendo,
             valor_comision: com.valor_comision,
             punta: com.punta,
-            participacion: com.participacion || 100,
+            participacion: (numVal(com.participacion) || 100) / 100,
             estado: 'ACTIVA'
           });
         });
@@ -839,7 +839,7 @@ function doPost(e) {
             id_negocio: datos.id_venta,
             valor_comision: com.valor_comision,
             punta: com.punta,
-            participacion: com.participacion || 100,
+            participacion: (numVal(com.participacion) || 100) / 100,
             estado: 'ACTIVA'
           });
         });
