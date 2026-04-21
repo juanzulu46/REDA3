@@ -1811,6 +1811,7 @@ function renderGestion(){
   const fMes=Number(document.getElementById('gFiltroMes')?.value||0);
   const fAsesor=document.getElementById('gFiltroAsesor')?.value||'';
   const fEstado=document.getElementById('gFiltroEstado')?.value||'';
+  const fTipo=document.getElementById('gFiltroTipo')?.value||'';
 
   // Filtrar ventas
   let ventasFilt=r.ventas.slice();
@@ -1821,10 +1822,27 @@ function renderGestion(){
     const idsNeg=new Set(r.comisiones.filter(c=>c.id_asesor===fAsesor).map(c=>c.id_negocio));
     ventasFilt=ventasFilt.filter(v=>idsNeg.has(v.id_venta));
   }
+  if(fTipo==='arriendo')ventasFilt=[];
+
+  // Filtrar arriendos
+  let arriendosFilt=(r.arriendos||[]).slice();
+  if(fMes)arriendosFilt=arriendosFilt.filter(a=>Number(a.mes)===fMes);
+  if(fAsesor){
+    const idsNegA=new Set(r.comisiones.filter(c=>c.id_asesor===fAsesor).map(c=>c.id_negocio));
+    arriendosFilt=arriendosFilt.filter(a=>idsNegA.has(a.id_arriendo));
+  }
+  if(fTipo==='venta')arriendosFilt=[];
 
   // Construir filtros HTML
   const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   let html=`<div class="neg-filtros">
+    <div class="neg-filtro-grupo"><label>Tipo:</label>
+      <select id="gFiltroTipo" onchange="renderGestion()">
+        <option value="">Todos</option>
+        <option value="venta"${fTipo==='venta'?' selected':''}>Ventas</option>
+        <option value="arriendo"${fTipo==='arriendo'?' selected':''}>Arriendos</option>
+      </select>
+    </div>
     <div class="neg-filtro-grupo"><label>Mes:</label>
       <select id="gFiltroMes" onchange="renderGestion()">
         <option value="0">Todos</option>
@@ -1837,19 +1855,63 @@ function renderGestion(){
         ${r.asesores.map(a=>'<option value="'+a.id_asesor+'"'+(a.id_asesor===fAsesor?' selected':'')+'>'+a.nombre+'</option>').join('')}
       </select>
     </div>
-    <div class="neg-filtro-grupo"><label>Estado:</label>
+    <div class="neg-filtro-grupo"><label>Estado venta:</label>
       <select id="gFiltroEstado" onchange="renderGestion()">
         <option value="">Todos</option>
         <option value="ACTIVA"${fEstado==='ACTIVA'?' selected':''}>Activas</option>
         <option value="CANCELADA"${fEstado==='CANCELADA'?' selected':''}>Canceladas</option>
       </select>
     </div>
-    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';renderGestion()">Limpiar</button></div>
+    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';document.getElementById('gFiltroTipo').value='';renderGestion()">Limpiar</button></div>
   </div>
   <div class="neg-resumen">
+    <div class="neg-stat"><div class="ns-val">${arriendosFilt.length}</div><div class="ns-label">Arriendos</div></div>
     <div class="neg-stat"><div class="ns-val">${ventasFilt.length}</div><div class="ns-label">Ventas</div></div>
-    <div class="neg-stat v"><div class="ns-val">${fmtP(ventasFilt.reduce((s,v)=>s+numVal(v.comision_oficina),0))}</div><div class="ns-label">Comisi\u00f3n total</div></div>
+    <div class="neg-stat v"><div class="ns-val">${fmtP(ventasFilt.reduce((s,v)=>s+numVal(v.comision_oficina),0)+arriendosFilt.reduce((s,a)=>s+numVal(a.comision_oficina)*(parseInt(a.meses_contrato,10)||1),0))}</div><div class="ns-label">Comisi\u00f3n total</div></div>
   </div>`;
+
+  // Renderizar arriendos primero
+  arriendosFilt.forEach(a=>{
+    const cobrosA=(r.cobros_arriendo||[]).filter(c=>c.id_arriendo===a.id_arriendo)
+      .sort((x,y)=>(Number(x['año_cobro'])||0)*12+(Number(x.mes_cobro)||0)-((Number(y['año_cobro'])||0)*12+(Number(y.mes_cobro)||0)));
+    const mesesA=parseInt(a.meses_contrato,10)||0;
+    const asesoresArr=r.comisiones.filter(c=>c.id_negocio===a.id_arriendo).map(c=>nomAse(c.id_asesor)+' ('+c.punta+')').join(', ');
+    const partesA=(r.partes||[]).filter(p=>p.id_negocio===a.id_arriendo);
+    const arrendadores=partesA.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)).join(', ')||'&mdash;';
+    const arrendatarios=partesA.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)).join(', ')||'&mdash;';
+    const totalCobrado=cobrosA.filter(c=>String(c.estado).toUpperCase()==='COBRADO').reduce((s,c)=>s+numVal(c.valor_cobrado),0);
+    const totalProyectado=cobrosA.reduce((s,c)=>s+numVal(c.valor_cobrado),0);
+    let cobrosHTML='';
+    if(cobrosA.length>0){
+      cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
+      cobrosA.forEach(c=>{
+        const est=String(c.estado||'PROYECTADO').toUpperCase();
+        const colorE=est==='COBRADO'?'#10b981':est==='CANCELADO'?'#888':'#f59e0b';
+        cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
+          <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
+          <button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>
+        </div>`;
+      });
+      cobrosHTML+='</div>';
+    }
+    html+=`<div class="neg-card arriendo">
+      <div class="neg-top">
+        <span class="neg-id">${a.id_arriendo}</span>
+        <span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>
+        <span style="margin-left:auto;font-weight:700;font-size:11px;color:#10b981">${fmtP(totalCobrado)} / ${fmtP(totalProyectado)}</span>
+      </div>
+      <div class="neg-detail">
+        <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
+        <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
+        <div><strong>Meses contrato:</strong> ${mesesA||'&mdash;'}</div>
+        <div><strong>Comisi\u00f3n mensual:</strong> ${fmtP(a.comision_oficina)}</div>
+        <div><strong>Arrendador:</strong> ${arrendadores}</div>
+        <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
+        <div><strong>Asesores:</strong> ${asesoresArr}</div>
+      </div>
+      ${cobrosHTML}
+    </div>`;
+  });
 
   ventasFilt.forEach(v=>{
     const cancelada=String(v.estado_venta||'').toUpperCase()==='CANCELADA';
@@ -1886,7 +1948,7 @@ function renderGestion(){
     </div>`;
   });
 
-  if(ventasFilt.length===0) html+='<div class="neg-empty">No hay ventas con esos filtros.</div>';
+  if(ventasFilt.length===0 && arriendosFilt.length===0) html+='<div class="neg-empty">No hay negocios con esos filtros.</div>';
   cont.innerHTML=html;
 }
 
