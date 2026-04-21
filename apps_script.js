@@ -48,7 +48,8 @@ const HOJAS = {
   acciones: 'Acciones',
   tipos_accion: 'TipoAccion',
   bonificaciones: 'Bonificaciones',
-  parametros: 'Parametros'
+  parametros: 'Parametros',
+  cobros_arriendo: 'CobrosArriendo'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -62,7 +63,8 @@ const COLUMNAS = {
               'valor_canon', 'administracion', 'pct_comision_oficina', 'comision_oficina',
               'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
               'referido_captador', 'numero_captador_r', 'valor_ref_captador',
-              'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador'],
+              'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
+              'meses_contrato'],
   ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble',
            'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
            'comision_por_punta',
@@ -77,7 +79,8 @@ const COLUMNAS = {
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
-  tipos_accion: ['id_tipo', 'nombre', 'activo']
+  tipos_accion: ['id_tipo', 'nombre', 'activo'],
+  cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'valor_cobrado', 'estado', 'observacion']
 };
 
 // ===== UTILIDADES =====
@@ -156,6 +159,69 @@ function siguienteId(nombreHoja, prefijo) {
     if (!isNaN(num) && num > max) max = num;
   });
   return prefijo + '-' + String(max + 1).padStart(3, '0');
+}
+
+// Devuelve los meses del contrato del arriendo. Para registros legacy sin el campo,
+// infiere por la regla del % comisión (≤10% → 12 meses administración, >10% → 1 mes colocación).
+function mesesContratoDe(arriendo) {
+  var n = parseInt(arriendo.meses_contrato, 10);
+  if (n && n > 0) return n;
+  var pct = numVal(arriendo.pct_comision_oficina);
+  return (pct > 0 && pct <= 0.10) ? 12 : 1;
+}
+
+// Genera N filas en CobrosArriendo a partir del mes/año del arriendo.
+// Cada fila: estado=PROYECTADO, valor_cobrado=comision_oficina mensual.
+function generarCobrosProyectados(arriendo) {
+  var meses = mesesContratoDe(arriendo);
+  var comMensual = numVal(arriendo.comision_oficina);
+  var anoBase = parseInt(arriendo['año'], 10) || (new Date()).getFullYear();
+  var mesBase = parseInt(arriendo.mes, 10) || ((new Date()).getMonth() + 1);
+  for (var i = 0; i < meses; i++) {
+    var mTotal = mesBase + i; // 1..N
+    var anoCobro = anoBase + Math.floor((mTotal - 1) / 12);
+    var mesCobro = ((mTotal - 1) % 12) + 1;
+    agregarFila(HOJAS.cobros_arriendo, COLUMNAS.cobros_arriendo, {
+      id_cobro: siguienteId(HOJAS.cobros_arriendo, 'COB'),
+      id_arriendo: arriendo.id_arriendo,
+      'año_cobro': anoCobro,
+      mes_cobro: mesCobro,
+      valor_cobrado: comMensual,
+      estado: 'PROYECTADO',
+      observacion: ''
+    });
+  }
+}
+
+// Crea hoja CobrosArriendo si no existe, agrega columna meses_contrato a Arriendos
+// si falta y actualiza el umbral de PIEDRA en Bonificaciones.
+// Se ejecuta una vez vía endpoint setup_cobros_arriendo.
+function setupCobrosArriendo() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var resultado = { sheet_creada: false, columna_agregada: false, piedra_actualizada: false };
+
+  // 1) Crear hoja CobrosArriendo
+  var hojaCobros = ss.getSheetByName(HOJAS.cobros_arriendo);
+  if (!hojaCobros) {
+    hojaCobros = ss.insertSheet(HOJAS.cobros_arriendo);
+    hojaCobros.appendRow(COLUMNAS.cobros_arriendo);
+    hojaCobros.getRange(1, 1, 1, COLUMNAS.cobros_arriendo.length).setFontWeight('bold');
+    resultado.sheet_creada = true;
+  }
+
+  // 2) Agregar columna meses_contrato a Arriendos
+  var hojaArr = ss.getSheetByName(HOJAS.arriendos);
+  var headersArr = hojaArr.getRange(1, 1, 1, hojaArr.getLastColumn()).getValues()[0];
+  if (headersArr.indexOf('meses_contrato') === -1) {
+    hojaArr.getRange(1, headersArr.length + 1).setValue('meses_contrato').setFontWeight('bold');
+    resultado.columna_agregada = true;
+  }
+
+  // 3) Actualizar umbral PIEDRA en Bonificaciones (3.260.417 según Comisiones.xlsx)
+  actualizarFila(HOJAS.bonificaciones, 'categoria', 'PIEDRA', { min_comision_oficina: 3260417 });
+  resultado.piedra_actualizada = true;
+
+  return resultado;
 }
 
 // ===== PARTES (N clientes por rol por negocio) =====
@@ -302,11 +368,12 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   var totalRecibido = 0;
   var hoy = new Date();
 
-  // --- Arriendos: sin cambios, filtran por mes del arriendo ---
+  // --- Arriendos: filtran por mes del arriendo, anualizados según meses_contrato ---
   arriendos.forEach(function(a) {
     if (parseInt(a.mes, 10) !== mes) return;
     if (negociosIds.indexOf(a.id_arriendo) === -1) return;
-    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * 0.5 * sumParticipacion(a.id_arriendo);
+    var meses = mesesContratoDe(a);
+    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * meses * 0.5 * sumParticipacion(a.id_arriendo);
   });
 
   // --- Ventas: filtran por mes_pago de cada pago efectuado (fecha_pago <= hoy) ---
@@ -506,6 +573,9 @@ function doGet(e) {
       var misVentaIds = misVentas.map(function(v) { return v.id_venta; });
       var misPagos = pagos.filter(function(p) { return misVentaIds.indexOf(p.id_venta) !== -1; });
       var misPartes = partes.filter(function(p) { return misNegocioIds.indexOf(p.id_negocio) !== -1; });
+      var misArriendoIds = misArriendos.map(function(a) { return a.id_arriendo; });
+      var misCobros = leerHoja(HOJAS.cobros_arriendo)
+        .filter(function(c){ return misArriendoIds.indexOf(c.id_arriendo) !== -1; });
 
       return jsonResponse({
         ok: true,
@@ -515,7 +585,8 @@ function doGet(e) {
         comisiones: misComisiones,
         inmuebles: inmuebles,
         clientes: clientes,
-        partes: misPartes
+        partes: misPartes,
+        cobros_arriendo: misCobros
       });
     }
 
@@ -544,6 +615,12 @@ function doGet(e) {
         bonificaciones: leerHoja(HOJAS.bonificaciones)
       };
 
+      // Cargar asesor para conocer la vinculación (Empleado vs Freelance)
+      var asesorB = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorB; });
+      var vinculacion = asesorB ? String(asesorB.vinculacion || '').toLowerCase() : '';
+      // Empleado: el total se divide por 1.3 (G41 del Excel Comisiones.xlsx)
+      var factorVinc = vinculacion === 'empleado' ? (1 / 1.3) : 1;
+
       // Categoría del mes actual
       var actual = calcularCategoriaMes(idAsesorB, mesB, datosBon);
 
@@ -561,18 +638,21 @@ function doGet(e) {
       }
 
       var pctVariable = 0;
-      var fijo = 0;
-      var variable = 0;
+      var fijoBase = 0;
+      var variableBase = 0;
       if (actual.escalon) {
         pctVariable = esContinuidad
           ? Number(actual.escalon.pct_variable_continuidad) || 0
           : Number(actual.escalon.pct_variable_inicial) || 0;
-        fijo = actual.esMedio
+        fijoBase = actual.esMedio
           ? (Number(actual.escalon.fijo_medio) || 0)
           : (Number(actual.escalon.fijo) || 0);
-        variable = actual.comisionGeneradaOficina * pctVariable;
+        variableBase = actual.comisionGeneradaOficina * pctVariable;
       }
 
+      // Aplicar factor de vinculación (empleado: ÷1.3; freelance: ×1)
+      var fijo = fijoBase * factorVinc;
+      var variable = variableBase * factorVinc;
       var bonificacionTotal = fijo + variable;
 
       return jsonResponse({
@@ -586,6 +666,11 @@ function doGet(e) {
         bonificacion_fija: fijo,
         bonificacion_variable: variable,
         bonificacion_total: bonificacionTotal,
+        bonificacion_fija_freelance: fijoBase,
+        bonificacion_variable_freelance: variableBase,
+        bonificacion_total_freelance: fijoBase + variableBase,
+        vinculacion: asesorB ? asesorB.vinculacion : '',
+        factor_vinculacion: factorVinc,
         pct_variable: pctVariable,
         es_continuidad: esContinuidad,
         categoria_mes_anterior: catAnterior
@@ -623,8 +708,18 @@ function doGet(e) {
         inmuebles: leerHoja(HOJAS.inmuebles),
         clientes: leerHoja(HOJAS.clientes),
         partes: leerHoja(HOJAS.partes),
+        cobros_arriendo: leerHoja(HOJAS.cobros_arriendo),
         asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre }; })
       });
+    }
+
+    // --- COBROS DE UN ARRIENDO (lectura) ---
+    if (action === 'mis_cobros_arriendo') {
+      var idArrCob = params.id_arriendo || '';
+      if (!idArrCob) return jsonResponse({ ok:false, error:'Falta id_arriendo' });
+      var cobrosArr = leerHoja(HOJAS.cobros_arriendo)
+        .filter(function(c){ return String(c.id_arriendo) === String(idArrCob); });
+      return jsonResponse({ ok:true, cobros: cobrosArr });
     }
 
     // --- VERIFICAR DUPLICADO ---
@@ -762,8 +857,16 @@ function doPost(e) {
 
       // Generar ID
       datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
-      // Calcular comisión (usar numVal para tolerar coma decimal)
-      datos.comision_oficina = numVal(datos.valor_canon) * numVal(datos.pct_comision_oficina);
+      // Calcular comisión sobre canon + administración (consistente con frontend)
+      var canonTotalArr = numVal(datos.valor_canon) + numVal(datos.administracion);
+      datos.comision_oficina = canonTotalArr * numVal(datos.pct_comision_oficina);
+      // Meses del contrato: si no viene, infiere por la regla pct
+      if (!datos.meses_contrato || parseInt(datos.meses_contrato, 10) <= 0) {
+        var pctArr = numVal(datos.pct_comision_oficina);
+        datos.meses_contrato = (pctArr > 0 && pctArr <= 0.10) ? 12 : 1;
+      } else {
+        datos.meses_contrato = parseInt(datos.meses_contrato, 10);
+      }
 
       // Validar y guardar partes (arrendador + arrendatario, suma=100% por rol)
       var errPartes = validarYGuardarPartes(
@@ -776,6 +879,9 @@ function doPost(e) {
 
       // Guardar arriendo
       agregarFila(HOJAS.arriendos, COLUMNAS.arriendos, datos);
+
+      // Auto-generar cobros proyectados (uno por cada mes del contrato)
+      try { generarCobrosProyectados(datos); } catch(eCob) { /* no bloquear el registro si falla */ }
 
       // Guardar comisiones de los asesores
       if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
@@ -1054,6 +1160,55 @@ function doPost(e) {
       agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
+    }
+
+    // --- ACTUALIZAR COBRO DE ARRIENDO (sólo gerente) ---
+    if (action === 'actualizar_cobro_arriendo') {
+      var idCobroU = body.id_cobro;
+      var idAsesorU = body.id_asesor;
+      if (!idCobroU || !idAsesorU) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Faltan parámetros (id_cobro, id_asesor)' });
+      }
+      // Validar rol gerente
+      var asesorU = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorU; });
+      if (!asesorU || String(asesorU.rol).toLowerCase() !== 'gerente') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo el gerente puede modificar cobros de arriendo' });
+      }
+      var cobroExist = leerHoja(HOJAS.cobros_arriendo).find(function(c){ return c.id_cobro === idCobroU; });
+      if (!cobroExist) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Cobro no encontrado' });
+      }
+      var datosUpdCob = {};
+      if (body.estado !== undefined) {
+        var estU = String(body.estado).toUpperCase();
+        if (['PROYECTADO','COBRADO','CANCELADO'].indexOf(estU) === -1) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Estado inválido. Use PROYECTADO, COBRADO o CANCELADO' });
+        }
+        datosUpdCob.estado = estU;
+      }
+      if (body.valor_cobrado !== undefined) datosUpdCob.valor_cobrado = numVal(body.valor_cobrado);
+      if (body.observacion !== undefined) datosUpdCob.observacion = body.observacion;
+
+      actualizarFila(HOJAS.cobros_arriendo, 'id_cobro', idCobroU, datosUpdCob);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Cobro actualizado' });
+    }
+
+    // --- SETUP COBROS ARRIENDO (one-shot, sólo gerente) ---
+    if (action === 'setup_cobros_arriendo') {
+      var idAsesorS = body.id_asesor;
+      var asesorS = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorS; });
+      if (!asesorS || String(asesorS.rol).toLowerCase() !== 'gerente') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo el gerente puede ejecutar el setup' });
+      }
+      var res = setupCobrosArriendo();
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Setup ejecutado', resultado: res });
     }
 
     // --- ACTUALIZAR PAGO ---

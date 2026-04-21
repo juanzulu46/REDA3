@@ -318,8 +318,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 3 &mdash; Valor y comisi&oacute;n oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor del canon mensual (COP) <span class="req">*</span></label><input type="number" id="ar_canon" min="0" placeholder="Ej: 1300000" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;nto paga el inquilino al mes</div></div>
         <div class="ff"><label>Valor administraci&oacute;n (COP) <span class="req">*</span></label><input type="number" id="ar_admon" min="0" placeholder="Ej: 200000" oninput="calcularComisionArr()"><div class="hint">Cuota de administraci&oacute;n mensual del inmueble (si no aplica, escriba 0)</div></div>
-        <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
-        <div class="ff">&nbsp;</div>
+        <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="sugerirMesesContrato();calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
+        <div class="ff"><label>Meses del contrato <span class="req">*</span></label><input type="number" id="ar_meses" min="1" step="1" placeholder="Ej: 12" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;ntos meses durar&aacute; el contrato. Sugerencia autom&aacute;tica seg&uacute;n %: 12 si admin (&le;10%), 1 si colocaci&oacute;n (&gt;10%). Editable.</div></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; Captaci&oacute;n</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina captaci&oacute;n <span class="req">*</span></label><select id="ar_ofcap"><option value="">-- Oficina --</option></select></div>
@@ -1187,10 +1187,11 @@ function recalcComisiones(tipo) {
   const refEmpresaCer = hayRefCer ? totalBrutoCer * 0.20 * 0.75 : 0;
   const refEmpresa = refEmpresaCap + refEmpresaCer;
 
-  // Para arriendos: la empresa cobra comisionOficina × 12 meses durante el año
+  // Para arriendos: la empresa cobra comisionOficina × meses_contrato
   // Para ventas: la empresa cobra comisionOficina una vez
-  const ingresoEmpresaAnual = isArr ? (comisionOficina * 12) : comisionOficina;
-  const empresaRecibe = ingresoEmpresaAnual - totalBruto - refEmpresa;
+  const mesesContratoArr = isArr ? (Number(document.getElementById('ar_meses').value) || mesesContratoSugerido(officePct)) : 1;
+  const ingresoEmpresaTotal = isArr ? (comisionOficina * mesesContratoArr) : comisionOficina;
+  const empresaRecibe = ingresoEmpresaTotal - totalBruto - refEmpresa;
 
   // Mostrar resumen
   const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
@@ -1258,6 +1259,19 @@ function recalcComisiones(tipo) {
 function calcularComisionArr() { recalcComisiones('arr'); }
 function calcularComisionVnt() { recalcComisiones('vnt'); }
 
+// Sugerencia automática de meses según % comisión: ≤10% admin (12) | >10% colocación (1).
+function mesesContratoSugerido(pct){
+  const p = Number(pct) || 0;
+  return (p > 0 && p <= 0.10) ? 12 : 1;
+}
+// Sólo sugerir cuando el campo esté vacío (no pisar lo que el asesor tipeó).
+function sugerirMesesContrato(){
+  const inp = document.getElementById('ar_meses');
+  if (!inp || inp.value !== '') return;
+  const pct = Number(document.getElementById('ar_pct').value) || 0;
+  inp.value = mesesContratoSugerido(pct);
+}
+
 // ===== RECOLECTAR COMISIONES ASESORES =====
 function recolectarComisiones(tipo) {
   const isArr = tipo === 'arr';
@@ -1319,6 +1333,10 @@ async function guardarArriendo() {
   if(admonRaw===''){toast('Escriba el valor de administraci\u00f3n (use 0 si no aplica)','er');document.getElementById('ar_admon').focus();return}
   const admon=Number(admonRaw);
   const pct=val('ar_pct','Escoja el porcentaje de comisi\u00f3n');if(!pct)return;
+  const mesesRaw=document.getElementById('ar_meses').value.trim();
+  if(mesesRaw===''){toast('Escriba los meses del contrato','er');document.getElementById('ar_meses').focus();return}
+  const mesesContrato=parseInt(mesesRaw,10);
+  if(!mesesContrato||mesesContrato<1){toast('Meses del contrato debe ser un n\u00famero positivo','er');document.getElementById('ar_meses').focus();return}
   const ofcap=val('ar_ofcap','Escoja la oficina de captaci\u00f3n');if(!ofcap)return;
   const orgcap=val('ar_orgcap','Escoja el origen de captaci\u00f3n');if(!orgcap)return;
   const ofcie=val('ar_ofcie','Escoja la oficina de cierre');if(!ofcie)return;
@@ -1348,6 +1366,7 @@ async function guardarArriendo() {
         valor_canon: Number(canon),
         administracion: admon,
         pct_comision_oficina: Number(pct),
+        meses_contrato: mesesContrato,
         oficina_captacion: ofcap, origen_captacion: orgcap,
         oficina_cierre: ofcie, origen_cierre: orgcie,
         referido_captador: document.getElementById('ar_hayref_cap').checked ? (document.getElementById('ar_refnombre_cap').value || '') : '',
@@ -1657,16 +1676,36 @@ function renderMisNegocios(){
       const partesArr = (r.partes||[]).filter(p=>p.id_negocio===a.id_arriendo);
       const arrendadores = partesArr.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
       const arrendatarios = partesArr.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
+      const cobrosArr=(r.cobros_arriendo||[]).filter(c=>c.id_arriendo===a.id_arriendo)
+        .sort((x,y)=>(Number(x['año_cobro'])||0)*12+(Number(x.mes_cobro)||0)-((Number(y['año_cobro'])||0)*12+(Number(y.mes_cobro)||0)));
+      const mesesC=parseInt(a.meses_contrato,10)||0;
+      const esGerenteArr=String(asesorActual.rol||'').toLowerCase()==='gerente';
+      let cobrosHTML='';
+      if(cobrosArr.length>0){
+        cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
+        cobrosArr.forEach(c=>{
+          const est=String(c.estado||'PROYECTADO').toUpperCase();
+          const colorE=est==='COBRADO'?'#10b981':est==='CANCELADO'?'#888':'#f59e0b';
+          const editBtn=esGerenteArr?`<button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>`:'';
+          cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
+            <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
+            ${editBtn}
+          </div>`;
+        });
+        cobrosHTML+='</div>';
+      }
       html+=`<div class="neg-card arriendo">
         <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
           <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
+          <div><strong>Meses contrato:</strong> ${mesesC||'&mdash;'}</div>
           <div><strong>Arrendador:</strong> ${arrendadores}</div>
           <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        ${cobrosHTML}
         <div class="neg-actions"><button class="btn btn-cc" onclick="imprimirCuentaCobro('arriendo','${a.id_arriendo}',this)">Imprimir cuenta de cobro</button></div>
       </div>`;
     });
@@ -1851,6 +1890,27 @@ function renderGestion(){
   cont.innerHTML=html;
 }
 
+async function editarCobro(idCobro, btn) {
+  const estado = prompt('Estado del cobro (PROYECTADO, COBRADO o CANCELADO):');
+  if (estado === null) return;
+  const estadoU = String(estado).trim().toUpperCase();
+  if (!['PROYECTADO','COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido','er'); return; }
+  const valorStr = prompt('Valor cobrado (dejar vac\u00edo para no cambiar):');
+  if (valorStr === null) return;
+  const obs = prompt('Observaci\u00f3n (dejar vac\u00edo para no cambiar):');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const datos = { action:'actualizar_cobro_arriendo', id_cobro: idCobro, id_asesor: asesorActual.id_asesor };
+    if (estadoU) datos.estado = estadoU;
+    if (valorStr) datos.valor_cobrado = Number(String(valorStr).replace(/\./g,'').replace(',','.')) || 0;
+    if (obs !== null && obs !== '') datos.observacion = obs;
+    const r = await apiPost(datos);
+    if (r && r.ok) { toast('Cobro actualizado'); cargarMisNegocios(); }
+    else { toast(r?.error || 'Error al actualizar','er'); }
+  } catch (e) { toast('Error: ' + e.message,'er'); }
+  btn.disabled = false; btn.textContent = 'Editar';
+}
+
 async function editarPago(idPago, idVenta, btn) {
   const fecha = prompt('Nueva fecha de pago (YYYY-MM-DD):');
   if (fecha === null) return;
@@ -1940,6 +2000,7 @@ async function cargarBonificaciones(mes) {
         <div class="bon-mes">Bonificaci&oacute;n de ${meses[mes]}</div>
         <div class="bon-cat">${catLabel}</div>
         <div class="bon-total">${fmtP(r.bonificacion_total)}</div>
+        ${r.vinculacion ? '<div style="font-size:11px;opacity:0.85;margin-top:4px">Vinculaci&oacute;n: <strong>'+r.vinculacion+'</strong>'+(r.factor_vinculacion<1?' (total &divide; 1.3)':'')+'</div>' : ''}
         ${continuidadLabel ? '<div style="font-size:12px;opacity:0.85;margin-top:6px">'+continuidadLabel+'</div>' : ''}
       </div>
       <div class="bon-grid">
@@ -1952,11 +2013,12 @@ async function cargarBonificaciones(mes) {
       <div style="background:var(--g50);padding:18px;border-radius:8px;font-size:12px;color:var(--g600)">
         <strong style="color:var(--azul);font-size:13px">Cómo se calcula:</strong><br>
         &bull; <strong>ORO</strong>: ≥ $14.085.000 + 10 acciones &nbsp;&bull; <strong>PLATA</strong>: ≥ $10.955.000 + 10 acciones<br>
-        &bull; <strong>BRONCE</strong>: ≥ $7.825.000 + 5 acciones &nbsp;&bull; <strong>PIEDRA</strong>: ≥ $3.912.500 + 5 acciones<br>
+        &bull; <strong>BRONCE</strong>: ≥ $7.825.000 + 5 acciones &nbsp;&bull; <strong>PIEDRA</strong>: ≥ $3.260.417 + 5 acciones<br>
         &bull; <strong>PIEDRA 1/2 fijo</strong>: 5 acciones + comisi&oacute;n inferior al umbral &rarr; medio fijo + variable<br>
         &bull; <strong>ARENA</strong>: 5 acciones sin generar comisi&oacute;n (sin bonificaci&oacute;n)<br>
         &bull; <strong>Variable</strong>: 4% el primer mes en una categor&iacute;a, 5% si contin&uacute;a en la misma. Si cambia de categor&iacute;a vuelve a 4%.<br>
-        &bull; Enero siempre arranca en 4%.
+        &bull; <strong>Empleado</strong>: total se divide entre 1.3. Enero siempre arranca en 4%.<br>
+        &bull; Arriendos cuentan como <strong>comisi&oacute;n &times; meses del contrato</strong>.
       </div>
     `;
     cont.innerHTML = html;
