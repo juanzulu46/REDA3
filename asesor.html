@@ -2009,6 +2009,25 @@ async function cancelarVenta(idVenta, btn) {
   btn.disabled = false; btn.textContent = 'Cancelar venta';
 }
 
+async function cobrarBonificacion(mes, btn){
+  if(!confirm('Se generará la cuenta de cobro y la liquidación en Excel, y se enviarán al gerente con copia a tu correo. ¿Continuar?')) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    const r = await apiPost({ action:'cobrar_bonificacion', id_asesor: asesorActual.id_asesor, mes: mes });
+    if (r && r.ok) {
+      toast(r.mensaje || 'Bonificaci\u00f3n enviada');
+      btn.textContent = 'Enviada \u2713';
+    } else {
+      toast((r && r.error) || 'Error al generar', 'er');
+      btn.disabled = false; btn.textContent = original;
+    }
+  } catch(e){
+    toast('Error: '+e.message, 'er');
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+
 async function imprimirCuentaCobro(tipo, idNegocio, btn){
   if (!confirm('Se generará la cuenta de cobro y se enviará al gerente con copia a tu correo. ¿Continuar?')) return;
   const original = btn.textContent;
@@ -2064,6 +2083,7 @@ async function cargarBonificaciones(mes) {
         <div class="bon-total">${fmtP(r.bonificacion_total)}</div>
         ${r.vinculacion ? '<div style="font-size:11px;opacity:0.85;margin-top:4px">Vinculaci&oacute;n: <strong>'+r.vinculacion+'</strong>'+(r.factor_vinculacion<1?' (total &divide; 1.3)':'')+'</div>' : ''}
         ${continuidadLabel ? '<div style="font-size:12px;opacity:0.85;margin-top:6px">'+continuidadLabel+'</div>' : ''}
+        ${(()=>{const mesActual=(new Date()).getMonth()+1;const cerrado=mes<mesActual;const cobrable=cerrado&&r.bonificacion_total>0;if(cobrable)return '<div style="margin-top:14px"><button class="btn btn-cc" style="background:#fff;color:#0b3a6b;font-weight:700;padding:10px 22px;font-size:13px" onclick="cobrarBonificacion('+mes+',this)">Cobrar bonificaci&oacute;n</button></div>';if(!cerrado)return '<div style="font-size:11px;opacity:0.75;margin-top:10px">Disponible para cobrar desde el 1&deg; del mes siguiente</div>';if(r.bonificacion_total<=0)return '<div style="font-size:11px;opacity:0.75;margin-top:10px">Sin bonificaci&oacute;n para cobrar este mes</div>';return ''})()}
       </div>
       <div class="bon-grid">
         <div class="bon-stat"><div class="bs-label">Comisi&oacute;n generada a oficina</div><div class="bs-val">${fmtP(r.comision_generada_oficina)}</div></div>

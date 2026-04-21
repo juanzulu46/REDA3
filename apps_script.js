@@ -1148,6 +1148,219 @@ function doPost(e) {
       });
     }
 
+    // --- COBRAR BONIFICACIÓN: PDF cuenta de cobro + Excel liquidación ---
+    if (action === 'cobrar_bonificacion') {
+      var idAsesorBon = body.id_asesor;
+      var mesBon = parseInt(body.mes, 10);
+      if (!idAsesorBon || !mesBon) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Faltan parámetros (id_asesor, mes)' }); }
+
+      // Validación: sólo meses cerrados (estricto: mes < mes actual)
+      var hoyB = new Date();
+      var anoActualB = hoyB.getFullYear();
+      var mesActualB = hoyB.getMonth() + 1;
+      if (mesBon >= mesActualB) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo puede cobrar la bonificación de meses ya cerrados (desde el día 1 del mes siguiente)' });
+      }
+
+      // Cargar asesor
+      var asesoresBon = leerHoja(HOJAS.asesores);
+      var asesorBon = asesoresBon.find(function(a){ return a.id_asesor === idAsesorBon; });
+      if (!asesorBon) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
+
+      // Calcular bonificación (mismo cálculo que mis_bonificaciones)
+      var datosBonC = {
+        arriendos: leerHoja(HOJAS.arriendos),
+        ventas: leerHoja(HOJAS.ventas),
+        pagos: leerHoja(HOJAS.pagos),
+        comisiones: leerHoja(HOJAS.comisiones),
+        acciones: leerHoja(HOJAS.acciones),
+        bonificaciones: leerHoja(HOJAS.bonificaciones)
+      };
+      var actualB = calcularCategoriaMes(idAsesorBon, mesBon, datosBonC);
+      var esContB = false;
+      if (mesBon > 1 && actualB.escalon) {
+        var antB = calcularCategoriaMes(idAsesorBon, mesBon - 1, datosBonC);
+        if (antB.categoria === actualB.categoria) esContB = true;
+      }
+      var pctVarB = 0, fijoBaseB = 0, varBaseB = 0;
+      if (actualB.escalon) {
+        pctVarB = esContB ? Number(actualB.escalon.pct_variable_continuidad) || 0 : Number(actualB.escalon.pct_variable_inicial) || 0;
+        fijoBaseB = actualB.esMedio ? (Number(actualB.escalon.fijo_medio) || 0) : (Number(actualB.escalon.fijo) || 0);
+        varBaseB = actualB.comisionGeneradaOficina * pctVarB;
+      }
+      var vincB = String(asesorBon.vinculacion || '').toLowerCase();
+      var factorB = vincB === 'empleado' ? (1 / 1.3) : 1;
+      var fijoB = fijoBaseB * factorB;
+      var variableB = varBaseB * factorB;
+      var totalB = Math.round(fijoB + variableB);
+
+      if (totalB <= 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'La bonificación de ' + mesBon + ' es $0. No hay nada que cobrar.' });
+      }
+
+      // Datos para el Excel
+      var inmueblesB = leerHoja(HOJAS.inmuebles);
+      var nomInmB = function(id){ var i = inmueblesB.find(function(x){return x.id_inmueble===id;}); return i ? i.nombre : id; };
+      var misComB = datosBonC.comisiones.filter(function(c){
+        return c.id_asesor === idAsesorBon && String(c.estado||'').toUpperCase() !== 'ANULADA';
+      });
+      var misNegIdsB = misComB.map(function(c){ return c.id_negocio; });
+      var sumPart = function(idNeg) {
+        return misComB.filter(function(c){ return c.id_negocio === idNeg; })
+          .reduce(function(s,c){ return s + (c.participacion === '' ? 1 : numVal(c.participacion)); }, 0);
+      };
+
+      // Cierres de arriendo del mes
+      var cierresArrB = datosBonC.arriendos.filter(function(a){
+        return parseInt(a.mes,10) === mesBon && misNegIdsB.indexOf(a.id_arriendo) !== -1;
+      });
+      // Cierres de venta: por mes_pago
+      var pagosMesBonC = datosBonC.pagos.filter(function(p){ return parseInt(p.mes_pago,10) === mesBon; });
+      var ventasIdsB = pagosMesBonC.map(function(p){ return p.id_venta; });
+      var cierresVntB = datosBonC.ventas.filter(function(v){
+        return ventasIdsB.indexOf(v.id_venta) !== -1
+          && misNegIdsB.indexOf(v.id_venta) !== -1
+          && String(v.estado_venta||'').toUpperCase() !== 'CANCELADA';
+      });
+
+      // Crear Excel (Spreadsheet temporal)
+      var mesesEs = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      var nombreMesB = mesesEs[mesBon];
+      var nombreExcel = 'Liquidación bonificación - ' + asesorBon.nombre + ' - ' + nombreMesB + ' ' + anoActualB;
+      var ssTemp = SpreadsheetApp.create(nombreExcel);
+      var hojaTemp = ssTemp.getActiveSheet();
+      hojaTemp.setName('Liquidación');
+
+      var rowExc = 1;
+      hojaTemp.getRange(rowExc, 1).setValue('LIQUIDACIÓN DE BONIFICACIÓN').setFontSize(14).setFontWeight('bold');
+      rowExc += 2;
+      hojaTemp.getRange(rowExc, 1).setValue('Asesor:'); hojaTemp.getRange(rowExc, 2).setValue(asesorBon.nombre || ''); rowExc++;
+      hojaTemp.getRange(rowExc, 1).setValue('Mes:'); hojaTemp.getRange(rowExc, 2).setValue(nombreMesB + ' ' + anoActualB); rowExc++;
+      hojaTemp.getRange(rowExc, 1).setValue('Vinculación:'); hojaTemp.getRange(rowExc, 2).setValue(asesorBon.vinculacion || ''); rowExc += 2;
+
+      if (cierresVntB.length > 0) {
+        hojaTemp.getRange(rowExc, 1).setValue('CIERRES VENTA').setFontWeight('bold').setBackground('#dbeafe'); rowExc++;
+        hojaTemp.getRange(rowExc, 1, 1, 6).setValues([['Inmueble','Valor venta','% Comisión','Comisión oficina','Mi participación','Comisión generada']]).setFontWeight('bold'); rowExc++;
+        cierresVntB.forEach(function(v){
+          var partV = sumPart(v.id_venta) * 0.5; // factor por punta
+          var comGen = numVal(v.comision_oficina) * partV;
+          hojaTemp.getRange(rowExc, 1, 1, 6).setValues([[
+            nomInmB(v.id_inmueble),
+            numVal(v.valor_base_comision),
+            numVal(v.pct_comision_oficina),
+            numVal(v.comision_oficina),
+            partV,
+            comGen
+          ]]);
+          rowExc++;
+        });
+        rowExc++;
+      }
+
+      if (cierresArrB.length > 0) {
+        hojaTemp.getRange(rowExc, 1).setValue('CIERRES ARRIENDO').setFontWeight('bold').setBackground('#dcfce7'); rowExc++;
+        hojaTemp.getRange(rowExc, 1, 1, 7).setValues([['Inmueble','Canon+Admin','% Comisión','Meses','Comisión total','Mi participación','Comisión generada']]).setFontWeight('bold'); rowExc++;
+        cierresArrB.forEach(function(a){
+          var mesesA = mesesContratoDe(a);
+          var comTotalA = numVal(a.comision_oficina) * mesesA;
+          var partA = sumPart(a.id_arriendo) * 0.5;
+          var comGenA = comTotalA * partA;
+          hojaTemp.getRange(rowExc, 1, 1, 7).setValues([[
+            nomInmB(a.id_inmueble),
+            numVal(a.valor_canon) + numVal(a.administracion),
+            numVal(a.pct_comision_oficina),
+            mesesA,
+            comTotalA,
+            partA,
+            comGenA
+          ]]);
+          rowExc++;
+        });
+        rowExc++;
+      }
+
+      // Resumen liquidación
+      hojaTemp.getRange(rowExc, 1).setValue('LIQUIDACIÓN').setFontWeight('bold').setBackground('#fef3c7'); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Comisión generada oficina (total)', actualB.comisionGeneradaOficina]]); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Acciones comerciales', actualB.numAcciones]]); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Categoría', actualB.categoria + (actualB.esMedio ? ' (1/2)' : '')]]); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['% Variable', pctVarB]]); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Bonificación fija', fijoB]]); rowExc++;
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Bonificación variable', variableB]]); rowExc++;
+      if (vincB === 'empleado') {
+        hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Factor empleado (÷1.3)', 'aplicado']]); rowExc++;
+      }
+      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['TOTAL A COBRAR', totalB]]).setFontWeight('bold').setBackground('#fde68a'); rowExc++;
+
+      hojaTemp.autoResizeColumns(1, 7);
+      SpreadsheetApp.flush();
+
+      // Convertir a XLSX vía export URL
+      var ssIdTemp = ssTemp.getId();
+      var xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + ssIdTemp + '/export?format=xlsx';
+      var tokenG = ScriptApp.getOAuthToken();
+      var xlsxResp = UrlFetchApp.fetch(xlsxUrl, { headers: { Authorization: 'Bearer ' + tokenG } });
+      var xlsxBlob = xlsxResp.getBlob().setName(nombreExcel + '.xlsx');
+
+      // PDF cuenta de cobro
+      var fechaTextoB = hoyB.getDate() + ' de ' + mesesEs[hoyB.getMonth()+1] + ' de ' + anoActualB;
+      var conceptoB = 'Bonificación correspondiente al mes de ' + nombreMesB + ' de ' + anoActualB;
+      var reemplazosB = {
+        'ciudad_emision':       CIUDAD_EMISION,
+        'fecha_texto':          fechaTextoB,
+        'empresa_razon_social': EMPRESA_RAZON_SOCIAL,
+        'empresa_nit':          EMPRESA_NIT,
+        'asesor_nombre':        asesorBon.nombre || '',
+        'asesor_cedula':        asesorBon.cedula || '',
+        'asesor_ciudad_cc':     asesorBon.ciudad_cc || '',
+        'valor_numero':         '$' + Number(totalB).toLocaleString('es-CO'),
+        'valor_letras':         numeroALetras(totalB) + ' pesos M/cte.',
+        'concepto':             conceptoB,
+        'asesor_direccion':     asesorBon.direccion || '',
+        'banco':                asesorBon.banco || '',
+        'tipo_cuenta':          asesorBon.tipo_cuenta || '',
+        'numero_cuenta':        asesorBon.numero_cuenta || ''
+      };
+      var templateFileB = DriveApp.getFileById(TEMPLATE_CUENTA_COBRO_ID);
+      var nombreCopiaB = 'Cuenta de cobro ' + (asesorBon.nombre||'') + ' - Bonificación ' + nombreMesB + ' ' + anoActualB;
+      var copiaB = templateFileB.makeCopy(nombreCopiaB);
+      var docB = DocumentApp.openById(copiaB.getId());
+      var docBodyB = docB.getBody();
+      Object.keys(reemplazosB).forEach(function(k){
+        docBodyB.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazosB[k]));
+      });
+      docB.saveAndClose();
+      var pdfBlobB = copiaB.getAs('application/pdf').setName(nombreCopiaB + '.pdf');
+
+      // Enviar correo con ambos adjuntos
+      var asuntoB = 'Cuenta de cobro - Bonificación ' + nombreMesB + ' ' + anoActualB + ' - ' + asesorBon.nombre;
+      var cuerpoB = 'Adjunto cuenta de cobro y liquidación de bonificación generadas automáticamente por el portal REDA3.\n\n' +
+                    'Asesor: ' + asesorBon.nombre + '\n' +
+                    'Mes liquidado: ' + nombreMesB + ' ' + anoActualB + '\n' +
+                    'Vinculación: ' + (asesorBon.vinculacion || '') + '\n' +
+                    'Categoría: ' + actualB.categoria + (actualB.esMedio ? ' (1/2)' : '') + '\n' +
+                    'Comisión generada oficina: $' + Number(actualB.comisionGeneradaOficina).toLocaleString('es-CO') + '\n' +
+                    'Bonificación fija: $' + Number(Math.round(fijoB)).toLocaleString('es-CO') + '\n' +
+                    'Bonificación variable: $' + Number(Math.round(variableB)).toLocaleString('es-CO') + '\n' +
+                    'TOTAL: $' + Number(totalB).toLocaleString('es-CO') + '\n';
+      var optsB = { attachments: [pdfBlobB, xlsxBlob] };
+      if (asesorBon.email) optsB.cc = asesorBon.email;
+      MailApp.sendEmail(GERENTE_EMAIL, asuntoB, cuerpoB, optsB);
+
+      // Limpiar archivos temporales
+      copiaB.setTrashed(true);
+      DriveApp.getFileById(ssIdTemp).setTrashed(true);
+
+      lock.releaseLock();
+      return jsonResponse({
+        ok: true,
+        mensaje: 'Cuenta de cobro de bonificación enviada al gerente' + (asesorBon.email ? ' (con copia a ' + asesorBon.email + ')' : ''),
+        valor: totalB
+      });
+    }
+
     // --- REGISTRAR ACCIÓN COMERCIAL ---
     if (action === 'registrar_accion') {
       const datos = body.datos;
