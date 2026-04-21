@@ -2010,7 +2010,7 @@ async function cancelarVenta(idVenta, btn) {
 }
 
 async function cobrarBonificacion(mes, btn){
-  if(!confirm('Se generará la cuenta de cobro y la liquidación en Excel, y se enviarán al gerente con copia a tu correo. ¿Continuar?')) return;
+  if(!confirm('Se generará la cuenta de cobro de bonificación (PDF con detalle de negocios y liquidación) y se enviará al gerente con copia a tu correo. ¿Continuar?')) return;
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = 'Enviando...';
   try{

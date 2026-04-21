@@ -1225,86 +1225,9 @@ function doPost(e) {
           && String(v.estado_venta||'').toUpperCase() !== 'CANCELADA';
       });
 
-      // Crear Excel (Spreadsheet temporal)
+      // PDF cuenta de cobro con tabla embebida
       var mesesEs = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
       var nombreMesB = mesesEs[mesBon];
-      var nombreExcel = 'Liquidación bonificación - ' + asesorBon.nombre + ' - ' + nombreMesB + ' ' + anoActualB;
-      var ssTemp = SpreadsheetApp.create(nombreExcel);
-      var hojaTemp = ssTemp.getActiveSheet();
-      hojaTemp.setName('Liquidación');
-
-      var rowExc = 1;
-      hojaTemp.getRange(rowExc, 1).setValue('LIQUIDACIÓN DE BONIFICACIÓN').setFontSize(14).setFontWeight('bold');
-      rowExc += 2;
-      hojaTemp.getRange(rowExc, 1).setValue('Asesor:'); hojaTemp.getRange(rowExc, 2).setValue(asesorBon.nombre || ''); rowExc++;
-      hojaTemp.getRange(rowExc, 1).setValue('Mes:'); hojaTemp.getRange(rowExc, 2).setValue(nombreMesB + ' ' + anoActualB); rowExc++;
-      hojaTemp.getRange(rowExc, 1).setValue('Vinculación:'); hojaTemp.getRange(rowExc, 2).setValue(asesorBon.vinculacion || ''); rowExc += 2;
-
-      if (cierresVntB.length > 0) {
-        hojaTemp.getRange(rowExc, 1).setValue('CIERRES VENTA').setFontWeight('bold').setBackground('#dbeafe'); rowExc++;
-        hojaTemp.getRange(rowExc, 1, 1, 6).setValues([['Inmueble','Valor venta','% Comisión','Comisión oficina','Mi participación','Comisión generada']]).setFontWeight('bold'); rowExc++;
-        cierresVntB.forEach(function(v){
-          var partV = sumPart(v.id_venta) * 0.5; // factor por punta
-          var comGen = numVal(v.comision_oficina) * partV;
-          hojaTemp.getRange(rowExc, 1, 1, 6).setValues([[
-            nomInmB(v.id_inmueble),
-            numVal(v.valor_base_comision),
-            numVal(v.pct_comision_oficina),
-            numVal(v.comision_oficina),
-            partV,
-            comGen
-          ]]);
-          rowExc++;
-        });
-        rowExc++;
-      }
-
-      if (cierresArrB.length > 0) {
-        hojaTemp.getRange(rowExc, 1).setValue('CIERRES ARRIENDO').setFontWeight('bold').setBackground('#dcfce7'); rowExc++;
-        hojaTemp.getRange(rowExc, 1, 1, 7).setValues([['Inmueble','Canon+Admin','% Comisión','Meses','Comisión total','Mi participación','Comisión generada']]).setFontWeight('bold'); rowExc++;
-        cierresArrB.forEach(function(a){
-          var mesesA = mesesContratoDe(a);
-          var comTotalA = numVal(a.comision_oficina) * mesesA;
-          var partA = sumPart(a.id_arriendo) * 0.5;
-          var comGenA = comTotalA * partA;
-          hojaTemp.getRange(rowExc, 1, 1, 7).setValues([[
-            nomInmB(a.id_inmueble),
-            numVal(a.valor_canon) + numVal(a.administracion),
-            numVal(a.pct_comision_oficina),
-            mesesA,
-            comTotalA,
-            partA,
-            comGenA
-          ]]);
-          rowExc++;
-        });
-        rowExc++;
-      }
-
-      // Resumen liquidación
-      hojaTemp.getRange(rowExc, 1).setValue('LIQUIDACIÓN').setFontWeight('bold').setBackground('#fef3c7'); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Comisión generada oficina (total)', actualB.comisionGeneradaOficina]]); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Acciones comerciales', actualB.numAcciones]]); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Categoría', actualB.categoria + (actualB.esMedio ? ' (1/2)' : '')]]); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['% Variable', pctVarB]]); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Bonificación fija', fijoB]]); rowExc++;
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Bonificación variable', variableB]]); rowExc++;
-      if (vincB === 'empleado') {
-        hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['Factor empleado (÷1.3)', 'aplicado']]); rowExc++;
-      }
-      hojaTemp.getRange(rowExc, 1, 1, 2).setValues([['TOTAL A COBRAR', totalB]]).setFontWeight('bold').setBackground('#fde68a'); rowExc++;
-
-      hojaTemp.autoResizeColumns(1, 7);
-      SpreadsheetApp.flush();
-
-      // Convertir a XLSX vía export URL
-      var ssIdTemp = ssTemp.getId();
-      var xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + ssIdTemp + '/export?format=xlsx';
-      var tokenG = ScriptApp.getOAuthToken();
-      var xlsxResp = UrlFetchApp.fetch(xlsxUrl, { headers: { Authorization: 'Bearer ' + tokenG } });
-      var xlsxBlob = xlsxResp.getBlob().setName(nombreExcel + '.xlsx');
-
-      // PDF cuenta de cobro
       var fechaTextoB = hoyB.getDate() + ' de ' + mesesEs[hoyB.getMonth()+1] + ' de ' + anoActualB;
       var conceptoB = 'Bonificación correspondiente al mes de ' + nombreMesB + ' de ' + anoActualB;
       var reemplazosB = {
@@ -1331,27 +1254,97 @@ function doPost(e) {
       Object.keys(reemplazosB).forEach(function(k){
         docBodyB.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazosB[k]));
       });
+
+      // Helper para formato de pesos en la tabla
+      var fmtCop = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
+
+      // Insertar tabla con detalle de negocios + bonificación al final del documento
+      docBodyB.appendParagraph('').setSpacingBefore(12);
+      var hd1 = docBodyB.appendParagraph('DETALLE DE NEGOCIOS — ' + nombreMesB.toUpperCase() + ' ' + anoActualB);
+      hd1.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      hd1.editAsText().setBold(true);
+
+      if (cierresVntB.length > 0) {
+        var pVnt = docBodyB.appendParagraph('Cierres de venta');
+        pVnt.editAsText().setBold(true);
+        var rowsVnt = [['Inmueble','Valor venta','% Com.','Comisión oficina','Mi part.','Comisión generada']];
+        cierresVntB.forEach(function(v){
+          var partV = sumPart(v.id_venta) * 0.5;
+          var comGen = numVal(v.comision_oficina) * partV;
+          rowsVnt.push([
+            nomInmB(v.id_inmueble),
+            fmtCop(numVal(v.valor_base_comision)),
+            (numVal(v.pct_comision_oficina)*100).toFixed(2) + '%',
+            fmtCop(numVal(v.comision_oficina)),
+            (partV*100).toFixed(0) + '%',
+            fmtCop(comGen)
+          ]);
+        });
+        var tblVnt = docBodyB.appendTable(rowsVnt);
+        tblVnt.getRow(0).editAsText().setBold(true);
+      }
+
+      if (cierresArrB.length > 0) {
+        var pArr = docBodyB.appendParagraph('Cierres de arriendo');
+        pArr.editAsText().setBold(true);
+        var rowsArr = [['Inmueble','Canon+Admin','% Com.','Meses','Comisión total','Mi part.','Comisión generada']];
+        cierresArrB.forEach(function(a){
+          var mesesA = mesesContratoDe(a);
+          var comTotalA = numVal(a.comision_oficina) * mesesA;
+          var partA = sumPart(a.id_arriendo) * 0.5;
+          var comGenA = comTotalA * partA;
+          rowsArr.push([
+            nomInmB(a.id_inmueble),
+            fmtCop(numVal(a.valor_canon) + numVal(a.administracion)),
+            (numVal(a.pct_comision_oficina)*100).toFixed(2) + '%',
+            String(mesesA),
+            fmtCop(comTotalA),
+            (partA*100).toFixed(0) + '%',
+            fmtCop(comGenA)
+          ]);
+        });
+        var tblArr = docBodyB.appendTable(rowsArr);
+        tblArr.getRow(0).editAsText().setBold(true);
+      }
+
+      // Liquidación de bonificación
+      docBodyB.appendParagraph('').setSpacingBefore(8);
+      var hd2 = docBodyB.appendParagraph('LIQUIDACIÓN DE BONIFICACIÓN');
+      hd2.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      hd2.editAsText().setBold(true);
+
+      var rowsLiq = [
+        ['Concepto','Valor'],
+        ['Comisión generada a la oficina (total)', fmtCop(actualB.comisionGeneradaOficina)],
+        ['Acciones comerciales del mes', String(actualB.numAcciones)],
+        ['Categoría', actualB.categoria + (actualB.esMedio ? ' (1/2)' : '')],
+        ['Vinculación', String(asesorBon.vinculacion || '')],
+        ['% Variable aplicado', (pctVarB*100).toFixed(0) + '%'],
+        ['Bonificación fija', fmtCop(fijoB)],
+        ['Bonificación variable', fmtCop(variableB)]
+      ];
+      if (vincB === 'empleado') rowsLiq.push(['Factor empleado', 'Total ÷ 1.3']);
+      rowsLiq.push(['TOTAL A COBRAR', fmtCop(totalB)]);
+      var tblLiq = docBodyB.appendTable(rowsLiq);
+      tblLiq.getRow(0).editAsText().setBold(true);
+      tblLiq.getRow(rowsLiq.length - 1).editAsText().setBold(true);
+
       docB.saveAndClose();
       var pdfBlobB = copiaB.getAs('application/pdf').setName(nombreCopiaB + '.pdf');
 
-      // Enviar correo con ambos adjuntos
+      // Enviar correo (solo PDF)
       var asuntoB = 'Cuenta de cobro - Bonificación ' + nombreMesB + ' ' + anoActualB + ' - ' + asesorBon.nombre;
-      var cuerpoB = 'Adjunto cuenta de cobro y liquidación de bonificación generadas automáticamente por el portal REDA3.\n\n' +
+      var cuerpoB = 'Adjunto cuenta de cobro de bonificación generada automáticamente por el portal REDA3.\n\n' +
                     'Asesor: ' + asesorBon.nombre + '\n' +
                     'Mes liquidado: ' + nombreMesB + ' ' + anoActualB + '\n' +
-                    'Vinculación: ' + (asesorBon.vinculacion || '') + '\n' +
                     'Categoría: ' + actualB.categoria + (actualB.esMedio ? ' (1/2)' : '') + '\n' +
-                    'Comisión generada oficina: $' + Number(actualB.comisionGeneradaOficina).toLocaleString('es-CO') + '\n' +
-                    'Bonificación fija: $' + Number(Math.round(fijoB)).toLocaleString('es-CO') + '\n' +
-                    'Bonificación variable: $' + Number(Math.round(variableB)).toLocaleString('es-CO') + '\n' +
                     'TOTAL: $' + Number(totalB).toLocaleString('es-CO') + '\n';
-      var optsB = { attachments: [pdfBlobB, xlsxBlob] };
+      var optsB = { attachments: [pdfBlobB] };
       if (asesorBon.email) optsB.cc = asesorBon.email;
       MailApp.sendEmail(GERENTE_EMAIL, asuntoB, cuerpoB, optsB);
 
-      // Limpiar archivos temporales
+      // Limpiar archivo temporal del Doc (PDF ya enviado)
       copiaB.setTrashed(true);
-      DriveApp.getFileById(ssIdTemp).setTrashed(true);
 
       lock.releaseLock();
       return jsonResponse({
