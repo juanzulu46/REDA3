@@ -1684,8 +1684,8 @@ function renderMisNegocios(){
       if(cobrosArr.length>0){
         cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
         cobrosArr.forEach(c=>{
-          const est=String(c.estado||'PROYECTADO').toUpperCase();
-          const colorE=est==='COBRADO'?'#10b981':est==='CANCELADO'?'#888':'#f59e0b';
+          const est=String(c.estado||'COBRADO').toUpperCase();
+          const colorE=est==='COBRADO'?'#10b981':est==='NO_COBRADO'?'#ef4444':est==='CANCELADO'?'#888':'#f59e0b';
           const editBtn=esGerenteArr?`<button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>`:'';
           cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
             <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
@@ -1885,8 +1885,8 @@ function renderGestion(){
     if(cobrosA.length>0){
       cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
       cobrosA.forEach(c=>{
-        const est=String(c.estado||'PROYECTADO').toUpperCase();
-        const colorE=est==='COBRADO'?'#10b981':est==='CANCELADO'?'#888':'#f59e0b';
+        const est=String(c.estado||'COBRADO').toUpperCase();
+        const colorE=est==='COBRADO'?'#10b981':est==='NO_COBRADO'?'#ef4444':est==='CANCELADO'?'#888':'#f59e0b';
         cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
           <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
           <button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>
@@ -1953,10 +1953,15 @@ function renderGestion(){
 }
 
 async function editarCobro(idCobro, btn) {
-  const estado = prompt('Estado del cobro (PROYECTADO, COBRADO o CANCELADO):');
+  const estado = prompt('Estado del cobro (COBRADO, NO_COBRADO o CANCELADO):');
   if (estado === null) return;
   const estadoU = String(estado).trim().toUpperCase();
-  if (!['PROYECTADO','COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido','er'); return; }
+  if (!['COBRADO','NO_COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido','er'); return; }
+  let fecha = null;
+  if (estadoU === 'COBRADO' || estadoU === '') {
+    fecha = prompt('Fecha de pago (YYYY-MM-DD, dejar vac\u00edo para no cambiar):');
+    if (fecha === null) return;
+  }
   const valorStr = prompt('Valor cobrado (dejar vac\u00edo para no cambiar):');
   if (valorStr === null) return;
   const obs = prompt('Observaci\u00f3n (dejar vac\u00edo para no cambiar):');
@@ -1964,6 +1969,7 @@ async function editarCobro(idCobro, btn) {
   try {
     const datos = { action:'actualizar_cobro_arriendo', id_cobro: idCobro, id_asesor: asesorActual.id_asesor };
     if (estadoU) datos.estado = estadoU;
+    if (fecha) datos.fecha_pago = fecha;
     if (valorStr) datos.valor_cobrado = Number(String(valorStr).replace(/\./g,'').replace(',','.')) || 0;
     if (obs !== null && obs !== '') datos.observacion = obs;
     const r = await apiPost(datos);

@@ -80,7 +80,7 @@ const COLUMNAS = {
   zona: ['id_zona', 'comuna', 'ciudad'],
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
   tipos_accion: ['id_tipo', 'nombre', 'activo'],
-  cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'valor_cobrado', 'estado', 'observacion']
+  cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion']
 };
 
 // ===== UTILIDADES =====
@@ -170,15 +170,17 @@ function mesesContratoDe(arriendo) {
   return (pct > 0 && pct <= 0.10) ? 12 : 1;
 }
 
-// Genera N filas en CobrosArriendo a partir del mes/año del arriendo.
-// Cada fila: estado=PROYECTADO, valor_cobrado=comision_oficina mensual.
+// Genera N filas en CobrosArriendo desde el mes actual hacia adelante (N = meses_contrato).
+// Cada fila nace COBRADO con fecha_pago = día 1 del mes_cobro. Gerencia puede inhabilitar
+// (NO_COBRADO) o cancelar desde su perfil si algún mes no se cobra.
 function generarCobrosProyectados(arriendo) {
   var meses = mesesContratoDe(arriendo);
   var comMensual = numVal(arriendo.comision_oficina);
-  var anoBase = parseInt(arriendo['año'], 10) || (new Date()).getFullYear();
-  var mesBase = parseInt(arriendo.mes, 10) || ((new Date()).getMonth() + 1);
+  var hoy = new Date();
+  var anoBase = hoy.getFullYear();
+  var mesBase = hoy.getMonth() + 1; // 1..12
   for (var i = 0; i < meses; i++) {
-    var mTotal = mesBase + i; // 1..N
+    var mTotal = mesBase + i;
     var anoCobro = anoBase + Math.floor((mTotal - 1) / 12);
     var mesCobro = ((mTotal - 1) % 12) + 1;
     agregarFila(HOJAS.cobros_arriendo, COLUMNAS.cobros_arriendo, {
@@ -186,8 +188,9 @@ function generarCobrosProyectados(arriendo) {
       id_arriendo: arriendo.id_arriendo,
       'año_cobro': anoCobro,
       mes_cobro: mesCobro,
+      fecha_pago: new Date(anoCobro, mesCobro - 1, 1),
       valor_cobrado: comMensual,
-      estado: 'PROYECTADO',
+      estado: 'COBRADO',
       observacion: ''
     });
   }
@@ -207,6 +210,19 @@ function setupCobrosArriendo() {
     hojaCobros.appendRow(COLUMNAS.cobros_arriendo);
     hojaCobros.getRange(1, 1, 1, COLUMNAS.cobros_arriendo.length).setFontWeight('bold');
     resultado.sheet_creada = true;
+  } else {
+    // Hoja ya existe: agregar columna fecha_pago si falta (entre mes_cobro y valor_cobrado)
+    var headersCob = hojaCobros.getRange(1, 1, 1, hojaCobros.getLastColumn()).getValues()[0];
+    if (headersCob.indexOf('fecha_pago') === -1) {
+      var idxValor = headersCob.indexOf('valor_cobrado');
+      if (idxValor === -1) {
+        hojaCobros.getRange(1, headersCob.length + 1).setValue('fecha_pago').setFontWeight('bold');
+      } else {
+        hojaCobros.insertColumnBefore(idxValor + 1);
+        hojaCobros.getRange(1, idxValor + 1).setValue('fecha_pago').setFontWeight('bold');
+      }
+      resultado.fecha_pago_agregada = true;
+    }
   }
 
   // 2) Agregar columna meses_contrato a Arriendos
@@ -1390,12 +1406,21 @@ function doPost(e) {
       var datosUpdCob = {};
       if (body.estado !== undefined) {
         var estU = String(body.estado).toUpperCase();
-        if (['PROYECTADO','COBRADO','CANCELADO'].indexOf(estU) === -1) {
+        if (['COBRADO','NO_COBRADO','CANCELADO'].indexOf(estU) === -1) {
           lock.releaseLock();
-          return jsonResponse({ ok:false, error:'Estado inválido. Use PROYECTADO, COBRADO o CANCELADO' });
+          return jsonResponse({ ok:false, error:'Estado inválido. Use COBRADO, NO_COBRADO o CANCELADO' });
         }
         datosUpdCob.estado = estU;
+        // Inhabilitar o cancelar borra fecha_pago salvo que el gerente mande una explícita
+        if ((estU === 'NO_COBRADO' || estU === 'CANCELADO') && body.fecha_pago === undefined) {
+          datosUpdCob.fecha_pago = '';
+        }
+        // Rehabilitar a COBRADO sin fecha y sin fecha previa → usar hoy
+        if (estU === 'COBRADO' && body.fecha_pago === undefined && !cobroExist.fecha_pago) {
+          datosUpdCob.fecha_pago = new Date();
+        }
       }
+      if (body.fecha_pago !== undefined) datosUpdCob.fecha_pago = body.fecha_pago;
       if (body.valor_cobrado !== undefined) datosUpdCob.valor_cobrado = numVal(body.valor_cobrado);
       if (body.observacion !== undefined) datosUpdCob.observacion = body.observacion;
 
