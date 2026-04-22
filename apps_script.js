@@ -82,7 +82,7 @@ const COLUMNAS = {
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
   tipos_accion: ['id_tipo', 'nombre', 'activo'],
   cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion'],
-  bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en']
+  bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'fecha', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en']
 };
 
 // ===== UTILIDADES =====
@@ -592,6 +592,7 @@ function liquidarMes(anio, mes) {
         id_asesor: asesor.id_asesor,
         'año': anio,
         mes: mes,
+        fecha: new Date(anio, mes - 1, 1),
         categoria: categoriaLabel,
         comision_generada: actual.comisionGeneradaOficina,
         acciones_mes: actual.numAcciones,
