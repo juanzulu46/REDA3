@@ -49,7 +49,8 @@ const HOJAS = {
   tipos_accion: 'TipoAccion',
   bonificaciones: 'Bonificaciones',
   parametros: 'Parametros',
-  cobros_arriendo: 'CobrosArriendo'
+  cobros_arriendo: 'CobrosArriendo',
+  bonificaciones_mes: 'BonificacionesMes'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -80,7 +81,8 @@ const COLUMNAS = {
   zona: ['id_zona', 'comuna', 'ciudad'],
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
   tipos_accion: ['id_tipo', 'nombre', 'activo'],
-  cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion']
+  cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion'],
+  bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en']
 };
 
 // ===== UTILIDADES =====
@@ -506,6 +508,113 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
     comisionGeneradaOficina: comisionGeneradaOficina,
     totalRecibido: totalRecibido,
     numAcciones: numAcciones
+  };
+}
+
+// ===== LIQUIDACIÓN MENSUAL DE BONIFICACIONES =====
+// Calcula la bonificación de todos los asesores activos para un año/mes dado
+// y la persiste en la hoja BonificacionesMes (sobreescribe el periodo si ya existía).
+// Retorna { ok, filas_escritas, asesores_procesados, errores }
+function liquidarMes(anio, mes) {
+  anio = parseInt(anio, 10);
+  mes = parseInt(mes, 10);
+  if (!anio || anio < 2020 || anio > 2100) throw new Error('Año inválido');
+  if (!mes || mes < 1 || mes > 12) throw new Error('Mes inválido (1-12)');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hoja = ss.getSheetByName(HOJAS.bonificaciones_mes);
+  if (!hoja) throw new Error('Hoja ' + HOJAS.bonificaciones_mes + ' no existe');
+
+  // Pre-cargar datos (una sola vez, evita N lecturas)
+  var datos = {
+    arriendos: leerHoja(HOJAS.arriendos),
+    ventas: leerHoja(HOJAS.ventas),
+    pagos: leerHoja(HOJAS.pagos),
+    comisiones: leerHoja(HOJAS.comisiones),
+    acciones: leerHoja(HOJAS.acciones),
+    bonificaciones: leerHoja(HOJAS.bonificaciones)
+  };
+  var asesores = leerHoja(HOJAS.asesores).filter(function(a){
+    return String(a.estado || '').toLowerCase() === 'activo';
+  });
+
+  // Borrar filas existentes del periodo (sobreescritura)
+  var existentes = leerHoja(HOJAS.bonificaciones_mes);
+  var filasABorrar = [];
+  existentes.forEach(function(row, idx) {
+    if (parseInt(row['año'], 10) === anio && parseInt(row.mes, 10) === mes) {
+      filasABorrar.push(idx + 2); // +2: 1 por header, 1 por índice base 0
+    }
+  });
+  // Borrar de abajo hacia arriba para no corromper los índices
+  filasABorrar.sort(function(a,b){ return b - a; });
+  filasABorrar.forEach(function(nroFila){ hoja.deleteRow(nroFila); });
+
+  var filasEscritas = 0;
+  var errores = [];
+  var ahora = new Date();
+
+  asesores.forEach(function(asesor) {
+    try {
+      var actual = calcularCategoriaMes(asesor.id_asesor, mes, datos);
+
+      // Determinar continuidad con mes anterior
+      var esContinuidad = false;
+      if (mes > 1 && actual.escalon) {
+        var anterior = calcularCategoriaMes(asesor.id_asesor, mes - 1, datos);
+        if (anterior.categoria === actual.categoria) esContinuidad = true;
+      }
+
+      var pctVariable = 0, fijoBase = 0, variableBase = 0;
+      if (actual.escalon) {
+        pctVariable = esContinuidad
+          ? (Number(actual.escalon.pct_variable_continuidad) || 0)
+          : (Number(actual.escalon.pct_variable_inicial) || 0);
+        fijoBase = actual.esMedio
+          ? (Number(actual.escalon.fijo_medio) || 0)
+          : (Number(actual.escalon.fijo) || 0);
+        variableBase = actual.comisionGeneradaOficina * pctVariable;
+      }
+
+      // Factor vinculación: empleado /1.3, freelance ×1
+      var vinculacion = String(asesor.vinculacion || '').toLowerCase();
+      var factorVinc = vinculacion === 'empleado' ? (1 / 1.3) : 1;
+      var fijo = fijoBase * factorVinc;
+      var variable = variableBase * factorVinc;
+
+      var categoriaLabel = actual.categoria + (actual.esMedio ? ' (1/2)' : '');
+      var continuidadLabel = actual.escalon
+        ? (esContinuidad ? 'CONTINUA' : 'INICIAL')
+        : 'N/A';
+
+      agregarFila(HOJAS.bonificaciones_mes, COLUMNAS.bonificaciones_mes, {
+        id_bonmes: siguienteId(HOJAS.bonificaciones_mes, 'BNM'),
+        id_asesor: asesor.id_asesor,
+        'año': anio,
+        mes: mes,
+        categoria: categoriaLabel,
+        comision_generada: actual.comisionGeneradaOficina,
+        acciones_mes: actual.numAcciones,
+        fijo: fijo,
+        pct_variable: pctVariable,
+        variable: variable,
+        total: fijo + variable,
+        continuidad: continuidadLabel,
+        calculado_en: ahora
+      });
+      filasEscritas++;
+    } catch (err) {
+      errores.push({ id_asesor: asesor.id_asesor, error: err.message });
+    }
+  });
+
+  return {
+    ok: true,
+    filas_escritas: filasEscritas,
+    asesores_procesados: asesores.length,
+    errores: errores,
+    anio: anio,
+    mes: mes
   };
 }
 
@@ -1440,6 +1549,26 @@ function doPost(e) {
       var res = setupCobrosArriendo();
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Setup ejecutado', resultado: res });
+    }
+
+    // --- LIQUIDAR BONIFICACIONES DEL MES (sólo gerente) ---
+    if (action === 'liquidar_bonificaciones') {
+      var idAsesorL = body.id_asesor;
+      var asesorL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorL; });
+      if (!asesorL || String(asesorL.rol).toLowerCase() !== 'gerente') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo el gerente puede liquidar bonificaciones' });
+      }
+      var anioL = parseInt(body['año'] || body.anio || body.year, 10);
+      var mesL = parseInt(body.mes, 10);
+      try {
+        var resultadoL = liquidarMes(anioL, mesL);
+        lock.releaseLock();
+        return jsonResponse(resultadoL);
+      } catch (eL) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: eL.message });
+      }
     }
 
     // --- ACTUALIZAR PAGO ---

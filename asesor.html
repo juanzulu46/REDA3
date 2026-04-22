@@ -623,6 +623,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 <!-- ============ GESTIÓN (solo gerente) ============ -->
 <div class="section" id="sec-gestion">
   <div class="fcard">
+    <div class="fcard-hd"><h3>Liquidaci&oacute;n de bonificaciones</h3><p>Calcula y guarda la bonificaci&oacute;n de todos los asesores activos para el periodo seleccionado. Sobrescribe si ya exist&iacute;a.</p></div>
+    <div class="fcard-bd">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">A&ntilde;o</label>
+          <input type="number" id="liqAnio" min="2020" max="2100" style="padding:8px;border:1px solid #ddd;border-radius:4px;width:100px"></div>
+        <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Mes</label>
+          <select id="liqMes" style="padding:8px;border:1px solid #ddd;border-radius:4px">
+            <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+            <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+            <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+            <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+          </select></div>
+        <button class="btn btn-cc" id="btnLiquidar" onclick="liquidarBonificaciones()">Liquidar mes</button>
+        <div id="liqStatus" style="font-size:12px;color:#555"></div>
+      </div>
+    </div>
+  </div>
+  <div class="fcard">
     <div class="fcard-hd"><h3>Gesti&oacute;n de negocios</h3><p>Vista general de todas las ventas de la empresa.</p></div>
     <div class="fcard-bd">
       <div id="gestionContent"><div class="neg-empty">Cargando...</div></div>
@@ -808,6 +826,15 @@ async function hacerLogin(){
     // Mostrar navegación de gerencia si tiene rol gerente
     if(String(asesorActual.rol).toLowerCase()==='gerente'){
       document.getElementById('navGestion').style.display='';
+      // Default: mes anterior al actual (se liquida lo que ya cerró)
+      const hoy = new Date();
+      let mesDef = hoy.getMonth(); // 0-11, así que esto es el mes anterior en 1-12
+      let anioDef = hoy.getFullYear();
+      if (mesDef === 0) { mesDef = 12; anioDef -= 1; }
+      const inAnio = document.getElementById('liqAnio');
+      const inMes = document.getElementById('liqMes');
+      if (inAnio) inAnio.value = anioDef;
+      if (inMes) inMes.value = mesDef;
     }
     btn.textContent='Cargando datos...';
     await cargarCatalogos();
@@ -1977,6 +2004,30 @@ async function editarCobro(idCobro, btn) {
     else { toast(r?.error || 'Error al actualizar','er'); }
   } catch (e) { toast('Error: ' + e.message,'er'); }
   btn.disabled = false; btn.textContent = 'Editar';
+}
+
+async function liquidarBonificaciones() {
+  const btn = document.getElementById('btnLiquidar');
+  const status = document.getElementById('liqStatus');
+  const anio = parseInt(document.getElementById('liqAnio').value, 10);
+  const mes = parseInt(document.getElementById('liqMes').value, 10);
+  if (!anio || !mes) { toast('Indica año y mes','er'); return; }
+  if (!confirm('Liquidar bonificaciones de ' + mes + '/' + anio + '? Sobrescribe si ya existía.')) return;
+  btn.disabled = true; btn.textContent = 'Liquidando...';
+  status.textContent = '';
+  try {
+    const r = await apiPost({ action:'liquidar_bonificaciones', id_asesor: asesorActual.id_asesor, 'año': anio, mes: mes });
+    if (r && r.ok) {
+      const errs = (r.errores || []).length;
+      status.innerHTML = '<span style="color:#10b981">✓ ' + r.filas_escritas + ' liquidaciones escritas</span>' +
+        (errs ? ' <span style="color:#ef4444">(' + errs + ' errores)</span>' : '');
+      toast('Liquidación completada: ' + r.filas_escritas + ' asesores');
+    } else {
+      status.textContent = r?.error || 'Error';
+      toast(r?.error || 'Error al liquidar','er');
+    }
+  } catch (e) { toast('Error: ' + e.message,'er'); status.textContent = e.message; }
+  btn.disabled = false; btn.textContent = 'Liquidar mes';
 }
 
 async function editarPago(idPago, idVenta, btn) {
