@@ -172,15 +172,14 @@ function mesesContratoDe(arriendo) {
   return (pct > 0 && pct <= 0.10) ? 12 : 1;
 }
 
-// Genera N filas en CobrosArriendo desde el mes actual hacia adelante (N = meses_contrato).
-// Cada fila nace COBRADO con fecha_pago = día 1 del mes_cobro. Gerencia puede inhabilitar
-// (NO_COBRADO) o cancelar desde su perfil si algún mes no se cobra.
+// Genera N filas en CobrosArriendo desde el mes de firma del arriendo hacia adelante
+// (N = meses_contrato). Cada fila nace COBRADO con fecha_pago = día 1 del mes_cobro.
+// Gerencia puede inhabilitar (NO_COBRADO) o cancelar desde su perfil si algún mes no se cobra.
 function generarCobrosProyectados(arriendo) {
   var meses = mesesContratoDe(arriendo);
   var comMensual = numVal(arriendo.comision_oficina);
-  var hoy = new Date();
-  var anoBase = hoy.getFullYear();
-  var mesBase = hoy.getMonth() + 1; // 1..12
+  var anoBase = parseInt(arriendo['año'], 10) || new Date().getFullYear();
+  var mesBase = parseInt(arriendo.mes, 10) || (new Date().getMonth() + 1); // 1..12
   for (var i = 0; i < meses; i++) {
     var mTotal = mesBase + i;
     var anoCobro = anoBase + Math.floor((mTotal - 1) / 12);
@@ -247,6 +246,60 @@ function setupCobrosArriendo() {
 // partes = [{rol, id_cliente, participacion_pct}, ...]
 // rolesRequeridos = ['arrendador','arrendatario'] | ['vendedor','comprador']
 // Retorna null si ok, string de error si falla.
+// Valida coherencia de referidos: si hay valor_ref > 0, debe haber nombre;
+// los valores nunca pueden ser negativos. Retorna error o null.
+function validarReferidos(datos) {
+  var nombreCap = String(datos.referido_captador || '').trim();
+  var valorCap  = numVal(datos.valor_ref_captador);
+  if (valorCap < 0) return 'El valor del referido de captación no puede ser negativo';
+  if (valorCap > 0 && !nombreCap) return 'Hay valor de referido en captación pero falta el nombre';
+
+  var nombreCer = String(datos.referido_cerrador || '').trim();
+  var valorCer  = numVal(datos.valor_ref_cerrador);
+  if (valorCer < 0) return 'El valor del referido de cierre no puede ser negativo';
+  if (valorCer > 0 && !nombreCer) return 'Hay valor de referido en cierre pero falta el nombre';
+  return null;
+}
+
+// Valida el array de comisiones_asesores:
+// - cada id_asesor existe en Asesores
+// - punta es Captador o Cerrador
+// - suma de participaciones por punta = 100% (tolerancia ±0.5%)
+// - ningún asesor duplicado en la misma punta
+// Retorna string con error o null si está OK.
+function validarComisionesAsesores(comisiones, asesoresRef) {
+  if (!comisiones || !Array.isArray(comisiones) || comisiones.length === 0) return null;
+  var puntasValidas = ['Captador','Cerrador'];
+  var porPunta = { Captador: [], Cerrador: [] };
+  for (var i = 0; i < comisiones.length; i++) {
+    var c = comisiones[i];
+    if (puntasValidas.indexOf(c.punta) === -1) {
+      return 'Punta inválida "' + c.punta + '" en comisiones';
+    }
+    if (!asesoresRef.some(function(a){ return a.id_asesor === c.id_asesor; })) {
+      return 'Asesor "' + c.id_asesor + '" no existe';
+    }
+    porPunta[c.punta].push(c);
+  }
+  for (var p = 0; p < puntasValidas.length; p++) {
+    var arr = porPunta[puntasValidas[p]];
+    if (arr.length === 0) continue;
+    var vistos = {};
+    var suma = 0;
+    for (var j = 0; j < arr.length; j++) {
+      if (vistos[arr[j].id_asesor]) {
+        return 'Asesor "' + arr[j].id_asesor + '" duplicado en punta "' + puntasValidas[p] + '"';
+      }
+      vistos[arr[j].id_asesor] = true;
+      suma += numVal(arr[j].participacion);
+    }
+    if (Math.abs(suma - 100) > 0.5) {
+      return 'La suma de participación en punta "' + puntasValidas[p] + '" debe ser 100% (actual: ' + suma.toFixed(2) + '%)';
+    }
+  }
+  return null;
+}
+
 function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, clientesRef) {
   if (!partes || !Array.isArray(partes) || partes.length === 0) {
     return 'Debe haber al menos un cliente por rol (' + rolesRequeridos.join(', ') + ')';
@@ -273,8 +326,8 @@ function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, 
     var r = rolesRequeridos[k];
     var suma = partes.filter(function(pp){ return pp.rol === r; })
       .reduce(function(acc, pp){ return acc + numVal(pp.participacion_pct); }, 0);
-    if (Math.abs(suma - 1) > 0.01) {
-      return 'La suma de participación para rol "' + r + '" debe ser 100% (actual: ' + Math.round(suma*100) + '%)';
+    if (Math.abs(suma - 1) > 0.005) {
+      return 'La suma de participación para rol "' + r + '" debe ser 100% (actual: ' + (suma*100).toFixed(2) + '%)';
     }
   }
   // Duplicados: un mismo cliente no puede aparecer 2 veces en el mismo rol
@@ -286,6 +339,18 @@ function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, 
       var id = String(parDup[n].id_cliente);
       if (vistos[id]) return 'Cliente "' + id + '" está duplicado en rol "' + rr + '"';
       vistos[id] = true;
+    }
+  }
+  // Conflicto entre roles: el mismo cliente no puede ser ambos lados del negocio
+  // (arrendador y arrendatario, o vendedor y comprador)
+  if (rolesRequeridos.length === 2) {
+    var rolA = rolesRequeridos[0], rolB = rolesRequeridos[1];
+    var clientesA = partes.filter(function(pp){ return pp.rol === rolA; }).map(function(pp){ return String(pp.id_cliente); });
+    var clientesB = partes.filter(function(pp){ return pp.rol === rolB; }).map(function(pp){ return String(pp.id_cliente); });
+    for (var q = 0; q < clientesA.length; q++) {
+      if (clientesB.indexOf(clientesA[q]) !== -1) {
+        return 'El cliente "' + clientesA[q] + '" no puede ser "' + rolA + '" y "' + rolB + '" al mismo tiempo';
+      }
     }
   }
   // Escribir
@@ -949,12 +1014,27 @@ function doPost(e) {
       // Año automático
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
+      // Validar valores no negativos
+      if (numVal(datos.valor_canon) < 0 || numVal(datos.administracion) < 0 || numVal(datos.pct_comision_oficina) < 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Canon, administración y porcentaje de comisión no pueden ser negativos' });
+      }
+      if (numVal(datos.valor_canon) === 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El valor del canon debe ser mayor a 0' });
+      }
+
       // Integridad referencial del inmueble
       var inmRef = leerHoja(HOJAS.inmuebles);
       var cliRef = leerHoja(HOJAS.clientes);
-      if (!inmRef.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
+      var inmArr = inmRef.find(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); });
+      if (!inmArr) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
+      }
+      if (String(inmArr.estado || '').toLowerCase() === 'inactivo') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El inmueble "' + datos.id_inmueble + '" está inactivo. Reactívelo antes de registrar un arriendo.' });
       }
 
       // Retrocompat: si no vienen partes[] pero sí id_arrendador/id_arrendatario legacy, convertir
@@ -986,13 +1066,14 @@ function doPost(e) {
       // Calcular comisión sobre canon + administración (consistente con frontend)
       var canonTotalArr = numVal(datos.valor_canon) + numVal(datos.administracion);
       datos.comision_oficina = canonTotalArr * numVal(datos.pct_comision_oficina);
-      // Meses del contrato: si no viene, infiere por la regla pct
-      if (!datos.meses_contrato || parseInt(datos.meses_contrato, 10) <= 0) {
-        var pctArr = numVal(datos.pct_comision_oficina);
-        datos.meses_contrato = (pctArr > 0 && pctArr <= 0.10) ? 12 : 1;
-      } else {
-        datos.meses_contrato = parseInt(datos.meses_contrato, 10);
+      // Meses del contrato: obligatorio. El frontend lo valida; acá se rechaza
+      // si falta para evitar registros sin duración (requerido por CobrosArriendo).
+      var mesesContratoNum = parseInt(datos.meses_contrato, 10);
+      if (!mesesContratoNum || mesesContratoNum <= 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'meses_contrato es obligatorio y debe ser un entero positivo' });
       }
+      datos.meses_contrato = mesesContratoNum;
 
       // Validar y guardar partes (arrendador + arrendatario, suma=100% por rol)
       var errPartes = validarYGuardarPartes(
@@ -1001,6 +1082,20 @@ function doPost(e) {
       if (errPartes) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error: errPartes });
+      }
+
+      // Validar comisiones ANTES de escribir nada
+      var errComArr = validarComisionesAsesores(body.comisiones_asesores, leerHoja(HOJAS.asesores));
+      if (errComArr) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errComArr });
+      }
+
+      // Validar coherencia de referidos
+      var errRefArr = validarReferidos(datos);
+      if (errRefArr) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errRefArr });
       }
 
       // Guardar arriendo
@@ -1032,12 +1127,27 @@ function doPost(e) {
       const datos = body.datos;
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
+      // Validar valores no negativos
+      if (numVal(datos.valor_base_comision) < 0 || numVal(datos.pct_comision_oficina) < 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Valor base y porcentaje de comisión no pueden ser negativos' });
+      }
+      if (numVal(datos.valor_base_comision) === 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El valor base de la venta debe ser mayor a 0' });
+      }
+
       // Integridad referencial del inmueble
       var inmRefV = leerHoja(HOJAS.inmuebles);
       var cliRefV = leerHoja(HOJAS.clientes);
-      if (!inmRefV.some(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); })) {
+      var inmVnt = inmRefV.find(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); });
+      if (!inmVnt) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
+      }
+      if (String(inmVnt.estado || '').toLowerCase() === 'inactivo') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El inmueble "' + datos.id_inmueble + '" está inactivo. Reactívelo antes de registrar una venta.' });
       }
 
       // Retrocompat: si no vienen partes[] pero sí id_vendedor/id_comprador legacy, convertir
@@ -1062,6 +1172,20 @@ function doPost(e) {
         return jsonResponse({ ok:false, error: errPartesV });
       }
 
+      // Validar comisiones ANTES de escribir la venta
+      var errComVnt = validarComisionesAsesores(body.comisiones_asesores, leerHoja(HOJAS.asesores));
+      if (errComVnt) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errComVnt });
+      }
+
+      // Validar coherencia de referidos
+      var errRefVnt = validarReferidos(datos);
+      if (errRefVnt) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error: errRefVnt });
+      }
+
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
 
       if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
@@ -1082,6 +1206,19 @@ function doPost(e) {
       // Convertimos a valor_cobrado (comisión proporcional que entra a la oficina).
       if (body.pagos && body.pagos.length > 0) {
         var valorBase = numVal(datos.valor_base_comision);
+        // Validar que la suma de pagos cuadre con el valor base (tolerancia $1)
+        var sumaPagosV = body.pagos.reduce(function(acc, p){ return acc + numVal(p.valor_pago); }, 0);
+        if (Math.abs(sumaPagosV - valorBase) > 1) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'La suma de pagos ($' + Math.round(sumaPagosV).toLocaleString() + ') no cuadra con el valor base ($' + Math.round(valorBase).toLocaleString() + ')' });
+        }
+        // Validar que ningún pago sea negativo
+        for (var iP = 0; iP < body.pagos.length; iP++) {
+          if (numVal(body.pagos[iP].valor_pago) < 0) {
+            lock.releaseLock();
+            return jsonResponse({ ok:false, error:'Los pagos no pueden ser negativos' });
+          }
+        }
         body.pagos.forEach(function(pago) {
           var idPago = siguienteId(HOJAS.pagos, 'PAG');
           var fechaPago = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
@@ -1483,12 +1620,29 @@ function doPost(e) {
     // --- REGISTRAR ACCIÓN COMERCIAL ---
     if (action === 'registrar_accion') {
       const datos = body.datos;
-      datos.id_accion = siguienteId(HOJAS.acciones, 'ACC');
-      // Calcular mes desde fecha si no viene
-      if (!datos.mes && datos.fecha) {
-        var fechaP = new Date(datos.fecha);
-        datos.mes = fechaP.getMonth() + 1;
+      if (!datos.id_asesor) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Falta id_asesor' });
       }
+      // Validar asesor existe
+      var asesorAcc = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === datos.id_asesor; });
+      if (!asesorAcc) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Asesor "' + datos.id_asesor + '" no existe' });
+      }
+      // Validar fecha si viene
+      if (datos.fecha) {
+        var fechaP = new Date(datos.fecha);
+        if (isNaN(fechaP.getTime())) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Fecha inválida: ' + datos.fecha });
+        }
+        if (!datos.mes) datos.mes = fechaP.getMonth() + 1;
+      } else if (!datos.mes) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Falta fecha o mes de la acción' });
+      }
+      datos.id_accion = siguienteId(HOJAS.acciones, 'ACC');
       agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
@@ -1572,10 +1726,17 @@ function doPost(e) {
       }
     }
 
-    // --- ACTUALIZAR PAGO ---
+    // --- ACTUALIZAR PAGO (sólo gerente) ---
     if (action === 'actualizar_pago') {
       var idPago = body.id_pago;
+      var idAsesorP = body.id_asesor;
       if (!idPago) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_pago' }); }
+      if (!idAsesorP) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
+      var asesorP = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorP; });
+      if (!asesorP || String(asesorP.rol).toLowerCase() !== 'gerente') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo el gerente puede modificar pagos' });
+      }
       // Buscar el pago para obtener id_venta
       var pagoActual = leerHoja(HOJAS.pagos).find(function(p) { return p.id_pago === idPago; });
       if (!pagoActual) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Pago no encontrado' }); }
@@ -1594,11 +1755,26 @@ function doPost(e) {
         var valorBase = numVal(ventaPago.valor_base_comision);
         var comOficina = numVal(ventaPago.comision_oficina);
         var valorPago = numVal(body.valor_pago);
+        if (valorPago < 0) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'El valor del pago no puede ser negativo' });
+        }
         if (valorBase > 0 && valorPago > valorBase) {
           lock.releaseLock();
           return jsonResponse({ ok:false, error:'El valor del pago (' + valorPago + ') excede el valor base de la venta (' + valorBase + ')' });
         }
-        datosUpdate.valor_cobrado = valorBase > 0 ? Math.round((valorPago / valorBase) * comOficina) : 0;
+        // Validar que la suma total de pagos (incluyendo el editado) no supere valorBase
+        var todosPagos = leerHoja(HOJAS.pagos).filter(function(p){ return p.id_venta === pagoActual.id_venta; });
+        var valorCobradoNuevo = valorBase > 0 ? Math.round((valorPago / valorBase) * comOficina) : 0;
+        var sumCobradoFuturo = todosPagos.reduce(function(acc, p){
+          var vc = numVal(p.valor_cobrado);
+          return acc + (p.id_pago === idPago ? valorCobradoNuevo : vc);
+        }, 0);
+        if (comOficina > 0 && (sumCobradoFuturo - comOficina) > 1) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'La suma de pagos de esta venta superaría la comisión total ($' + Math.round(sumCobradoFuturo).toLocaleString() + ' vs $' + Math.round(comOficina).toLocaleString() + ')' });
+        }
+        datosUpdate.valor_cobrado = valorCobradoNuevo;
       }
       if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
 
@@ -1607,10 +1783,17 @@ function doPost(e) {
       return jsonResponse({ ok:true, mensaje:'Pago actualizado' });
     }
 
-    // --- CANCELAR VENTA ---
+    // --- CANCELAR VENTA (sólo gerente) ---
     if (action === 'cancelar_venta') {
       var idVentaCancel = body.id_venta;
+      var idAsesorCV = body.id_asesor;
       if (!idVentaCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
+      if (!idAsesorCV) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
+      var asesorCV = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCV; });
+      if (!asesorCV || String(asesorCV.rol).toLowerCase() !== 'gerente') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo el gerente puede cancelar ventas' });
+      }
 
       // Verificar que la venta exista y no esté ya cancelada
       var ventaC = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idVentaCancel; });

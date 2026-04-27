@@ -1037,7 +1037,7 @@ function recolectarPartes(tipo){
       partes.push({ rol, id_cliente, participacion_pct: pct / 100 });
     });
     if (rows.length === 0) errorMsg = errorMsg || 'Agregue al menos un cliente en rol "' + rol + '"';
-    if (!errorMsg && Math.abs(suma - 100) > 0.01) {
+    if (!errorMsg && Math.abs(suma - 100) > 0.5) {
       errorMsg = 'La participaci\u00f3n de los ' + rol + 'es debe sumar 100% (actual: ' + suma.toFixed(2) + '%)';
     }
   });
@@ -1326,17 +1326,26 @@ function recolectarComisiones(tipo) {
   const hayRefCer = document.getElementById(prefix + '_hayref_cer').checked;
 
   const result = [];
+  let errorPart = null;
   [['cap','Captador',ciCap,hayRefCap],['cer','Cerrador',ciCer,hayRefCer]].forEach(([t2,punta,ci,hayRef]) => {
+    if (errorPart) return;
     const containerId = t2 + (isArr?'ArrList':'VntList');
     const rows = document.getElementById(containerId).querySelectorAll('.com-row');
+    let sumaPartPunta = 0;
+    let hayAsesoresPunta = false;
+    const vistosP = {};
     rows.forEach(row => {
       const sel = row.querySelector('.com-asesor');
       if (!sel.value) return;
+      hayAsesoresPunta = true;
+      if (vistosP[sel.value]) { errorPart = errorPart || 'Asesor duplicado en punta "' + punta + '"'; return; }
+      vistosP[sel.value] = true;
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(row.querySelector('.com-part').value) || 0;
+      sumaPartPunta += participacion;
       const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion);
       let valor = bruto;
-      if (hayRef) valor = bruto - (bruto * 0.20 * 0.25); // Resta 25% del referido (5% del bruto)
+      if (hayRef) valor = bruto - (bruto * 0.20 * 0.25);
       result.push({
         id_asesor: sel.value,
         valor_comision: Math.round(valor * 100) / 100,
@@ -1344,7 +1353,11 @@ function recolectarComisiones(tipo) {
         participacion
       });
     });
+    if (hayAsesoresPunta && Math.abs(sumaPartPunta - 100) > 0.5) {
+      errorPart = 'La participación de los asesores en punta "' + punta + '" debe sumar 100% (actual: ' + sumaPartPunta.toFixed(2) + '%)';
+    }
   });
+  if (errorPart) return { error: errorPart };
   return result;
 }
 
@@ -1356,9 +1369,11 @@ async function guardarArriendo() {
   const resPartes = recolectarPartes('arr');
   if (resPartes.error) { toast(resPartes.error, 'er'); return; }
   const canon=val('ar_canon','Escriba el valor del canon');if(!canon)return;
+  if(Number(canon)<=0){toast('El canon debe ser mayor a 0','er');document.getElementById('ar_canon').focus();return}
   const admonRaw=document.getElementById('ar_admon').value.trim();
   if(admonRaw===''){toast('Escriba el valor de administraci\u00f3n (use 0 si no aplica)','er');document.getElementById('ar_admon').focus();return}
   const admon=Number(admonRaw);
+  if(admon<0){toast('La administración no puede ser negativa','er');document.getElementById('ar_admon').focus();return}
   const pct=val('ar_pct','Escoja el porcentaje de comisi\u00f3n');if(!pct)return;
   const mesesRaw=document.getElementById('ar_meses').value.trim();
   if(mesesRaw===''){toast('Escriba los meses del contrato','er');document.getElementById('ar_meses').focus();return}
@@ -1378,7 +1393,8 @@ async function guardarArriendo() {
   }
 
   const comisiones = recolectarComisiones('arr');
-  if (comisiones.length === 0) { toast('Agregue al menos un asesor captador o cerrador', 'er'); return; }
+  if (comisiones && comisiones.error) { toast(comisiones.error, 'er'); return; }
+  if (!comisiones || comisiones.length === 0) { toast('Agregue al menos un asesor captador o cerrador', 'er'); return; }
 
   const btn = document.getElementById('btnGuardarArr');
   btn.disabled = true; btn.textContent = 'Guardando...';
@@ -1424,6 +1440,7 @@ async function guardarVenta() {
   const resPartesV = recolectarPartes('vnt');
   if (resPartesV.error) { toast(resPartesV.error, 'er'); return; }
   const valorbase=val('v_valorbase','Escriba el valor base');if(!valorbase)return;
+  if(Number(valorbase)<=0){toast('El valor base debe ser mayor a 0','er');document.getElementById('v_valorbase').focus();return}
   const pct=val('v_pct','Escoja el porcentaje');if(!pct)return;
   const ofcap=val('v_ofcap','Escoja oficina captaci\u00f3n');if(!ofcap)return;
   const orgcap=val('v_orgcap','Escoja origen captaci\u00f3n');if(!orgcap)return;
@@ -1438,7 +1455,8 @@ async function guardarVenta() {
   }
 
   const comisiones = recolectarComisiones('vnt');
-  if (comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
+  if (comisiones && comisiones.error) { toast(comisiones.error, 'er'); return; }
+  if (!comisiones || comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
 
   const pagos = recolectarPagos();
   if (pagos.length === 0) { toast('Agregue al menos una cuota de pago', 'er'); return; }
@@ -1637,6 +1655,7 @@ function renderMisNegocios(){
   if(!r) return;
 
   // Leer filtros
+  const fAnio = Number(document.getElementById('negFiltroAnio')?.value || 0);
   const fMes = Number(document.getElementById('negFiltroMes')?.value || 0);
   const fPunta = document.getElementById('negFiltroPunta')?.value || '';
 
@@ -1646,6 +1665,12 @@ function renderMisNegocios(){
   const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
   const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
 
+  // Años disponibles (a partir de los negocios del asesor)
+  const aniosSet = new Set();
+  (r.arriendos||[]).forEach(a=>{const y=Number(a['año']);if(y)aniosSet.add(y)});
+  (r.ventas||[]).forEach(v=>{const y=Number(v['año']);if(y)aniosSet.add(y)});
+  const aniosDisp = [...aniosSet].sort((a,b)=>b-a);
+
   // Obtener IDs de negocios donde el asesor cumple el filtro de punta
   let comisionesFiltradas = r.comisiones;
   if (fPunta) comisionesFiltradas = comisionesFiltradas.filter(c => c.punta === fPunta);
@@ -1654,6 +1679,10 @@ function renderMisNegocios(){
   // Filtrar negocios
   let arriendosFilt = r.arriendos.filter(a => negocioIdsFiltrados.has(a.id_arriendo));
   let ventasFilt = r.ventas.filter(v => negocioIdsFiltrados.has(v.id_venta));
+  if (fAnio) {
+    arriendosFilt = arriendosFilt.filter(a => Number(a['año']) === fAnio);
+    ventasFilt = ventasFilt.filter(v => Number(v['año']) === fAnio);
+  }
   if (fMes) {
     arriendosFilt = arriendosFilt.filter(a => Number(a.mes) === fMes);
     ventasFilt = ventasFilt.filter(v => Number(v.mes) === fMes);
@@ -1668,6 +1697,13 @@ function renderMisNegocios(){
   // UI de filtros
   let html = `
     <div class="neg-filtros">
+      <div class="neg-filtro-grupo">
+        <label>A&ntilde;o:</label>
+        <select id="negFiltroAnio" onchange="renderMisNegocios()">
+          <option value="0">Todos</option>
+          ${aniosDisp.map(y=>'<option value="'+y+'"'+(y===fAnio?' selected':'')+'>'+y+'</option>').join('')}
+        </select>
+      </div>
       <div class="neg-filtro-grupo">
         <label>Mes:</label>
         <select id="negFiltroMes" onchange="renderMisNegocios()">
@@ -1684,7 +1720,7 @@ function renderMisNegocios(){
         </select>
       </div>
       <div class="neg-filtro-grupo">
-        <button class="btn btn-limpiar" onclick="document.getElementById('negFiltroMes').value=0;document.getElementById('negFiltroPunta').value='';renderMisNegocios()">Limpiar filtros</button>
+        <button class="btn btn-limpiar" onclick="document.getElementById('negFiltroAnio').value=0;document.getElementById('negFiltroMes').value=0;document.getElementById('negFiltroPunta').value='';renderMisNegocios()">Limpiar filtros</button>
       </div>
     </div>
     <div class="neg-resumen">
@@ -2039,7 +2075,7 @@ async function editarPago(idPago, idVenta, btn) {
 
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
-    const datos = { action: 'actualizar_pago', id_pago: idPago };
+    const datos = { action: 'actualizar_pago', id_pago: idPago, id_asesor: asesorActual.id_asesor };
     if (fecha) datos.fecha_pago = fecha;
     if (valorStr) datos.valor_pago = Number(valorStr.replace(/\./g,'').replace(',','.')) || 0;
     if (obs !== null && obs !== '') datos.observacion = obs;
@@ -2057,7 +2093,7 @@ async function cancelarVenta(idVenta, btn) {
   if (confirmacion !== 'CANCELAR') { toast('Cancelación no confirmada', 'er'); return; }
   btn.disabled = true; btn.textContent = 'Cancelando...';
   try {
-    const r = await apiPost({ action: 'cancelar_venta', id_venta: idVenta });
+    const r = await apiPost({ action: 'cancelar_venta', id_venta: idVenta, id_asesor: asesorActual.id_asesor });
     if (r && r.ok) {
       toast('Venta cancelada');
       cargarMisNegocios();
