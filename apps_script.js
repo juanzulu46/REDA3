@@ -241,6 +241,65 @@ function setupCobrosArriendo() {
   return resultado;
 }
 
+// Inserta o actualiza la fila COBRE en la hoja Bonificaciones.
+// COBRE: ≥ $5.540.000 + ≥ 5 acciones → fijo $250.000 + variable (4%/5%).
+// Orden: entre BRONCE y PIEDRA en la cascada.
+// Ejecutar 1 vez desde el editor de Apps Script (▶ Ejecutar → setupCobre).
+function setupCobre() {
+  var sheet = getSheet(HOJAS.bonificaciones);
+  if (!sheet) throw new Error('Hoja "' + HOJAS.bonificaciones + '" no encontrada');
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var catIdx = headers.indexOf('categoria');
+  var ordenIdx = headers.indexOf('orden');
+  if (catIdx === -1) throw new Error('Columna "categoria" no encontrada en Bonificaciones');
+
+  var datosCobre = {
+    categoria: 'COBRE',
+    min_comision_oficina: 5540000,
+    min_acciones: 5,
+    fijo: 250000,
+    fijo_medio: 0,
+    pct_variable_inicial: 0.04,
+    pct_variable_continuidad: 0.05
+  };
+
+  // Buscar BRONCE/PIEDRA para calcular un orden intermedio, y COBRE para detectar update
+  var ordenBronce = null, ordenPiedra = null, filaCobre = -1;
+  for (var i = 1; i < data.length; i++) {
+    var cat = String(data[i][catIdx] || '').toUpperCase();
+    var orden = ordenIdx !== -1 ? Number(data[i][ordenIdx]) : null;
+    if (cat === 'BRONCE') ordenBronce = orden;
+    if (cat === 'PIEDRA') ordenPiedra = orden;
+    if (cat === 'COBRE') filaCobre = i;
+  }
+
+  if (ordenIdx !== -1) {
+    if (ordenBronce !== null && !isNaN(ordenBronce) && ordenPiedra !== null && !isNaN(ordenPiedra)) {
+      datosCobre.orden = (ordenBronce + ordenPiedra) / 2;
+    } else if (ordenBronce !== null && !isNaN(ordenBronce)) {
+      datosCobre.orden = ordenBronce + 0.5;
+    }
+  }
+
+  var resultado = { creada: false, actualizada: false, orden: datosCobre.orden };
+
+  if (filaCobre !== -1) {
+    Object.keys(datosCobre).forEach(function(key) {
+      var ci = headers.indexOf(key);
+      if (ci !== -1) sheet.getRange(filaCobre + 1, ci + 1).setValue(datosCobre[key]);
+    });
+    resultado.actualizada = true;
+  } else {
+    var fila = headers.map(function(h) { return datosCobre[h] !== undefined ? datosCobre[h] : ''; });
+    sheet.appendRow(fila);
+    resultado.creada = true;
+  }
+
+  return resultado;
+}
+
 // ===== PARTES (N clientes por rol por negocio) =====
 // Valida un arreglo de partes y las escribe en la hoja Partes.
 // partes = [{rol, id_cliente, participacion_pct}, ...]
@@ -549,8 +608,10 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
     }
   }
 
-  // Si aún no cae en ninguno: ARENA (cumple acciones mínimas pero no comisión) o ARENA MOVEDIZA
+  // Si aún no cae en ninguno: ARENA (cumple acciones mínimas pero no comisión),
+  // PISO 4% (no cumple acciones pero sí generó comisión a la oficina) o ARENA MOVEDIZA
   var categoria;
+  var esPiso4 = false;
   if (escalonAsignado) {
     categoria = String(escalonAsignado.categoria).toUpperCase();
   } else {
@@ -560,6 +621,12 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
     if (numAcciones >= arenaMin) {
       categoria = 'ARENA';
       escalonAsignado = arenaRow || null;
+    } else if (comisionGeneradaOficina > 0) {
+      // Cerró venta o arriendo pero no llegó al mínimo de acciones
+      // → 4% de la comisión generada a la oficina (no se persiste escalón)
+      categoria = 'PISO 4%';
+      escalonAsignado = null;
+      esPiso4 = true;
     } else {
       categoria = 'ARENA MOVEDIZA';
       escalonAsignado = null;
@@ -569,6 +636,7 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   return {
     categoria: categoria,
     esMedio: esMedio,
+    esPiso4: esPiso4,
     escalon: escalonAsignado,
     comisionGeneradaOficina: comisionGeneradaOficina,
     totalRecibido: totalRecibido,
@@ -638,6 +706,11 @@ function liquidarMes(anio, mes) {
         fijoBase = actual.esMedio
           ? (Number(actual.escalon.fijo_medio) || 0)
           : (Number(actual.escalon.fijo) || 0);
+        variableBase = actual.comisionGeneradaOficina * pctVariable;
+      } else if (actual.esPiso4) {
+        // PISO 4%: pagar 4% de la comisión generada a la oficina, sin fijo
+        pctVariable = 0.04;
+        fijoBase = 0;
         variableBase = actual.comisionGeneradaOficina * pctVariable;
       }
 
@@ -839,6 +912,11 @@ function doGet(e) {
           ? (Number(actual.escalon.fijo_medio) || 0)
           : (Number(actual.escalon.fijo) || 0);
         variableBase = actual.comisionGeneradaOficina * pctVariable;
+      } else if (actual.esPiso4) {
+        // PISO 4%: 4% de la comisión generada a la oficina, sin fijo
+        pctVariable = 0.04;
+        fijoBase = 0;
+        variableBase = actual.comisionGeneradaOficina * pctVariable;
       }
 
       // Aplicar factor de vinculación (empleado: ÷1.3; freelance: ×1)
@@ -854,6 +932,7 @@ function doGet(e) {
         num_acciones: actual.numAcciones,
         categoria: actual.categoria,
         es_medio: actual.esMedio,
+        es_piso4: actual.esPiso4,
         bonificacion_fija: fijo,
         bonificacion_variable: variable,
         bonificacion_total: bonificacionTotal,
@@ -1450,6 +1529,11 @@ function doPost(e) {
       if (actualB.escalon) {
         pctVarB = esContB ? Number(actualB.escalon.pct_variable_continuidad) || 0 : Number(actualB.escalon.pct_variable_inicial) || 0;
         fijoBaseB = actualB.esMedio ? (Number(actualB.escalon.fijo_medio) || 0) : (Number(actualB.escalon.fijo) || 0);
+        varBaseB = actualB.comisionGeneradaOficina * pctVarB;
+      } else if (actualB.esPiso4) {
+        // PISO 4%: 4% de la comisión generada, sin fijo
+        pctVarB = 0.04;
+        fijoBaseB = 0;
         varBaseB = actualB.comisionGeneradaOficina * pctVarB;
       }
       var vincB = String(asesorBon.vinculacion || '').toLowerCase();
