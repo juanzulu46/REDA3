@@ -685,7 +685,21 @@ function liquidarMes(anio, mes) {
   });
 
   // Borrar filas existentes del periodo (sobreescritura)
+  asegurarColumnaCobradaEn();
   var existentes = leerHoja(HOJAS.bonificaciones_mes);
+
+  // Bloquear re-liquidación si alguna fila del periodo ya fue cobrada
+  // (los PDFs ya enviados quedarían desincronizados con la nueva liquidación)
+  var yaCobradas = existentes.filter(function(row){
+    return parseInt(row['año'], 10) === anio
+      && parseInt(row.mes, 10) === mes
+      && row.cobrada_en;
+  });
+  if (yaCobradas.length > 0) {
+    var idsCobrados = yaCobradas.map(function(r){ return r.id_asesor; }).join(', ');
+    throw new Error('No se puede re-liquidar ' + mes + '/' + anio + ': ya hay bonificaciones cobradas por: ' + idsCobrados);
+  }
+
   var filasABorrar = [];
   existentes.forEach(function(row, idx) {
     if (parseInt(row['año'], 10) === anio && parseInt(row.mes, 10) === mes) {
