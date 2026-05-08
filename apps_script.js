@@ -82,7 +82,7 @@ const COLUMNAS = {
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
   tipos_accion: ['id_tipo', 'nombre', 'activo'],
   cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion'],
-  bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'fecha', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en']
+  bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'fecha', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en', 'cobrada_en']
 };
 
 // ===== UTILIDADES =====
@@ -239,6 +239,19 @@ function setupCobrosArriendo() {
   resultado.piedra_actualizada = true;
 
   return resultado;
+}
+
+// Asegura que la hoja BonificacionesMes tenga la columna cobrada_en al final.
+// Idempotente: si ya existe, no hace nada. Útil para hojas creadas antes del cambio.
+function asegurarColumnaCobradaEn() {
+  var sheet = getSheet(HOJAS.bonificaciones_mes);
+  if (!sheet) return false;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('cobrada_en') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('cobrada_en').setFontWeight('bold');
+    return true;
+  }
+  return false;
 }
 
 // Inserta o actualiza la fila COBRE en la hoja Bonificaciones.
@@ -1578,6 +1591,23 @@ function doPost(e) {
         return jsonResponse({ ok:false, error:'La bonificación de ' + mesBon + ' es $0. No hay nada que cobrar.' });
       }
 
+      // Validar que la bonificación no haya sido cobrada antes (anti doble cobro)
+      asegurarColumnaCobradaEn();
+      var liqsExistentesB = leerHoja(HOJAS.bonificaciones_mes);
+      var liqExistenteB = liqsExistentesB.find(function(b){
+        return b.id_asesor === idAsesorBon
+          && parseInt(b['año'], 10) === anoActualB
+          && parseInt(b.mes, 10) === mesBon;
+      });
+      if (liqExistenteB && liqExistenteB.cobrada_en) {
+        var fechaCob = liqExistenteB.cobrada_en;
+        var fechaStr = (fechaCob instanceof Date)
+          ? fechaCob.toLocaleDateString('es-CO')
+          : String(fechaCob);
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Ya cobraste la bonificación de ' + mesBon + '/' + anoActualB + ' el ' + fechaStr });
+      }
+
       // Datos para el Excel
       var inmueblesB = leerHoja(HOJAS.inmuebles);
       var nomInmB = function(id){ var i = inmueblesB.find(function(x){return x.id_inmueble===id;}); return i ? i.nombre : id; };
@@ -1723,6 +1753,30 @@ function doPost(e) {
 
       // Limpiar archivo temporal del Doc (PDF ya enviado)
       copiaB.setTrashed(true);
+
+      // Marcar la liquidación como cobrada (o crear fila si el mes no había sido liquidado)
+      var ahoraCobro = new Date();
+      if (liqExistenteB) {
+        actualizarFila(HOJAS.bonificaciones_mes, 'id_bonmes', liqExistenteB.id_bonmes, { cobrada_en: ahoraCobro });
+      } else {
+        agregarFila(HOJAS.bonificaciones_mes, COLUMNAS.bonificaciones_mes, {
+          id_bonmes: siguienteId(HOJAS.bonificaciones_mes, 'BNM'),
+          id_asesor: idAsesorBon,
+          'año': anoActualB,
+          mes: mesBon,
+          fecha: new Date(anoActualB, mesBon - 1, 1),
+          categoria: actualB.categoria + (actualB.esMedio ? ' (1/2)' : ''),
+          comision_generada: actualB.comisionGeneradaOficina,
+          acciones_mes: actualB.numAcciones,
+          fijo: fijoB,
+          pct_variable: pctVarB,
+          variable: variableB,
+          total: totalB,
+          continuidad: actualB.escalon ? (esContB ? 'CONTINUA' : 'INICIAL') : 'N/A',
+          calculado_en: ahoraCobro,
+          cobrada_en: ahoraCobro
+        });
+      }
 
       lock.releaseLock();
       return jsonResponse({
