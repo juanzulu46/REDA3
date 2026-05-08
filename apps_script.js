@@ -766,6 +766,22 @@ function jsonResponse(data) {
 
 // ===== ENDPOINTS =====
 
+// Endpoints que NO requieren sesión validada (login + catálogos básicos).
+// Cualquier action fuera de esta lista debe traer id_asesor + password válidos.
+var ENDPOINTS_PUBLICOS = ['login', 'catalogos', 'login_password'];
+
+// Valida que el id_asesor + password coincidan con la hoja Asesores.
+// Retorna null si OK, mensaje de error si falla.
+function validarSesion(idAsesor, password) {
+  if (!idAsesor || !password) return 'Sesión inválida: faltan credenciales';
+  var asesor = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesor; });
+  if (!asesor) return 'Sesión inválida: asesor no existe';
+  if (!asesor.password || String(asesor.password) !== String(password)) {
+    return 'Sesión inválida: credenciales incorrectas';
+  }
+  return null;
+}
+
 function doGet(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -782,6 +798,12 @@ function doGet(e) {
       });
     }
     var action = params.action || '';
+
+    // Validar sesión para cualquier endpoint que no sea público
+    if (ENDPOINTS_PUBLICOS.indexOf(action) === -1) {
+      var errSesGet = validarSesion(params.id_asesor, params.password);
+      if (errSesGet) return jsonResponse({ ok: false, error: errSesGet });
+    }
 
     // --- LOGIN: devuelve SOLO lista para el dropdown (sin passwords ni datos sensibles) ---
     if (action === 'login') {
@@ -1055,6 +1077,15 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var action = body.action;
+
+    // Validar sesión para cualquier endpoint que no sea público
+    if (ENDPOINTS_PUBLICOS.indexOf(action) === -1) {
+      var errSesPost = validarSesion(body.id_asesor, body.password);
+      if (errSesPost) {
+        lock.releaseLock();
+        return jsonResponse({ ok: false, error: errSesPost });
+      }
+    }
 
     // --- LOGIN CON CONTRASEÑA ---
     // body: { action, id_asesor, password }

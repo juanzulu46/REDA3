@@ -758,8 +758,21 @@ function fillSelectAsesores(sel){
 }
 
 // ===== API =====
+// Endpoints que NO requieren credenciales (deben ir alineados con ENDPOINTS_PUBLICOS del backend)
+const _ENDPOINTS_PUBLICOS = ['login', 'catalogos', 'login_password'];
+function _inyectarSesion(obj){
+  // Si hay sesión activa y el endpoint no es público, inyecta id_asesor + password
+  if (asesorActual && asesorActual.password && obj && !_ENDPOINTS_PUBLICOS.includes(obj.action)) {
+    return Object.assign({}, obj, {
+      id_asesor: obj.id_asesor || asesorActual.id_asesor,
+      password: asesorActual.password
+    });
+  }
+  return obj;
+}
 async function apiGet(params){
   if(!SCRIPT_URL){toast('Configure SCRIPT_URL en el código','er');return null}
+  params = _inyectarSesion(params);
   const url=SCRIPT_URL+'?'+new URLSearchParams(params).toString();
   const r=await fetch(url);
   if(!r.ok) throw new Error('HTTP '+r.status);
@@ -767,6 +780,7 @@ async function apiGet(params){
 }
 async function apiPost(body){
   if(!SCRIPT_URL){toast('Configure SCRIPT_URL en el código','er');return null}
+  body = _inyectarSesion(body);
   const r=await fetch(SCRIPT_URL,{
     method:'POST',
     body:JSON.stringify(body),
@@ -821,6 +835,7 @@ async function hacerLogin(){
       return;
     }
     asesorActual=r.asesor;
+    asesorActual.password=pwd; // se mantiene en memoria (no localStorage) para inyectar en cada request
     document.getElementById('userName').textContent=asesorActual.nombre;
     const b=document.getElementById('userBadge');
     b.textContent=asesorActual.vinculacion;
