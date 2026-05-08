@@ -1,15 +1,23 @@
 // =====================================================================
-// REDA3 — Google Apps Script (Backend)
+// REDA3 — Google Apps Script (Backend + Frontend)
 // =====================================================================
-// INSTRUCCIONES:
-// 1. Abre tu Google Sheet "Negocios"
-// 2. Ve a Extensiones → Apps Script
-// 3. Borra todo el contenido de Code.gs y pega este archivo completo
-// 4. Guarda (Ctrl+S)
-// 5. Implementar → Nueva implementación → App web
+// DESPLIEGUE COMO WEB APP (HTML servido desde el mismo Apps Script):
+// 1. Abre tu Google Sheet "Negocios" → Extensiones → Apps Script.
+// 2. En Code.gs: borra el contenido y pega este archivo completo.
+// 3. Crear archivo HTML: + (Agregar archivo) → HTML → nombre "asesor"
+//    (sin la extensión .html, Apps Script la añade sola).
+//    Pega el contenido de asesor.html dentro y guarda.
+// 4. Guarda todo (Ctrl+S).
+// 5. Implementar → Nueva implementación → tipo "Aplicación web":
 //    - Ejecutar como: Yo
-//    - Quién tiene acceso: Cualquier persona
-// 6. Copia la URL generada y pégala en index.html (variable SCRIPT_URL)
+//    - Quién tiene acceso: Cualquier persona (o "con cuenta de Google" si quieres
+//      forzar login Google además del password de la app).
+// 6. Copia la URL del Web App: ahí entran los asesores (no necesita server.js).
+//
+// MODO DESARROLLO LOCAL (opcional, para probar sin redeploy):
+// - npm start con server.js sirve asesor.html en http://localhost:8080
+// - El frontend detecta automáticamente si está en GAS o local y usa el
+//   transporte adecuado (google.script.run vs fetch al proxy /api).
 // =====================================================================
 
 // ===== CONFIGURACIÓN CUENTA DE COBRO =====
@@ -810,6 +818,19 @@ function jsonResponse(data) {
 // Cualquier action fuera de esta lista debe traer id_asesor + password válidos.
 var ENDPOINTS_PUBLICOS = ['login', 'catalogos', 'login_password'];
 
+// Puentes para google.script.run (frontend servido desde la propia Web App).
+// El iframe sandbox de Apps Script bloquea fetch directo, así que el cliente
+// llama a estas funciones globales y aquí se reusa la lógica de doPost/doGet.
+function api(body) {
+  var output = doPost({ postData: { contents: JSON.stringify(body || {}) } });
+  return JSON.parse(output.getContent());
+}
+function apiGet(params) {
+  var output = doGet({ parameter: params || {} });
+  // Si no viene action, doGet devuelve HtmlOutput; aquí asumimos params.action existe.
+  return JSON.parse(output.getContent());
+}
+
 // Valida que el id_asesor + password coincidan con la hoja Asesores.
 // Retorna null si OK, mensaje de error si falla.
 function validarSesion(idAsesor, password) {
@@ -838,6 +859,16 @@ function doGet(e) {
       });
     }
     var action = params.action || '';
+
+    // --- SERVIR LA PÁGINA: si no viene action, devolver el HTML del frontend ---
+    // Permite que la web app entregue tanto el HTML como las llamadas API desde la misma URL.
+    // Requiere un archivo HTML en el proyecto Apps Script llamado "asesor" (sin extensión).
+    if (!action) {
+      return HtmlService.createHtmlOutputFromFile('asesor')
+        .setTitle('REDA3 — Portal de Asesores')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
 
     // Validar sesión para cualquier endpoint que no sea público
     if (ENDPOINTS_PUBLICOS.indexOf(action) === -1) {
@@ -902,6 +933,24 @@ function doGet(e) {
       var misArriendoIds = misArriendos.map(function(a) { return a.id_arriendo; });
       var misCobros = leerHoja(HOJAS.cobros_arriendo)
         .filter(function(c){ return misArriendoIds.indexOf(c.id_arriendo) !== -1; });
+
+      // Calcular flag p.efectuado para cada pago (antes lo hacía server.js como proxy)
+      var hoyMN = new Date();
+      var hoyAM = hoyMN.getFullYear() * 12 + (hoyMN.getMonth() + 1);
+      misPagos.forEach(function(p) {
+        if (!p.fecha_pago || p.fecha_pago === '') {
+          p.efectuado = true;
+          return;
+        }
+        var fp = new Date(p.fecha_pago);
+        if (isNaN(fp.getTime())) {
+          var ap = Number(p['año_pago']) || Number(p['ano_pago']) || 0;
+          var mp = Number(p.mes_pago) || 0;
+          p.efectuado = (ap && mp) ? ((ap * 12 + mp) <= hoyAM) : true;
+        } else {
+          p.efectuado = fp <= hoyMN;
+        }
+      });
 
       return jsonResponse({
         ok: true,
