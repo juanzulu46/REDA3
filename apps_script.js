@@ -73,7 +73,7 @@ const COLUMNAS = {
            'referido_captador', 'numero_captador_r', 'valor_ref_captador',
            'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
            'estado_venta'],
-  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion'],
+  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
   partes: ['id_parte', 'id_negocio', 'tipo_negocio', 'rol', 'id_cliente', 'participacion_pct'],
   oficina: ['id_oficina', 'nombre'],
@@ -249,6 +249,19 @@ function asegurarColumnaCobradaEn() {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   if (headers.indexOf('cobrada_en') === -1) {
     sheet.getRange(1, headers.length + 1).setValue('cobrada_en').setFontWeight('bold');
+    return true;
+  }
+  return false;
+}
+
+// Asegura que la hoja Pagos tenga la columna estado al final.
+// Idempotente. Permite marcar pagos como ANULADO al cancelar la venta asociada.
+function asegurarColumnaEstadoPagos() {
+  var sheet = getSheet(HOJAS.pagos);
+  if (!sheet) return false;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('estado') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('estado').setFontWeight('bold');
     return true;
   }
   return false;
@@ -2004,8 +2017,29 @@ function doPost(e) {
         }
       }
 
+      // Marcar todos los pagos de la venta cancelada como ANULADO
+      // (evita pagos huerfanos apuntando a venta CANCELADA)
+      asegurarColumnaEstadoPagos();
+      var pagSheet = getSheet(HOJAS.pagos);
+      var pagData = pagSheet.getDataRange().getValues();
+      var pagHeaders = pagData[0];
+      var idxPagVenta = pagHeaders.indexOf('id_venta');
+      var idxPagEstado = pagHeaders.indexOf('estado');
+      var pagosAnulados = 0;
+      if (idxPagVenta !== -1 && idxPagEstado !== -1) {
+        for (var p = 1; p < pagData.length; p++) {
+          if (String(pagData[p][idxPagVenta]) === String(idVentaCancel)) {
+            pagSheet.getRange(p + 1, idxPagEstado + 1).setValue('ANULADO');
+            pagosAnulados++;
+          }
+        }
+      }
+
       lock.releaseLock();
-      return jsonResponse({ ok:true, mensaje:'Venta cancelada. ' + anuladas + ' comision(es) anuladas.' });
+      return jsonResponse({
+        ok: true,
+        mensaje: 'Venta cancelada. ' + anuladas + ' comision(es) anuladas, ' + pagosAnulados + ' pago(s) anulado(s).'
+      });
     }
 
     lock.releaseLock();
