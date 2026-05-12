@@ -170,6 +170,49 @@ function leerHoja(nombreHoja) {
   });
 }
 
+// ===== CACHE DE HOJAS (Fase 1 performance) =====
+// Cachea el resultado de leerHoja() en CacheService por TTL.
+// Las hojas grandes (>95KB serializadas) saltean el cache y se leen siempre frescas.
+// Para invalidar cuando se escribe, llamar invalidarCacheHojas([...]).
+const TTL_HOJA = {
+  // Catálogos casi estáticos (cambian rara vez)
+  'Oficina': 1800, 'Origen': 1800, 'Zona': 1800,
+  'TipoAccion': 1800, 'Bonificaciones': 1800, 'Parametros': 1800,
+  // Maestros que pueden cambiar varias veces al día
+  'Asesores': 300, 'Inmuebles': 120, 'Clientes': 120,
+  // Datos transaccionales (cambian al guardar negocios)
+  'Arriendos': 30, 'Ventas': 30, 'Pagos': 30, 'Comisiones': 30,
+  'Partes': 30, 'CobrosArriendo': 30, 'Acciones': 60,
+  'BonificacionesMes': 60, 'Ppto': 1800
+};
+function leerHojaCache(nombreHoja, ttlOverride) {
+  var ttl = ttlOverride || TTL_HOJA[nombreHoja] || 60;
+  var key = 'hoja_' + nombreHoja;
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get(key);
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) { /* fall through */ }
+    }
+    var data = leerHoja(nombreHoja);
+    try {
+      var json = JSON.stringify(data);
+      if (json.length < 95 * 1024) cache.put(key, json, ttl);
+    } catch (e) { /* hoja demasiado grande o no serializable */ }
+    return data;
+  } catch (e) {
+    // Si el cache no está disponible, leer fresco
+    return leerHoja(nombreHoja);
+  }
+}
+function invalidarCacheHojas(listaNombres) {
+  if (!listaNombres || !listaNombres.length) return;
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.removeAll(listaNombres.map(function(n){ return 'hoja_' + n; }));
+  } catch (e) { /* ignore */ }
+}
+
 // Genera el siguiente ID secuencial (ASE-054, INM-219, etc.)
 function siguienteId(nombreHoja, prefijo) {
   const datos = leerHoja(nombreHoja);
@@ -902,7 +945,7 @@ function doGet(e) {
 
     // --- LOGIN: devuelve SOLO lista para el dropdown (sin passwords ni datos sensibles) ---
     if (action === 'login') {
-      var asesores = leerHoja(HOJAS.asesores);
+      var asesores = leerHojaCache(HOJAS.asesores);
       var listado = asesores.map(function(a){
         return {
           id_asesor: a.id_asesor,
@@ -917,19 +960,19 @@ function doGet(e) {
     // --- CATALOGOS: devuelve todos los catálogos para los selects ---
     if (action === 'catalogos') {
       // Sólo clientes activos (activo != FALSE) para los selects del formulario
-      var clientesCat = leerHoja(HOJAS.clientes).filter(function(c){
+      var clientesCat = leerHojaCache(HOJAS.clientes).filter(function(c){
         var a = c.activo;
         if (a === false || String(a).toUpperCase() === 'FALSE') return false;
         return true;
       });
       return jsonResponse({
         ok: true,
-        inmuebles: leerHoja(HOJAS.inmuebles),
+        inmuebles: leerHojaCache(HOJAS.inmuebles),
         clientes: clientesCat,
-        oficinas: leerHoja(HOJAS.oficina),
-        origenes: leerHoja(HOJAS.origen),
-        zonas: leerHoja(HOJAS.zona),
-        tipos_accion: leerHoja(HOJAS.tipos_accion)
+        oficinas: leerHojaCache(HOJAS.oficina),
+        origenes: leerHojaCache(HOJAS.origen),
+        zonas: leerHojaCache(HOJAS.zona),
+        tipos_accion: leerHojaCache(HOJAS.tipos_accion)
       });
     }
 
@@ -938,13 +981,13 @@ function doGet(e) {
       var idAsesor = params.id_asesor || '';
       if (!idAsesor) return jsonResponse({ ok: false, error: 'Falta id_asesor' });
 
-      var arriendos = leerHoja(HOJAS.arriendos);
-      var ventas = leerHoja(HOJAS.ventas);
-      var pagos = leerHoja(HOJAS.pagos);
-      var comisiones = leerHoja(HOJAS.comisiones);
-      var inmuebles = leerHoja(HOJAS.inmuebles);
-      var clientes = leerHoja(HOJAS.clientes);
-      var partes = leerHoja(HOJAS.partes);
+      var arriendos = leerHojaCache(HOJAS.arriendos);
+      var ventas = leerHojaCache(HOJAS.ventas);
+      var pagos = leerHojaCache(HOJAS.pagos);
+      var comisiones = leerHojaCache(HOJAS.comisiones);
+      var inmuebles = leerHojaCache(HOJAS.inmuebles);
+      var clientes = leerHojaCache(HOJAS.clientes);
+      var partes = leerHojaCache(HOJAS.partes);
 
       var misComisiones = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
       var misNegocioIds = misComisiones.map(function(c) { return c.id_negocio; });
@@ -955,7 +998,7 @@ function doGet(e) {
       var misPagos = pagos.filter(function(p) { return misVentaIds.indexOf(p.id_venta) !== -1; });
       var misPartes = partes.filter(function(p) { return misNegocioIds.indexOf(p.id_negocio) !== -1; });
       var misArriendoIds = misArriendos.map(function(a) { return a.id_arriendo; });
-      var misCobros = leerHoja(HOJAS.cobros_arriendo)
+      var misCobros = leerHojaCache(HOJAS.cobros_arriendo)
         .filter(function(c){ return misArriendoIds.indexOf(c.id_arriendo) !== -1; });
 
       // Calcular flag p.efectuado para cada pago (antes lo hacía server.js como proxy)
@@ -1006,16 +1049,16 @@ function doGet(e) {
       if (!idAsesorB || !mesB) return jsonResponse({ ok: false, error: 'Faltan parámetros (id_asesor, mes)' });
 
       var datosBon = {
-        arriendos: leerHoja(HOJAS.arriendos),
-        ventas: leerHoja(HOJAS.ventas),
-        pagos: leerHoja(HOJAS.pagos),
-        comisiones: leerHoja(HOJAS.comisiones),
-        acciones: leerHoja(HOJAS.acciones),
-        bonificaciones: leerHoja(HOJAS.bonificaciones)
+        arriendos: leerHojaCache(HOJAS.arriendos),
+        ventas: leerHojaCache(HOJAS.ventas),
+        pagos: leerHojaCache(HOJAS.pagos),
+        comisiones: leerHojaCache(HOJAS.comisiones),
+        acciones: leerHojaCache(HOJAS.acciones),
+        bonificaciones: leerHojaCache(HOJAS.bonificaciones)
       };
 
       // Cargar asesor para conocer la vinculación (Empleado vs Freelance)
-      var asesorB = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorB; });
+      var asesorB = leerHojaCache(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorB; });
       var vinculacion = asesorB ? String(asesorB.vinculacion || '').toLowerCase() : '';
       // Empleado: el total se divide por 1.3 (G41 del Excel Comisiones.xlsx)
       var factorVinc = vinculacion === 'empleado' ? (1 / 1.3) : 1;
@@ -1086,7 +1129,7 @@ function doGet(e) {
     if (action === 'mis_acciones') {
       var idAsesorA = params.id_asesor || '';
       var mesA = params.mes ? parseInt(params.mes, 10) : null;
-      var todasAcciones = leerHoja(HOJAS.acciones);
+      var todasAcciones = leerHojaCache(HOJAS.acciones);
       var filt = todasAcciones.filter(function(a) {
         if (a.id_asesor !== idAsesorA) return false;
         if (mesA && parseInt(a.mes, 10) !== mesA) return false;
@@ -1099,27 +1142,27 @@ function doGet(e) {
     if (action === 'todos_negocios') {
       var idAsesorG = params.id_asesor || '';
       // Verificar que sea gerente
-      var asesoresG = leerHoja(HOJAS.asesores);
+      var asesoresG = leerHojaCache(HOJAS.asesores);
       var asesorG = asesoresG.find(function(a) { return a.id_asesor === idAsesorG; });
       if (!asesorG || String(asesorG.rol).toLowerCase() !== 'gerente') {
         return jsonResponse({ ok: false, error: 'Acceso denegado' });
       }
       return jsonResponse({
         ok: true,
-        arriendos: leerHoja(HOJAS.arriendos),
-        ventas: leerHoja(HOJAS.ventas),
-        pagos: leerHoja(HOJAS.pagos),
-        comisiones: leerHoja(HOJAS.comisiones),
-        inmuebles: leerHoja(HOJAS.inmuebles),
-        clientes: leerHoja(HOJAS.clientes),
-        partes: leerHoja(HOJAS.partes),
-        cobros_arriendo: leerHoja(HOJAS.cobros_arriendo),
-        ppto: leerHoja(HOJAS.ppto),
-        acciones: leerHoja(HOJAS.acciones),
-        oficina: leerHoja(HOJAS.oficina),
-        origen: leerHoja(HOJAS.origen),
-        zona: leerHoja(HOJAS.zona),
-        bonificaciones_mes: leerHoja(HOJAS.bonificaciones_mes),
+        arriendos: leerHojaCache(HOJAS.arriendos),
+        ventas: leerHojaCache(HOJAS.ventas),
+        pagos: leerHojaCache(HOJAS.pagos),
+        comisiones: leerHojaCache(HOJAS.comisiones),
+        inmuebles: leerHojaCache(HOJAS.inmuebles),
+        clientes: leerHojaCache(HOJAS.clientes),
+        partes: leerHojaCache(HOJAS.partes),
+        cobros_arriendo: leerHojaCache(HOJAS.cobros_arriendo),
+        ppto: leerHojaCache(HOJAS.ppto),
+        acciones: leerHojaCache(HOJAS.acciones),
+        oficina: leerHojaCache(HOJAS.oficina),
+        origen: leerHojaCache(HOJAS.origen),
+        zona: leerHojaCache(HOJAS.zona),
+        bonificaciones_mes: leerHojaCache(HOJAS.bonificaciones_mes),
         asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre, estado: a.estado, rol: a.rol }; })
       });
     }
@@ -1128,7 +1171,7 @@ function doGet(e) {
     if (action === 'mis_cobros_arriendo') {
       var idArrCob = params.id_arriendo || '';
       if (!idArrCob) return jsonResponse({ ok:false, error:'Falta id_arriendo' });
-      var cobrosArr = leerHoja(HOJAS.cobros_arriendo)
+      var cobrosArr = leerHojaCache(HOJAS.cobros_arriendo)
         .filter(function(c){ return String(c.id_arriendo) === String(idArrCob); });
       return jsonResponse({ ok:true, cobros: cobrosArr });
     }
@@ -1144,7 +1187,7 @@ function doGet(e) {
         ? String(compradoresCSV).split(',').map(function(s){ return s.trim(); }).filter(Boolean)
         : [];
       var hojaDup = tipoDup === 'arriendos' ? HOJAS.arriendos : HOJAS.ventas;
-      var datosDup = leerHoja(hojaDup);
+      var datosDup = leerHojaCache(hojaDup);
       var duplicado = null;
 
       // 1) Duplicado por inmueble + mes
@@ -1158,7 +1201,7 @@ function doGet(e) {
 
       // 2) Duplicado por inmueble + comprador (ventas): usa hoja Partes
       if (!duplicado && tipoDup === 'ventas' && compradoresList.length > 0) {
-        var partesAll = leerHoja(HOJAS.partes);
+        var partesAll = leerHojaCache(HOJAS.partes);
         var ventasConInm = datosDup.filter(function(v){
           return String(v.id_inmueble) === String(idInmueble);
         });
@@ -1347,6 +1390,7 @@ function doPost(e) {
         });
       }
 
+      invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_arriendo, mensaje: 'Arriendo registrado' });
     }
@@ -1465,6 +1509,7 @@ function doPost(e) {
         });
       }
 
+      invalidarCacheHojas([HOJAS.ventas, HOJAS.pagos, HOJAS.comisiones, HOJAS.partes]);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_venta, mensaje: 'Venta registrada' });
     }
@@ -1510,6 +1555,7 @@ function doPost(e) {
       datos.id_inmueble = siguienteId(HOJAS.inmuebles, 'INM');
       datos.estado = 'Disponible';
       agregarFila(HOJAS.inmuebles, COLUMNAS.inmuebles, datos);
+      invalidarCacheHojas([HOJAS.inmuebles]);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_inmueble, mensaje: 'Inmueble registrado' });
     }
@@ -1537,6 +1583,7 @@ function doPost(e) {
 
       datos.id_cliente = siguienteId(HOJAS.clientes, 'CLI');
       agregarFila(HOJAS.clientes, COLUMNAS.clientes, datos);
+      invalidarCacheHojas([HOJAS.clientes]);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_cliente, mensaje: 'Cliente registrado' });
     }
@@ -1919,6 +1966,7 @@ function doPost(e) {
         });
       }
 
+      invalidarCacheHojas([HOJAS.bonificaciones_mes]);
       lock.releaseLock();
       return jsonResponse({
         ok: true,
@@ -1954,6 +2002,7 @@ function doPost(e) {
       }
       datos.id_accion = siguienteId(HOJAS.acciones, 'ACC');
       agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
+      invalidarCacheHojas([HOJAS.acciones]);
       lock.releaseLock();
       return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
     }
@@ -1999,6 +2048,7 @@ function doPost(e) {
       if (body.observacion !== undefined) datosUpdCob.observacion = body.observacion;
 
       actualizarFila(HOJAS.cobros_arriendo, 'id_cobro', idCobroU, datosUpdCob);
+      invalidarCacheHojas([HOJAS.cobros_arriendo]);
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Cobro actualizado' });
     }
@@ -2028,6 +2078,7 @@ function doPost(e) {
       var mesL = parseInt(body.mes, 10);
       try {
         var resultadoL = liquidarMes(anioL, mesL);
+        invalidarCacheHojas([HOJAS.bonificaciones_mes]);
         lock.releaseLock();
         return jsonResponse(resultadoL);
       } catch (eL) {
@@ -2089,6 +2140,7 @@ function doPost(e) {
       if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
 
       actualizarFila(HOJAS.pagos, 'id_pago', idPago, datosUpdate);
+      invalidarCacheHojas([HOJAS.pagos]);
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Pago actualizado' });
     }
@@ -2149,6 +2201,7 @@ function doPost(e) {
         }
       }
 
+      invalidarCacheHojas([HOJAS.ventas, HOJAS.comisiones, HOJAS.pagos]);
       lock.releaseLock();
       return jsonResponse({
         ok: true,
@@ -2224,6 +2277,7 @@ function doPost(e) {
         }
       }
 
+      invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.cobros_arriendo]);
       lock.releaseLock();
       return jsonResponse({
         ok: true,
