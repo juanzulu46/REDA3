@@ -58,7 +58,8 @@ const HOJAS = {
   bonificaciones: 'Bonificaciones',
   parametros: 'Parametros',
   cobros_arriendo: 'CobrosArriendo',
-  bonificaciones_mes: 'BonificacionesMes'
+  bonificaciones_mes: 'BonificacionesMes',
+  ppto: 'Ppto'
 };
 
 // Columnas de cada hoja (en orden exacto)
@@ -1090,7 +1091,13 @@ function doGet(e) {
         clientes: leerHoja(HOJAS.clientes),
         partes: leerHoja(HOJAS.partes),
         cobros_arriendo: leerHoja(HOJAS.cobros_arriendo),
-        asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre }; })
+        ppto: leerHoja(HOJAS.ppto),
+        acciones: leerHoja(HOJAS.acciones),
+        oficina: leerHoja(HOJAS.oficina),
+        origen: leerHoja(HOJAS.origen),
+        zona: leerHoja(HOJAS.zona),
+        bonificaciones_mes: leerHoja(HOJAS.bonificaciones_mes),
+        asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre, estado: a.estado, rol: a.rol }; })
       });
     }
 
