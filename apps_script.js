@@ -74,7 +74,7 @@ const COLUMNAS = {
               'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
               'referido_captador', 'numero_captador_r', 'valor_ref_captador',
               'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
-              'meses_contrato'],
+              'meses_contrato', 'estado_arriendo'],
   ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble',
            'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
            'comision_por_punta',
@@ -141,6 +141,16 @@ function numVal(v) {
   if (s.indexOf(',') > -1) s = s.replace(/\./g, '').replace(',', '.');
   var n = Number(s);
   return isFinite(n) ? n : 0;
+}
+
+// Normaliza un nombre para comparar duplicados: minúsculas, sin tildes, sin signos, espacios simples
+function normalizarNombre_(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Lee todos los datos de una hoja y devuelve array de objetos
@@ -271,6 +281,19 @@ function asegurarColumnaEstadoPagos() {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   if (headers.indexOf('estado') === -1) {
     sheet.getRange(1, headers.length + 1).setValue('estado').setFontWeight('bold');
+    return true;
+  }
+  return false;
+}
+
+// Asegura que la hoja Arriendos tenga la columna estado_arriendo al final.
+// Idempotente. Permite marcar arriendos como CANCELADO.
+function asegurarColumnaEstadoArriendo() {
+  var sheet = getSheet(HOJAS.arriendos);
+  if (!sheet) return false;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('estado_arriendo') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('estado_arriendo').setFontWeight('bold');
     return true;
   }
   return false;
@@ -1449,20 +1472,37 @@ function doPost(e) {
     // --- REGISTRAR INMUEBLE ---
     if (action === 'registrar_inmueble') {
       const datos = body.datos;
+      var inmExist = leerHoja(HOJAS.inmuebles);
 
       // Bloquear duplicado por codigo_plataforma (si viene)
       var codigo = String(datos.codigo_plataforma || '').trim();
       if (codigo) {
-        var inmExist = leerHoja(HOJAS.inmuebles);
-        var dupInm = inmExist.find(function(i){
+        var dupCod = inmExist.find(function(i){
           return String(i.codigo_plataforma || '').trim().toLowerCase() === codigo.toLowerCase();
         });
-        if (dupInm) {
+        if (dupCod) {
           lock.releaseLock();
           return jsonResponse({
             ok:false,
-            error:'Ya existe un inmueble con código de plataforma "' + codigo + '" (' + dupInm.id_inmueble + ' — ' + (dupInm.nombre || '') + '). Use ese en vez de crear uno nuevo.',
-            duplicado: dupInm
+            error:'Ya existe un inmueble con código de plataforma "' + codigo + '" (' + dupCod.id_inmueble + ' — ' + (dupCod.nombre || '') + '). Use ese en vez de crear uno nuevo.',
+            duplicado: dupCod
+          });
+        }
+      }
+
+      // Bloquear duplicado por nombre normalizado + ciudad
+      var nmNorm = normalizarNombre_(datos.nombre);
+      var ciudad = String(datos.ciudad || '').trim();
+      if (nmNorm) {
+        var dupNm = inmExist.find(function(i){
+          return normalizarNombre_(i.nombre) === nmNorm && String(i.ciudad || '').trim() === ciudad;
+        });
+        if (dupNm) {
+          lock.releaseLock();
+          return jsonResponse({
+            ok:false,
+            error:'Ya existe un inmueble con ese nombre en ' + ciudad + ' (' + dupNm.id_inmueble + ' — ' + (dupNm.nombre || '') + '). Use ese en vez de crear uno nuevo.',
+            duplicado: dupNm
           });
         }
       }
@@ -1477,6 +1517,24 @@ function doPost(e) {
     // --- REGISTRAR CLIENTE ---
     if (action === 'registrar_cliente') {
       const datos = body.datos;
+
+      // Bloquear duplicado por nombre normalizado
+      var nmCliNorm = normalizarNombre_(datos.nombre);
+      if (nmCliNorm) {
+        var cliExist = leerHoja(HOJAS.clientes);
+        var dupCli = cliExist.find(function(c){
+          return normalizarNombre_(c.nombre) === nmCliNorm;
+        });
+        if (dupCli) {
+          lock.releaseLock();
+          return jsonResponse({
+            ok:false,
+            error:'Ya existe un cliente con ese nombre (' + dupCli.id_cliente + ' — ' + (dupCli.nombre || '') + '). Use ese en vez de crear uno nuevo.',
+            duplicado: dupCli
+          });
+        }
+      }
+
       datos.id_cliente = siguienteId(HOJAS.clientes, 'CLI');
       agregarFila(HOJAS.clientes, COLUMNAS.clientes, datos);
       lock.releaseLock();
@@ -2095,6 +2153,81 @@ function doPost(e) {
       return jsonResponse({
         ok: true,
         mensaje: 'Venta cancelada. ' + anuladas + ' comision(es) anuladas, ' + pagosAnulados + ' pago(s) anulado(s).'
+      });
+    }
+
+    // --- CANCELAR ARRIENDO (asesor dueño o gerente) ---
+    // Anula: el arriendo, sus comisiones, y todos los cobros del contrato.
+    if (action === 'cancelar_arriendo') {
+      var idArrCancel = body.id_arriendo;
+      var idAsesorCA = body.id_asesor;
+      if (!idArrCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_arriendo' }); }
+      if (!idAsesorCA) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
+
+      var asesorCA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCA; });
+      if (!asesorCA) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
+      var esGerenteCA = String(asesorCA.rol).toLowerCase() === 'gerente';
+
+      asegurarColumnaEstadoArriendo();
+      var arrC = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idArrCancel; });
+      if (!arrC) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo "' + idArrCancel + '" no encontrado' }); }
+      if (String(arrC.estado_arriendo || '').toUpperCase() === 'CANCELADO') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El arriendo ya estaba cancelado' });
+      }
+
+      // Si no es gerente, verificar que el asesor figure en las comisiones del arriendo
+      if (!esGerenteCA) {
+        var comisionesArr = leerHoja(HOJAS.comisiones).filter(function(c){
+          return String(c.id_negocio) === String(idArrCancel);
+        });
+        var esSuyo = comisionesArr.some(function(c){ return c.id_asesor === idAsesorCA; });
+        if (!esSuyo) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Solo puede cancelar arriendos en los que figura como asesor' });
+        }
+      }
+
+      actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrCancel, { estado_arriendo: 'CANCELADO' });
+
+      // Anular todas las comisiones del arriendo
+      var comSheetA = getSheet(HOJAS.comisiones);
+      var comDataA = comSheetA.getDataRange().getValues();
+      var comHeadA = comDataA[0];
+      var idxNegA = comHeadA.indexOf('id_negocio');
+      var idxEstadoA = comHeadA.indexOf('estado');
+      var anuladasA = 0;
+      if (idxNegA !== -1 && idxEstadoA !== -1) {
+        for (var rA = 1; rA < comDataA.length; rA++) {
+          if (String(comDataA[rA][idxNegA]) === String(idArrCancel)) {
+            comSheetA.getRange(rA + 1, idxEstadoA + 1).setValue('ANULADA');
+            anuladasA++;
+          }
+        }
+      }
+
+      // Anular todos los cobros del arriendo (pendientes y ya cobrados)
+      var cobSheet = getSheet(HOJAS.cobros_arriendo);
+      var cobAnulados = 0;
+      if (cobSheet) {
+        var cobData = cobSheet.getDataRange().getValues();
+        var cobHead = cobData[0];
+        var idxCobArr = cobHead.indexOf('id_arriendo');
+        var idxCobEstado = cobHead.indexOf('estado');
+        if (idxCobArr !== -1 && idxCobEstado !== -1) {
+          for (var cR = 1; cR < cobData.length; cR++) {
+            if (String(cobData[cR][idxCobArr]) === String(idArrCancel)) {
+              cobSheet.getRange(cR + 1, idxCobEstado + 1).setValue('ANULADO');
+              cobAnulados++;
+            }
+          }
+        }
+      }
+
+      lock.releaseLock();
+      return jsonResponse({
+        ok: true,
+        mensaje: 'Arriendo cancelado. ' + anuladasA + ' comisión(es) anuladas, ' + cobAnulados + ' cobro(s) anulado(s).'
       });
     }
 
