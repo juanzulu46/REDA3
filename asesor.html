@@ -3073,7 +3073,9 @@ function calcRefPuntaParaGuardar(tipo, punta) {
   if (!baseAsesor) return 0;
   const mercado = document.getElementById(prefix + '_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
-  const orgId = document.getElementById(prefix + '_org' + sufx).value;
+  // El campo de origen del cerrador se llama "_orgcie" (cierre), no "_orgcer"
+  const orgSufx = punta === 'Captador' ? 'cap' : 'cie';
+  const orgId = document.getElementById(prefix + '_org' + orgSufx).value;
   const ci = origenTieneCirculo(orgId);
 
   // Suma bruta de la punta
