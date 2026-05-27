@@ -1163,6 +1163,7 @@ function doGet(e) {
         origen: leerHojaCache(HOJAS.origen),
         zona: leerHojaCache(HOJAS.zona),
         bonificaciones_mes: leerHojaCache(HOJAS.bonificaciones_mes),
+        bonificaciones: leerHojaCache(HOJAS.bonificaciones),
         asesores: asesoresG.map(function(a) { return { id_asesor: a.id_asesor, nombre: a.nombre, estado: a.estado, rol: a.rol }; })
       });
     }
