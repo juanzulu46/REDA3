@@ -460,7 +460,7 @@ function validarComisionesAsesores(comisiones, asesoresRef) {
   return null;
 }
 
-function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, clientesRef) {
+function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, clientesRef, escribir) {
   if (!partes || !Array.isArray(partes) || partes.length === 0) {
     return 'Debe haber al menos un cliente por rol (' + rolesRequeridos.join(', ') + ')';
   }
@@ -513,18 +513,20 @@ function validarYGuardarPartes(idNegocio, tipoNegocio, rolesRequeridos, partes, 
       }
     }
   }
-  // Escribir
-  partes.forEach(function(p) {
-    var idParte = siguienteId(HOJAS.partes, 'PRT');
-    agregarFila(HOJAS.partes, COLUMNAS.partes, {
-      id_parte: idParte,
-      id_negocio: idNegocio,
-      tipo_negocio: tipoNegocio,
-      rol: p.rol,
-      id_cliente: p.id_cliente,
-      participacion_pct: numVal(p.participacion_pct)
+  // Escribir (salvo que se pida solo validar con escribir === false)
+  if (escribir !== false) {
+    partes.forEach(function(p) {
+      var idParte = siguienteId(HOJAS.partes, 'PRT');
+      agregarFila(HOJAS.partes, COLUMNAS.partes, {
+        id_parte: idParte,
+        id_negocio: idNegocio,
+        tipo_negocio: tipoNegocio,
+        rol: p.rol,
+        id_cliente: p.id_cliente,
+        participacion_pct: numVal(p.participacion_pct)
+      });
     });
-  });
+  }
   return null;
 }
 
@@ -546,6 +548,62 @@ function borrarPartesDeNegocio(idNegocio) {
     }
   }
   return borradas;
+}
+
+// Borra todas las filas de una hoja cuyo valor en colNombre coincide con valor.
+// Genérico (usado para editar/eliminar negocios: comisiones, partes, pagos, cobros).
+function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
+  var sheet = getSheet(nombreHoja);
+  if (!sheet) return 0;
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  var idx = data[0].indexOf(colNombre);
+  if (idx === -1) return 0;
+  var n = 0;
+  for (var r = data.length - 1; r >= 1; r--) {
+    if (String(data[r][idx]) === String(valor)) { sheet.deleteRow(r + 1); n++; }
+  }
+  return n;
+}
+
+// Periodos {ano, mes} en que la comisión de un negocio impacta una bonificación:
+//   arriendo → el mes del arriendo
+//   venta    → el mes_pago de cada pago (o el mes de la venta si no tiene pagos)
+function periodosFinancierosNegocio_(idNegocio, tipoNegocio) {
+  var periodos = [];
+  if (tipoNegocio === 'arriendo') {
+    var arr = leerHoja(HOJAS.arriendos).find(function(a){ return String(a.id_arriendo) === String(idNegocio); });
+    if (arr) periodos.push({ ano: parseInt(arr['año'], 10) || 0, mes: parseInt(arr.mes, 10) || 0 });
+  } else {
+    var vnt = leerHoja(HOJAS.ventas).find(function(v){ return String(v.id_venta) === String(idNegocio); });
+    var pagosV = leerHoja(HOJAS.pagos).filter(function(p){ return String(p.id_venta) === String(idNegocio); });
+    if (pagosV.length) {
+      pagosV.forEach(function(p){
+        periodos.push({ ano: parseInt(p['año_pago'] || p['ano_pago'], 10) || 0, mes: parseInt(p.mes_pago, 10) || 0 });
+      });
+    } else if (vnt) {
+      periodos.push({ ano: parseInt(vnt['año'], 10) || 0, mes: parseInt(vnt.mes, 10) || 0 });
+    }
+  }
+  return periodos;
+}
+
+// True si algún asesor del negocio YA cobró su bonificación en un periodo que el negocio
+// impacta. En ese caso, editar o borrar el negocio desincronizaría una cuenta de cobro ya
+// emitida → no se permite borrado real; se debe cancelar (soft) dejando rastro de auditoría.
+function negocioBloqueadoPorCobro_(idNegocio, tipoNegocio) {
+  var comis = leerHoja(HOJAS.comisiones).filter(function(c){ return String(c.id_negocio) === String(idNegocio); });
+  if (!comis.length) return false;
+  var asesoresNeg = {};
+  comis.forEach(function(c){ asesoresNeg[c.id_asesor] = true; });
+  var periodos = periodosFinancierosNegocio_(idNegocio, tipoNegocio);
+  if (!periodos.length) return false;
+  var bonos = leerHoja(HOJAS.bonificaciones_mes).filter(function(b){ return b.cobrada_en; });
+  return bonos.some(function(b){
+    if (!asesoresNeg[b.id_asesor]) return false;
+    var ba = parseInt(b['año'], 10) || 0, bm = parseInt(b.mes, 10) || 0;
+    return periodos.some(function(p){ return p.ano === ba && p.mes === bm; });
+  });
 }
 
 // Agrega una fila a una hoja
@@ -910,6 +968,23 @@ function validarSesion(idAsesor, password) {
   return null;
 }
 
+// Roles con poderes de gestión: gerencia y dirección comercial.
+// La directora comercial (rol "directora") tiene los mismos permisos que el gerente.
+function esGestor_(asesor) {
+  if (!asesor) return false;
+  var rol = String(asesor.rol || '').toLowerCase();
+  return rol === 'gerente' || rol === 'directora';
+}
+
+// Correos de la(s) directora(s) comercial(es): asesores con rol "directora" que tengan email.
+// Se usa para que las cuentas de cobro también lleguen a la dirección comercial.
+function emailsDirectora_() {
+  return leerHoja(HOJAS.asesores)
+    .filter(function(a){ return String(a.rol || '').toLowerCase() === 'directora' && a.email; })
+    .map(function(a){ return String(a.email).trim(); })
+    .filter(Boolean);
+}
+
 function doGet(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -1144,7 +1219,7 @@ function doGet(e) {
       // Verificar que sea gerente
       var asesoresG = leerHojaCache(HOJAS.asesores);
       var asesorG = asesoresG.find(function(a) { return a.id_asesor === idAsesorG; });
-      if (!asesorG || String(asesorG.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorG)) {
         return jsonResponse({ ok: false, error: 'Acceso denegado' });
       }
       return jsonResponse({
@@ -1664,6 +1739,28 @@ function doPost(e) {
       }
       valorTotal = Math.round(valorTotal);
 
+      // Detalle del NEGOCIO COMPLETO (todos los asesores que participaron), para que
+      // la dirección comercial vea la totalidad además de la tabla individual del asesor.
+      // Para cuenta de cobro por pago, se prorratea con la misma fracción del pago.
+      var fraccionCC = 1;
+      if (tipoNeg === 'venta_pago') {
+        var comOfCC = Number(negocio.comision_oficina) || 0;
+        fraccionCC = comOfCC > 0 ? (Number(pago.valor_cobrado) || 0) / comOfCC : 0;
+      }
+      var comisionesNegocio = comisiones.filter(function(c){
+        return c.id_negocio === idNegocio && String(c.estado || '').toUpperCase() !== 'ANULADA';
+      });
+      var detalleNegocio = comisionesNegocio.map(function(c){
+        var a = asesores.find(function(x){ return x.id_asesor === c.id_asesor; });
+        return {
+          nombre: a ? a.nombre : c.id_asesor,
+          punta: c.punta || '',
+          participacion: (c.participacion === '' || c.participacion === null || c.participacion === undefined) ? 1 : numVal(c.participacion),
+          valor: Math.round((Number(c.valor_comision) || 0) * fraccionCC)
+        };
+      });
+      var totalNegocio = detalleNegocio.reduce(function(s, d){ return s + d.valor; }, 0);
+
       // Fecha + concepto final
       var hoy = new Date();
       var mesesNom = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1697,6 +1794,28 @@ function doPost(e) {
       Object.keys(reemplazos).forEach(function(k){
         docBody.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazos[k]));
       });
+
+      // Anexar al documento el detalle del negocio completo: tabla individual por asesor
+      // + total del negocio (todos los participantes). Visible para la dirección comercial.
+      var fmtCopCC = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
+      docBody.appendParagraph('').setSpacingBefore(12);
+      var hdNeg = docBody.appendParagraph('DETALLE DEL NEGOCIO ' + idNegocio);
+      hdNeg.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      hdNeg.editAsText().setBold(true);
+      var rowsNeg = [['Asesor', 'Punta', 'Participación', 'Comisión']];
+      detalleNegocio.forEach(function(d){
+        rowsNeg.push([
+          d.nombre,
+          d.punta,
+          Math.round(d.participacion * 100) + '%',
+          fmtCopCC(d.valor)
+        ]);
+      });
+      rowsNeg.push(['TOTAL DEL NEGOCIO', '', '', fmtCopCC(totalNegocio)]);
+      var tblNeg = docBody.appendTable(rowsNeg);
+      tblNeg.getRow(0).editAsText().setBold(true);
+      tblNeg.getRow(rowsNeg.length - 1).editAsText().setBold(true);
+
       doc.saveAndClose();
 
       var pdfBlob = copia.getAs('application/pdf').setName(nombreCopia + '.pdf');
@@ -1707,9 +1826,14 @@ function doPost(e) {
                    'Asesor: ' + (asesor.nombre||'') + '\n' +
                    'Negocio: ' + idNegocio + ' (' + tipoNeg + ')\n' +
                    'Concepto: ' + concepto + '\n' +
-                   'Valor: ' + reemplazos.valor_numero + '\n';
+                   'Valor del asesor: ' + reemplazos.valor_numero + '\n' +
+                   'Total del negocio: $' + Number(totalNegocio).toLocaleString('es-CO') + '\n';
+      // Destinatarios: gerente (principal) + dirección comercial + asesor (copia)
       var opts = { attachments: [pdfBlob] };
-      if (asesor.email) opts.cc = asesor.email;
+      var ccList = [];
+      if (asesor.email) ccList.push(String(asesor.email).trim());
+      emailsDirectora_().forEach(function(em){ if (ccList.indexOf(em) === -1 && em !== GERENTE_EMAIL) ccList.push(em); });
+      if (ccList.length) opts.cc = ccList.join(',');
       MailApp.sendEmail(GERENTE_EMAIL, asunto, cuerpo, opts);
 
       // Borrar copia temporal del Doc (el PDF ya fue enviado)
@@ -1718,7 +1842,7 @@ function doPost(e) {
       lock.releaseLock();
       return jsonResponse({
         ok:true,
-        mensaje:'Cuenta de cobro enviada al gerente' + (asesor.email ? ' (con copia a ' + asesor.email + ')' : ''),
+        mensaje:'Cuenta de cobro enviada al gerente y a la dirección comercial' + (asesor.email ? ' (con copia a ' + asesor.email + ')' : ''),
         valor: valorTotal
       });
     }
@@ -1937,7 +2061,10 @@ function doPost(e) {
                     'Categoría: ' + actualB.categoria + (actualB.esMedio ? ' (1/2)' : '') + '\n' +
                     'TOTAL: $' + Number(totalB).toLocaleString('es-CO') + '\n';
       var optsB = { attachments: [pdfBlobB] };
-      if (asesorBon.email) optsB.cc = asesorBon.email;
+      var ccListB = [];
+      if (asesorBon.email) ccListB.push(String(asesorBon.email).trim());
+      emailsDirectora_().forEach(function(em){ if (ccListB.indexOf(em) === -1 && em !== GERENTE_EMAIL) ccListB.push(em); });
+      if (ccListB.length) optsB.cc = ccListB.join(',');
       MailApp.sendEmail(GERENTE_EMAIL, asuntoB, cuerpoB, optsB);
 
       // Limpiar archivo temporal del Doc (PDF ya enviado)
@@ -1971,7 +2098,7 @@ function doPost(e) {
       lock.releaseLock();
       return jsonResponse({
         ok: true,
-        mensaje: 'Cuenta de cobro de bonificación enviada al gerente' + (asesorBon.email ? ' (con copia a ' + asesorBon.email + ')' : ''),
+        mensaje: 'Cuenta de cobro de bonificación enviada al gerente y a la dirección comercial' + (asesorBon.email ? ' (con copia a ' + asesorBon.email + ')' : ''),
         valor: totalB
       });
     }
@@ -2018,9 +2145,9 @@ function doPost(e) {
       }
       // Validar rol gerente
       var asesorU = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorU; });
-      if (!asesorU || String(asesorU.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorU)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo el gerente puede modificar cobros de arriendo' });
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden modificar cobros de arriendo' });
       }
       var cobroExist = leerHoja(HOJAS.cobros_arriendo).find(function(c){ return c.id_cobro === idCobroU; });
       if (!cobroExist) {
@@ -2058,9 +2185,9 @@ function doPost(e) {
     if (action === 'setup_cobros_arriendo') {
       var idAsesorS = body.id_asesor;
       var asesorS = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorS; });
-      if (!asesorS || String(asesorS.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorS)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo el gerente puede ejecutar el setup' });
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden ejecutar el setup' });
       }
       var res = setupCobrosArriendo();
       lock.releaseLock();
@@ -2071,9 +2198,9 @@ function doPost(e) {
     if (action === 'liquidar_bonificaciones') {
       var idAsesorL = body.id_asesor;
       var asesorL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorL; });
-      if (!asesorL || String(asesorL.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorL)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo el gerente puede liquidar bonificaciones' });
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden liquidar bonificaciones' });
       }
       var anioL = parseInt(body['año'] || body.anio || body.year, 10);
       var mesL = parseInt(body.mes, 10);
@@ -2095,9 +2222,9 @@ function doPost(e) {
       if (!idPago) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_pago' }); }
       if (!idAsesorP) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
       var asesorP = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorP; });
-      if (!asesorP || String(asesorP.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorP)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo el gerente puede modificar pagos' });
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden modificar pagos' });
       }
       // Buscar el pago para obtener id_venta
       var pagoActual = leerHoja(HOJAS.pagos).find(function(p) { return p.id_pago === idPago; });
@@ -2153,9 +2280,9 @@ function doPost(e) {
       if (!idVentaCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
       if (!idAsesorCV) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
       var asesorCV = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCV; });
-      if (!asesorCV || String(asesorCV.rol).toLowerCase() !== 'gerente') {
+      if (!esGestor_(asesorCV)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo el gerente puede cancelar ventas' });
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden cancelar ventas' });
       }
 
       // Verificar que la venta exista y no esté ya cancelada
@@ -2220,7 +2347,7 @@ function doPost(e) {
 
       var asesorCA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCA; });
       if (!asesorCA) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
-      var esGerenteCA = String(asesorCA.rol).toLowerCase() === 'gerente';
+      var esGerenteCA = esGestor_(asesorCA);
 
       asegurarColumnaEstadoArriendo();
       var arrC = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idArrCancel; });
@@ -2284,6 +2411,245 @@ function doPost(e) {
         ok: true,
         mensaje: 'Arriendo cancelado. ' + anuladasA + ' comisión(es) anuladas, ' + cobAnulados + ' cobro(s) anulado(s).'
       });
+    }
+
+    // --- EDITAR ARRIENDO (gestor: gerente o directora) ---
+    // Reescribe en sitio el arriendo, sus partes, comisiones y regenera los cobros proyectados.
+    // body: { id_asesor, password, id_arriendo, datos, partes, comisiones_asesores }
+    if (action === 'editar_arriendo') {
+      var asesorEA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!esGestor_(asesorEA)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden editar negocios' });
+      }
+      var idArrE = body.id_arriendo;
+      if (!idArrE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_arriendo' }); }
+      var arrE = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idArrE; });
+      if (!arrE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo "' + idArrE + '" no encontrado' }); }
+      if (String(arrE.estado_arriendo || '').toUpperCase() === 'CANCELADO') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No se puede editar un arriendo cancelado' });
+      }
+      if (negocioBloqueadoPorCobro_(idArrE, 'arriendo')) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, requiere_cancelacion:true,
+          error:'Este arriendo ya tiene bonificaciones cobradas de su mes; editarlo desincronizaría cuentas de cobro ya emitidas. Si está mal, cancélalo.' });
+      }
+
+      var datosEA = body.datos;
+      if (!datosEA['año']) datosEA['año'] = arrE['año'] || new Date().getFullYear();
+      if (numVal(datosEA.valor_canon) < 0 || numVal(datosEA.administracion) < 0 || numVal(datosEA.pct_comision_oficina) < 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Canon, administración y porcentaje no pueden ser negativos' });
+      }
+      if (numVal(datosEA.valor_canon) === 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El valor del canon debe ser mayor a 0' });
+      }
+      var inmRefEA = leerHoja(HOJAS.inmuebles);
+      var cliRefEA = leerHoja(HOJAS.clientes);
+      if (!inmRefEA.find(function(i){ return String(i.id_inmueble) === String(datosEA.id_inmueble); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Inmueble "' + datosEA.id_inmueble + '" no existe' });
+      }
+      // Duplicado: mismo inmueble + mes + año, excluyendo este mismo arriendo
+      var dupEA = leerHoja(HOJAS.arriendos).find(function(a){
+        return a.id_arriendo !== idArrE
+          && String(a.id_inmueble) === String(datosEA.id_inmueble)
+          && String(a.mes) === String(datosEA.mes)
+          && String(a['año']) === String(datosEA['año']);
+      });
+      if (dupEA) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Ya existe otro arriendo para ese inmueble en ' + datosEA.mes + '/' + datosEA['año'] + ' (' + dupEA.id_arriendo + ')' });
+      }
+      var mesesEA = parseInt(datosEA.meses_contrato, 10);
+      if (!mesesEA || mesesEA <= 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'meses_contrato es obligatorio y debe ser un entero positivo' });
+      }
+      datosEA.meses_contrato = mesesEA;
+
+      // Validaciones (sin escribir nada todavía)
+      var errComEA = validarComisionesAsesores(body.comisiones_asesores, leerHoja(HOJAS.asesores));
+      if (errComEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errComEA }); }
+      var errRefEA = validarReferidos(datosEA);
+      if (errRefEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errRefEA }); }
+      var errPartesEA = validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, false);
+      if (errPartesEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPartesEA }); }
+
+      // Aplicar cambios
+      datosEA.id_arriendo = idArrE;
+      var canonTotalEA = numVal(datosEA.valor_canon) + numVal(datosEA.administracion);
+      datosEA.comision_oficina = canonTotalEA * numVal(datosEA.pct_comision_oficina);
+      actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrE, datosEA);
+
+      borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idArrE);
+      validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, true);
+
+      borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idArrE);
+      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
+        body.comisiones_asesores.forEach(function(com){
+          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
+            id_asesor: com.id_asesor, id_negocio: idArrE, valor_comision: com.valor_comision,
+            punta: com.punta, participacion: (numVal(com.participacion) || 100) / 100, estado: 'ACTIVA'
+          });
+        });
+      }
+
+      // Regenerar cobros proyectados con los nuevos valores (se pierden ediciones manuales de cobros)
+      borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
+      try { generarCobrosProyectados(datosEA); } catch (eCobEA) { /* no bloquear */ }
+
+      invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado' });
+    }
+
+    // --- EDITAR VENTA (gestor: gerente o directora) ---
+    // Reescribe en sitio la venta, sus partes, comisiones y plan de pagos.
+    // body: { id_asesor, password, id_venta, datos, partes, comisiones_asesores, pagos }
+    if (action === 'editar_venta') {
+      var asesorEV = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!esGestor_(asesorEV)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden editar negocios' });
+      }
+      var idVntE = body.id_venta;
+      if (!idVntE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
+      var vntE = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idVntE; });
+      if (!vntE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta "' + idVntE + '" no encontrada' }); }
+      if (String(vntE.estado_venta || '').toUpperCase() === 'CANCELADA') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No se puede editar una venta cancelada' });
+      }
+      if (negocioBloqueadoPorCobro_(idVntE, 'venta')) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, requiere_cancelacion:true,
+          error:'Esta venta ya tiene bonificaciones cobradas de un mes de pago; editarla desincronizaría cuentas de cobro ya emitidas. Si está mal, cancélala.' });
+      }
+
+      var datosEV = body.datos;
+      if (!datosEV['año']) datosEV['año'] = vntE['año'] || new Date().getFullYear();
+      if (numVal(datosEV.valor_base_comision) < 0 || numVal(datosEV.pct_comision_oficina) < 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Valor base y porcentaje no pueden ser negativos' });
+      }
+      if (numVal(datosEV.valor_base_comision) === 0) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El valor base de la venta debe ser mayor a 0' });
+      }
+      var inmRefEV = leerHoja(HOJAS.inmuebles);
+      var cliRefEV = leerHoja(HOJAS.clientes);
+      if (!inmRefEV.find(function(i){ return String(i.id_inmueble) === String(datosEV.id_inmueble); })) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Inmueble "' + datosEV.id_inmueble + '" no existe' });
+      }
+
+      // Validaciones (sin escribir todavía)
+      var errComEV = validarComisionesAsesores(body.comisiones_asesores, leerHoja(HOJAS.asesores));
+      if (errComEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errComEV }); }
+      var errRefEV = validarReferidos(datosEV);
+      if (errRefEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errRefEV }); }
+      var errPartesEV = validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, false);
+      if (errPartesEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPartesEV }); }
+
+      var valorBaseEV = numVal(datosEV.valor_base_comision);
+      if (body.pagos && body.pagos.length > 0) {
+        var sumaPagosEV = body.pagos.reduce(function(acc, p){ return acc + numVal(p.valor_pago); }, 0);
+        if (Math.abs(sumaPagosEV - valorBaseEV) > 1) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'La suma de pagos ($' + Math.round(sumaPagosEV).toLocaleString() + ') no cuadra con el valor base ($' + Math.round(valorBaseEV).toLocaleString() + ')' });
+        }
+        for (var iPE = 0; iPE < body.pagos.length; iPE++) {
+          if (numVal(body.pagos[iPE].valor_pago) < 0) {
+            lock.releaseLock();
+            return jsonResponse({ ok:false, error:'Los pagos no pueden ser negativos' });
+          }
+        }
+      }
+
+      // Aplicar cambios
+      datosEV.id_venta = idVntE;
+      datosEV.comision_oficina = valorBaseEV * numVal(datosEV.pct_comision_oficina);
+      datosEV.comision_por_punta = datosEV.comision_oficina / 2;
+      actualizarFila(HOJAS.ventas, 'id_venta', idVntE, datosEV);
+
+      borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
+      validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, true);
+
+      borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idVntE);
+      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
+        body.comisiones_asesores.forEach(function(com){
+          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
+            id_asesor: com.id_asesor, id_negocio: idVntE, valor_comision: com.valor_comision,
+            punta: com.punta, participacion: (numVal(com.participacion) || 100) / 100, estado: 'ACTIVA'
+          });
+        });
+      }
+
+      // Regenerar plan de pagos con los nuevos valores
+      borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
+      if (body.pagos && body.pagos.length > 0) {
+        body.pagos.forEach(function(pago){
+          var fechaPagoEV = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
+          var valorPagoEV = numVal(pago.valor_pago);
+          var valorComEV = valorBaseEV > 0 ? (valorPagoEV / valorBaseEV) * datosEV.comision_oficina : 0;
+          agregarFila(HOJAS.pagos, COLUMNAS.pagos, {
+            id_pago: siguienteId(HOJAS.pagos, 'PAG'),
+            id_venta: idVntE,
+            fecha_pago: pago.fecha_pago || '',
+            'año_pago': fechaPagoEV ? fechaPagoEV.getFullYear() : '',
+            mes_pago: fechaPagoEV ? (fechaPagoEV.getMonth() + 1) : '',
+            valor_cobrado: Math.round(valorComEV),
+            observacion: pago.observacion || ''
+          });
+        });
+      }
+
+      invalidarCacheHojas([HOJAS.ventas, HOJAS.pagos, HOJAS.comisiones, HOJAS.partes]);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, id: idVntE, mensaje:'Venta actualizada' });
+    }
+
+    // --- ELIMINAR NEGOCIO (gestor: gerente o directora) ---
+    // Borrado REAL: elimina el negocio y todas sus comisiones, partes y pagos/cobros,
+    // pero SÓLO si nada se ha cobrado (ninguna bonificación cobrada lo toca). Si ya hubo
+    // cobro, devuelve requiere_cancelacion para que el frontend ofrezca cancelar (soft).
+    // body: { id_asesor, password, id_negocio, tipo: 'arriendo' | 'venta' }
+    if (action === 'eliminar_negocio') {
+      var asesorEL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!esGestor_(asesorEL)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden eliminar negocios' });
+      }
+      var idNegEL = body.id_negocio;
+      var tipoEL = body.tipo;
+      if (!idNegEL || !tipoEL) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Faltan parámetros (id_negocio, tipo)' }); }
+      if (tipoEL !== 'arriendo' && tipoEL !== 'venta') { lock.releaseLock(); return jsonResponse({ ok:false, error:'Tipo inválido (use arriendo o venta)' }); }
+
+      if (negocioBloqueadoPorCobro_(idNegEL, tipoEL)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, requiere_cancelacion:true,
+          error:'Este negocio ya tiene bonificaciones cobradas de su mes. No se puede borrar sin desincronizar cuentas de cobro. Usa "Cancelar" para anularlo dejando rastro.' });
+      }
+
+      var borrado;
+      if (tipoEL === 'arriendo') {
+        borrado = borrarFilasPorColumna_(HOJAS.arriendos, 'id_arriendo', idNegEL);
+        if (!borrado) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo "' + idNegEL + '" no encontrado' }); }
+        borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idNegEL);
+      } else {
+        borrado = borrarFilasPorColumna_(HOJAS.ventas, 'id_venta', idNegEL);
+        if (!borrado) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta "' + idNegEL + '" no encontrada' }); }
+        borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idNegEL);
+      }
+      var comBorradas = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idNegEL);
+      var parBorradas = borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idNegEL);
+
+      invalidarCacheHojas([HOJAS.arriendos, HOJAS.ventas, HOJAS.pagos, HOJAS.cobros_arriendo, HOJAS.comisiones, HOJAS.partes]);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Negocio ' + idNegEL + ' eliminado por completo (' + comBorradas + ' comisión(es), ' + parBorradas + ' parte(s) y sus pagos/cobros).' });
     }
 
     lock.releaseLock();

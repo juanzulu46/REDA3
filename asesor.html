@@ -1489,8 +1489,8 @@ async function hacerLogin(){
     const b=document.getElementById('userBadge');
     b.textContent=asesorActual.vinculacion;
     b.className='user-badge '+(asesorActual.vinculacion==='Freelance'?'free':'emp');
-    // Mostrar navegación de gerencia si tiene rol gerente
-    if(String(asesorActual.rol).toLowerCase()==='gerente'){
+    // Mostrar navegación de gerencia si tiene rol gerente o directora comercial
+    if(['gerente','directora'].includes(String(asesorActual.rol||'').toLowerCase())){
       document.getElementById('navGestion').style.display='';
       document.getElementById('navDashboard').style.display='';
       // Default: mes anterior al actual (se liquida lo que ya cerró)
@@ -1574,6 +1574,10 @@ document.getElementById('menuBtn').addEventListener('click',()=>document.getElem
 
 // ===== PREPARAR FORMULARIOS =====
 function prepararFormularios(){
+  // Salir de modo edición: por defecto los formularios son para REGISTRO nuevo.
+  // (editarNegocio vuelve a activar el modo edición justo después de llamar a esta función.)
+  editandoNeg = null;
+  restaurarBotonesRegistro();
   // Meses
   ['ar_mes','v_mes'].forEach(id=>fillSel(id,CAT.meses,'-- Mes --'));
   // Inmuebles
@@ -2071,11 +2075,13 @@ async function guardarArriendo() {
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
-    const r = await apiPost({
-      action: 'registrar_arriendo',
+    const _editArr = editandoNeg && editandoNeg.tipo==='arriendo';
+    const _origArr = _editArr ? ((gestionData&&gestionData.arriendos)||[]).find(x=>x.id_arriendo===editandoNeg.id) : null;
+    const _payloadArr = {
+      action: _editArr ? 'editar_arriendo' : 'registrar_arriendo',
       partes: resPartes.partes,
       datos: {
-        ['año']: new Date().getFullYear(),
+        ['año']: (_editArr && _origArr) ? _origArr['año'] : new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         valor_canon: canon,
         administracion: admon,
@@ -2091,8 +2097,11 @@ async function guardarArriendo() {
         valor_ref_cerrador: calcRefPuntaParaGuardar('arr','Cerrador')
       },
       comisiones_asesores: comisiones
-    });
+    };
+    if (_editArr) _payloadArr.id_arriendo = editandoNeg.id;
+    const r = await apiPost(_payloadArr);
     if (r && r.ok) {
+      if (_editArr) { toast('Arriendo actualizado: ' + r.id); finalizarEdicion('arr'); return; }
       document.getElementById('okArrMsg').textContent = r.id + ' \u2014 Canon: ' + fmtP(canon);
       document.getElementById('okArr').classList.add('show');
       document.getElementById('formArrWrap').style.display = 'none';
@@ -2142,11 +2151,13 @@ async function guardarVenta() {
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
-    const r = await apiPost({
-      action: 'registrar_venta',
+    const _editVnt = editandoNeg && editandoNeg.tipo==='venta';
+    const _origVnt = _editVnt ? ((gestionData&&gestionData.ventas)||[]).find(x=>x.id_venta===editandoNeg.id) : null;
+    const _payloadVnt = {
+      action: _editVnt ? 'editar_venta' : 'registrar_venta',
       partes: resPartesV.partes,
       datos: {
-        ['año']: new Date().getFullYear(),
+        ['año']: (_editVnt && _origVnt) ? _origVnt['año'] : new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         valor_base_comision: valorbase, pct_comision_oficina: Number(pct),
         oficina_captacion: ofcap, origen_captacion: orgcap,
@@ -2160,8 +2171,11 @@ async function guardarVenta() {
       },
       comisiones_asesores: comisiones,
       pagos: pagos
-    });
+    };
+    if (_editVnt) _payloadVnt.id_venta = editandoNeg.id;
+    const r = await apiPost(_payloadVnt);
     if (r && r.ok) {
+      if (_editVnt) { toast('Venta actualizada: ' + r.id); finalizarEdicion('vnt'); return; }
       const comOficina = valorbase * Number(pct);
       const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       let pagosDetalle = '';
@@ -2530,7 +2544,7 @@ function renderMisNegocios(){
       const cobrosArr=(r.cobros_arriendo||[]).filter(c=>c.id_arriendo===a.id_arriendo)
         .sort((x,y)=>(Number(x['año_cobro'])||0)*12+(Number(x.mes_cobro)||0)-((Number(y['año_cobro'])||0)*12+(Number(y.mes_cobro)||0)));
       const mesesC=parseInt(a.meses_contrato,10)||0;
-      const esGerenteArr=String(asesorActual.rol||'').toLowerCase()==='gerente';
+      const esGerenteArr=['gerente','directora'].includes(String(asesorActual.rol||'').toLowerCase());
       let cobrosHTML='';
       if(cobrosArr.length>0){
         cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
@@ -2589,7 +2603,7 @@ function renderMisNegocios(){
       const estadoFinal=cancelada?'CANCELADA':estado;
       const estadoClassFinal=cancelada?'color:#888':estadoClass;
       const cardStyle=cancelada?'opacity:0.5':'';
-      const esGerente=asesorActual.rol==='gerente';
+      const esGerente=['gerente','directora'].includes(String(asesorActual.rol||'').toLowerCase());
 
       // Detalle de cuotas
       let cuotasHTML='';
@@ -2769,7 +2783,11 @@ function renderGestion(){
         <div><strong>Asesores:</strong> ${asesoresArr}</div>
       </div>
       ${cobrosHTML}
-      ${!canceladaArrG?'<div class="neg-actions"><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar arriendo</button></div>':''}
+      ${!canceladaArrG?'<div class="neg-actions">'+
+        '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button>'+
+        '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar</button>'+
+        '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar</button>'+
+      '</div>':''}
     </div>`;
   });
 
@@ -2804,7 +2822,11 @@ function renderGestion(){
         <div><strong>Asesores:</strong> ${asesoresVenta}</div>
         <div><strong>Cuotas:</strong> ${pagosV.length}</div>
       </div>
-      ${!cancelada?'<div class="neg-actions"><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar venta</button></div>':''}
+      ${!cancelada?'<div class="neg-actions">'+
+        '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'venta\',\''+v.id_venta+'\')">Editar</button>'+
+        '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar</button>'+
+        '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'venta\',\''+v.id_venta+'\',this)">Eliminar</button>'+
+      '</div>':''}
     </div>`;
   });
 
@@ -2913,8 +2935,222 @@ async function cancelarArriendo(idArriendo, btn) {
   btn.disabled = false; btn.textContent = 'Cancelar arriendo';
 }
 
+// ===== EDITAR / ELIMINAR NEGOCIO (gerente o directora) =====
+let editandoNeg = null; // { tipo:'arriendo'|'venta', id } | null
+
+// Navega a una sección como lo hace el menú lateral (sin depender del click).
+function irASeccion(s){
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+  const ni=document.querySelector('.nav-item[data-s="'+s+'"]');
+  if(ni)ni.classList.add('active');
+  document.querySelectorAll('.section').forEach(x=>x.classList.remove('show'));
+  const sec=document.getElementById('sec-'+s);
+  if(sec)sec.classList.add('show');
+  const t=document.getElementById('pageTitle'); if(t)t.innerHTML=navTitles[s]||'';
+  document.getElementById('sidebar').classList.remove('open');
+  if(s==='arriendo'||s==='venta')prepararFormularios();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// Sincroniza el input visible de un select "searchable" tras fijar su valor por código.
+function syncSS(sel){
+  if(!sel||!sel._ssInput)return;
+  sel._ssInput.value = (sel.selectedIndex>0) ? sel.options[sel.selectedIndex].text : '';
+}
+function setSelVal(sel,value){ if(!sel)return; sel.value=String(value==null?'':value); syncSS(sel); }
+function setMoneyVal(id,value){ const e=document.getElementById(id); if(e)e.value=formatMiles(value); }
+
+// Restaura los botones/encabezados de los formularios a modo "registro nuevo".
+function restaurarBotonesRegistro(){
+  const ba=document.getElementById('btnGuardarArr'); if(ba){ba.textContent='✓ Guardar Arriendo';ba.disabled=false;}
+  const bv=document.getElementById('btnGuardarVnt'); if(bv){bv.textContent='✓ Guardar Venta';bv.disabled=false;}
+  const ha=document.querySelector('#sec-arriendo .fcard-hd h3'); if(ha)ha.textContent='Registrar nuevo arriendo';
+  const hv=document.querySelector('#sec-venta .fcard-hd h3'); if(hv)hv.textContent='Registrar nueva venta';
+}
+
+function marcarModoEdicion(tipo,id){
+  const btn=document.getElementById(tipo==='arr'?'btnGuardarArr':'btnGuardarVnt');
+  if(btn)btn.textContent='✓ Guardar cambios ('+id+')';
+  const hd=document.querySelector('#sec-'+(tipo==='arr'?'arriendo':'venta')+' .fcard-hd h3');
+  if(hd)hd.textContent='Editar '+(tipo==='arr'?'arriendo':'venta')+' '+id;
+}
+
+function finalizarEdicion(tipo){
+  editandoNeg=null;
+  if(tipo==='arr')resetArriendo(); else resetVenta();
+  restaurarBotonesRegistro();
+  irASeccion('gestion');
+  cargarGestion();
+}
+
+function editarNegocio(tipo,id){
+  if(!gestionData){toast('Abre la pestaña Gestión primero','er');return;}
+  if(tipo==='arriendo'){
+    const a=(gestionData.arriendos||[]).find(x=>x.id_arriendo===id);
+    if(!a){toast('Arriendo no encontrado','er');return;}
+    irASeccion('arriendo');
+    prefillArriendo(a);
+    editandoNeg={tipo:'arriendo',id};
+    marcarModoEdicion('arr',id);
+  }else{
+    const v=(gestionData.ventas||[]).find(x=>x.id_venta===id);
+    if(!v){toast('Venta no encontrada','er');return;}
+    irASeccion('venta');
+    prefillVenta(v);
+    editandoNeg={tipo:'venta',id};
+    marcarModoEdicion('vnt',id);
+  }
+  toast('Editando '+id+'. Ajusta y pulsa "Guardar cambios".');
+}
+
+function setReferidosForm(prefix,neg){
+  const hayCap=!!(neg.referido_captador&&String(neg.referido_captador).trim());
+  const hayCer=!!(neg.referido_cerrador&&String(neg.referido_cerrador).trim());
+  document.getElementById(prefix+'_hayref_cap').checked=hayCap;
+  document.getElementById(prefix+'_refnombre_cap').value=neg.referido_captador||'';
+  document.getElementById(prefix+'_refnumero_cap').value=neg.numero_captador_r||'';
+  document.getElementById(prefix+'_hayref_cer').checked=hayCer;
+  document.getElementById(prefix+'_refnombre_cer').value=neg.referido_cerrador||'';
+  document.getElementById(prefix+'_refnumero_cer').value=neg.numero_cerrador_r||'';
+}
+
+function prefillPartesForm(tipo,idNeg){
+  const roles=tipo==='arr'?['arrendador','arrendatario']:['vendedor','comprador'];
+  const partes=(gestionData.partes||[]).filter(p=>p.id_negocio===idNeg);
+  roles.forEach(rol=>{
+    const list=document.getElementById(partesListaId(tipo,rol));
+    if(!list)return;
+    list.innerHTML='';
+    const delRol=partes.filter(p=>p.rol===rol);
+    const n=delRol.length||1;
+    for(let i=0;i<n;i++)addParteRow(tipo,rol);
+    const rows=list.querySelectorAll('.parte-row');
+    rows.forEach((row,i)=>{
+      const p=delRol[i]; if(!p)return;
+      setSelVal(row.querySelector('.parte-cli'),p.id_cliente);
+      row.querySelector('.parte-pct').value=Math.round(Number(p.participacion_pct)*10000)/100;
+    });
+    actualizarSumaPartes(tipo,rol);
+  });
+}
+
+function prefillComisionesForm(tipo,idNeg){
+  const capId=tipo==='arr'?'capArrList':'capVntList';
+  const cerId=tipo==='arr'?'cerArrList':'cerVntList';
+  document.getElementById(capId).innerHTML='';
+  document.getElementById(cerId).innerHTML='';
+  const coms=(gestionData.comisiones||[]).filter(c=>c.id_negocio===idNeg&&String(c.estado||'').toUpperCase()!=='ANULADA');
+  const caps=coms.filter(c=>c.punta==='Captador');
+  const cers=coms.filter(c=>c.punta==='Cerrador');
+  caps.forEach(()=>addAsesorRow(capId,'Captador',tipo));
+  cers.forEach(()=>addAsesorRow(cerId,'Cerrador',tipo));
+  const setRow=(row,com)=>{
+    if(!com)return;
+    setSelVal(row.querySelector('.com-asesor'),com.id_asesor);
+    const pct=(com.participacion===''||com.participacion==null)?100:Math.round(Number(com.participacion)*100);
+    row.querySelector('.com-part').value=pct;
+  };
+  document.getElementById(capId).querySelectorAll('.com-row').forEach((row,i)=>setRow(row,caps[i]));
+  document.getElementById(cerId).querySelectorAll('.com-row').forEach((row,i)=>setRow(row,cers[i]));
+}
+
+// Convierte un valor de fecha (string 'YYYY-MM-DD' o ISO) al formato del input date.
+function aFechaInput(v){
+  if(!v)return '';
+  const s=String(v);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m)return m[1]+'-'+m[2]+'-'+m[3];
+  const d=new Date(s);
+  if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);
+  return '';
+}
+
+// Reconstruye el "monto del pago" (valor del inmueble) desde la comisión guardada.
+// valor_cobrado = (valor_pago / valor_base) * comision_oficina  →  valor_pago = valor_cobrado / pct.
+function prefillPagosForm(v){
+  const list=document.getElementById('pagosVntList');
+  list.innerHTML='';
+  const pagos=(gestionData.pagos||[]).filter(p=>p.id_venta===v.id_venta);
+  if(!pagos.length){ addPagoRow(); resumenPagos(); return; }
+  const pct=Number(v.pct_comision_oficina)||0;
+  const valorBase=Number(v.valor_base_comision)||0;
+  // Reconstruir montos; ajustar el último para que la suma cuadre exactamente con el valor base.
+  const montos=pagos.map(p=>pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0);
+  if(valorBase>0&&montos.length){
+    const sumOtros=montos.slice(0,-1).reduce((s,m)=>s+m,0);
+    montos[montos.length-1]=Math.max(0,valorBase-sumOtros);
+  }
+  pagos.forEach(()=>addPagoRow());
+  const rows=list.querySelectorAll('.com-row');
+  rows.forEach((row,i)=>{
+    const p=pagos[i];
+    row.querySelector('.pago-fecha').value=aFechaInput(p.fecha_pago);
+    row.querySelector('.pago-valor').value=formatMiles(montos[i]);
+    row.querySelector('.pago-obs').value=p.observacion||'';
+  });
+  resumenPagos();
+}
+
+function prefillArriendo(a){
+  setSelVal(document.getElementById('ar_mes'),a.mes);
+  setSelVal(document.getElementById('ar_mercado'),a.mercado);
+  setSelVal(document.getElementById('ar_inmueble'),a.id_inmueble);
+  setMoneyVal('ar_canon',a.valor_canon);
+  setMoneyVal('ar_admon',a.administracion);
+  setSelVal(document.getElementById('ar_pct'),a.pct_comision_oficina);
+  document.getElementById('ar_meses').value=parseInt(a.meses_contrato,10)||'';
+  setSelVal(document.getElementById('ar_ofcap'),a.oficina_captacion);
+  setSelVal(document.getElementById('ar_orgcap'),a.origen_captacion);
+  setSelVal(document.getElementById('ar_ofcie'),a.oficina_cierre);
+  setSelVal(document.getElementById('ar_orgcie'),a.origen_cierre);
+  setReferidosForm('ar',a);
+  prefillPartesForm('arr',a.id_arriendo);
+  prefillComisionesForm('arr',a.id_arriendo);
+  recalcComisiones('arr');
+}
+
+function prefillVenta(v){
+  setSelVal(document.getElementById('v_mes'),v.mes);
+  setSelVal(document.getElementById('v_mercado'),v.mercado);
+  setSelVal(document.getElementById('v_inmueble'),v.id_inmueble);
+  setMoneyVal('v_valorbase',v.valor_base_comision);
+  setSelVal(document.getElementById('v_pct'),v.pct_comision_oficina);
+  setSelVal(document.getElementById('v_ofcap'),v.oficina_captacion);
+  setSelVal(document.getElementById('v_orgcap'),v.origen_captacion);
+  setSelVal(document.getElementById('v_ofcie'),v.oficina_cierre);
+  setSelVal(document.getElementById('v_orgcie'),v.origen_cierre);
+  setReferidosForm('v',v);
+  prefillPartesForm('vnt',v.id_venta);
+  prefillComisionesForm('vnt',v.id_venta);
+  prefillPagosForm(v);
+  recalcComisiones('vnt');
+}
+
+async function eliminarNegocio(tipo,id,btn){
+  const c=prompt('Esto ELIMINARÁ por completo el negocio '+id+' y todas sus comisiones, partes y pagos/cobros. Escriba ELIMINAR para confirmar:');
+  if(c!=='ELIMINAR'){toast('Eliminación no confirmada','er');return;}
+  btn.disabled=true; const orig=btn.textContent; btn.textContent='Eliminando...';
+  try{
+    const r=await apiPost({action:'eliminar_negocio',id_negocio:id,tipo:tipo,id_asesor:asesorActual.id_asesor});
+    if(r&&r.ok){ toast(r.mensaje||'Negocio eliminado'); cargarGestion(); return; }
+    if(r&&r.requiere_cancelacion){
+      if(confirm((r.error||'')+'\n\n¿Cancelar el negocio (soft) en su lugar? Quedará marcado como cancelado y sus comisiones anuladas.')){
+        const accion=tipo==='arriendo'?'cancelar_arriendo':'cancelar_venta';
+        const body={action:accion,id_asesor:asesorActual.id_asesor};
+        body[tipo==='arriendo'?'id_arriendo':'id_venta']=id;
+        const r2=await apiPost(body);
+        if(r2&&r2.ok){toast(r2.mensaje||'Negocio cancelado');cargarGestion();}
+        else toast(r2&&r2.error||'Error al cancelar','er');
+      }
+      btn.disabled=false; btn.textContent=orig; return;
+    }
+    toast(r&&r.error||'Error al eliminar','er');
+  }catch(e){toast('Error: '+e.message,'er');}
+  btn.disabled=false; btn.textContent=orig;
+}
+
 async function cobrarBonificacion(mes, btn){
-  if(!confirm('Se generará la cuenta de cobro de bonificación (PDF con detalle de negocios y liquidación) y se enviará al gerente con copia a tu correo. ¿Continuar?')) return;
+  if(!confirm('Se generará la cuenta de cobro de bonificación (PDF con detalle de negocios y liquidación) y se enviará al gerente y a la dirección comercial, con copia a tu correo. ¿Continuar?')) return;
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = 'Enviando...';
   try{
@@ -2933,7 +3169,7 @@ async function cobrarBonificacion(mes, btn){
 }
 
 async function imprimirCuentaCobro(tipo, idNegocio, btn){
-  if (!confirm('Se generará la cuenta de cobro y se enviará al gerente con copia a tu correo. ¿Continuar?')) return;
+  if (!confirm('Se generará la cuenta de cobro (con el total del negocio y el detalle por asesor) y se enviará al gerente y a la dirección comercial, con copia a tu correo. ¿Continuar?')) return;
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = 'Enviando...';
   try{
