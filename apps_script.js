@@ -985,6 +985,21 @@ function emailsDirectora_() {
     .filter(Boolean);
 }
 
+// Construye la cadena CC de una cuenta de cobro: asesor + directora(s), sin el gerente
+// (que va como destinatario principal). Limpia correos mal formados y evita comas
+// internas que romperían el join. Devuelve '' si no hay copias válidas.
+function ccCobro_(asesorEmail) {
+  var lista = [];
+  var emailRe = /^[^\s,]+@[^\s,]+\.[^\s,]+$/;
+  function add(em){
+    em = String(em || '').trim();
+    if (em && em !== GERENTE_EMAIL && emailRe.test(em) && lista.indexOf(em) === -1) lista.push(em);
+  }
+  add(asesorEmail);
+  emailsDirectora_().forEach(add);
+  return lista.join(',');
+}
+
 function doGet(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -1017,6 +1032,22 @@ function doGet(e) {
       var errSesGet = validarSesion(params.id_asesor, params.password);
       if (errSesGet) return jsonResponse({ ok: false, error: errSesGet });
     }
+
+    return dispatchGet(params);
+
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
+  } finally {
+    try { lock.releaseLock(); } catch(_) {}
+  }
+}
+
+// Despacha las acciones de LECTURA (las mismas que entran por doGet). Se extrae para
+// reusarla desde doPost cuando el frontend envía las lecturas por POST (credenciales en
+// el cuerpo, no en la URL → no quedan en logs). NO toma lock: lo gestiona quien la llama.
+function dispatchGet(params) {
+  var e = null; // compat: el bloque de "acción no reconocida" referencia 'e'
+  var action = params.action || '';
 
     // --- LOGIN: devuelve SOLO lista para el dropdown (sin passwords ni datos sensibles) ---
     if (action === 'login') {
@@ -1300,12 +1331,6 @@ function doGet(e) {
       error: 'Acción no reconocida: ' + action,
       debug: { params: params, hasE: !!e, hasParam: !!(e && e.parameter), queryString: e ? e.queryString : 'sin e' }
     });
-
-  } catch (err) {
-    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
-  } finally {
-    try { lock.releaseLock(); } catch(_) {}
-  }
 }
 
 function doPost(e) {
@@ -1323,6 +1348,16 @@ function doPost(e) {
         lock.releaseLock();
         return jsonResponse({ ok: false, error: errSesPost });
       }
+    }
+
+    // Lecturas enviadas por POST (credenciales en el cuerpo, NO en la URL → no quedan en
+    // logs de navegador/servidor/proxy). Se delegan al mismo despachador de doGet.
+    var READ_ACTIONS = ['login','catalogos','mis_negocios','siguiente_id','mis_bonificaciones',
+                        'mis_acciones','todos_negocios','mis_cobros_arriendo','verificar_duplicado'];
+    if (READ_ACTIONS.indexOf(action) !== -1) {
+      var outRead = dispatchGet(body);
+      lock.releaseLock();
+      return outRead;
     }
 
     // --- LOGIN CON CONTRASEÑA ---
@@ -1785,59 +1820,63 @@ function doPost(e) {
         'numero_cuenta':        asesor.numero_cuenta || ''
       };
 
-      // Copiar template, reemplazar, exportar PDF
+      // Copiar template, reemplazar, exportar PDF y enviar. La copia temporal se borra
+      // SIEMPRE (finally), aunque falle el PDF o el correo, para no dejar basura en Drive.
       var templateFile = DriveApp.getFileById(TEMPLATE_CUENTA_COBRO_ID);
       var nombreCopia = 'Cuenta de cobro ' + (asesor.nombre||'') + ' - ' + idNegocio;
       var copia = templateFile.makeCopy(nombreCopia);
-      var doc = DocumentApp.openById(copia.getId());
-      var docBody = doc.getBody();
-      Object.keys(reemplazos).forEach(function(k){
-        docBody.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazos[k]));
-      });
+      try {
+        var doc = DocumentApp.openById(copia.getId());
+        var docBody = doc.getBody();
+        Object.keys(reemplazos).forEach(function(k){
+          docBody.replaceText('\\{\\{' + k + '\\}\\}', String(reemplazos[k]));
+        });
 
-      // Anexar al documento el detalle del negocio completo: tabla individual por asesor
-      // + total del negocio (todos los participantes). Visible para la dirección comercial.
-      var fmtCopCC = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
-      docBody.appendParagraph('').setSpacingBefore(12);
-      var hdNeg = docBody.appendParagraph('DETALLE DEL NEGOCIO ' + idNegocio);
-      hdNeg.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      hdNeg.editAsText().setBold(true);
-      var rowsNeg = [['Asesor', 'Punta', 'Participación', 'Comisión']];
-      detalleNegocio.forEach(function(d){
-        rowsNeg.push([
-          d.nombre,
-          d.punta,
-          Math.round(d.participacion * 100) + '%',
-          fmtCopCC(d.valor)
-        ]);
-      });
-      rowsNeg.push(['TOTAL DEL NEGOCIO', '', '', fmtCopCC(totalNegocio)]);
-      var tblNeg = docBody.appendTable(rowsNeg);
-      tblNeg.getRow(0).editAsText().setBold(true);
-      tblNeg.getRow(rowsNeg.length - 1).editAsText().setBold(true);
+        // Anexar al documento el detalle del negocio completo: tabla individual por asesor
+        // + total del negocio (todos los participantes). Visible para la dirección comercial.
+        var fmtCopCC = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
+        docBody.appendParagraph('').setSpacingBefore(12);
+        var hdNeg = docBody.appendParagraph('DETALLE DEL NEGOCIO ' + idNegocio);
+        hdNeg.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+        hdNeg.editAsText().setBold(true);
+        var rowsNeg = [['Asesor', 'Punta', 'Participación', 'Comisión']];
+        detalleNegocio.forEach(function(d){
+          rowsNeg.push([
+            d.nombre,
+            d.punta,
+            Math.round(d.participacion * 100) + '%',
+            fmtCopCC(d.valor)
+          ]);
+        });
+        rowsNeg.push(['TOTAL DEL NEGOCIO', '', '', fmtCopCC(totalNegocio)]);
+        var tblNeg = docBody.appendTable(rowsNeg);
+        tblNeg.getRow(0).editAsText().setBold(true);
+        tblNeg.getRow(rowsNeg.length - 1).editAsText().setBold(true);
 
-      doc.saveAndClose();
+        doc.saveAndClose();
 
-      var pdfBlob = copia.getAs('application/pdf').setName(nombreCopia + '.pdf');
+        var pdfBlob = copia.getAs('application/pdf').setName(nombreCopia + '.pdf');
 
-      // Enviar correo
-      var asunto = 'Cuenta de cobro — ' + (asesor.nombre||'') + ' — ' + idNegocio;
-      var cuerpo = 'Adjunto cuenta de cobro generada automáticamente por el portal REDA3.\n\n' +
-                   'Asesor: ' + (asesor.nombre||'') + '\n' +
-                   'Negocio: ' + idNegocio + ' (' + tipoNeg + ')\n' +
-                   'Concepto: ' + concepto + '\n' +
-                   'Valor del asesor: ' + reemplazos.valor_numero + '\n' +
-                   'Total del negocio: $' + Number(totalNegocio).toLocaleString('es-CO') + '\n';
-      // Destinatarios: gerente (principal) + dirección comercial + asesor (copia)
-      var opts = { attachments: [pdfBlob] };
-      var ccList = [];
-      if (asesor.email) ccList.push(String(asesor.email).trim());
-      emailsDirectora_().forEach(function(em){ if (ccList.indexOf(em) === -1 && em !== GERENTE_EMAIL) ccList.push(em); });
-      if (ccList.length) opts.cc = ccList.join(',');
-      MailApp.sendEmail(GERENTE_EMAIL, asunto, cuerpo, opts);
-
-      // Borrar copia temporal del Doc (el PDF ya fue enviado)
-      copia.setTrashed(true);
+        // Enviar correo
+        var asunto = 'Cuenta de cobro — ' + (asesor.nombre||'') + ' — ' + idNegocio;
+        var cuerpo = 'Adjunto cuenta de cobro generada automáticamente por el portal REDA3.\n\n' +
+                     'Asesor: ' + (asesor.nombre||'') + '\n' +
+                     'Negocio: ' + idNegocio + ' (' + tipoNeg + ')\n' +
+                     'Concepto: ' + concepto + '\n' +
+                     'Valor del asesor: ' + reemplazos.valor_numero + '\n' +
+                     'Total del negocio: $' + Number(totalNegocio).toLocaleString('es-CO') + '\n';
+        // Destinatarios: gerente (principal) + dirección comercial + asesor (copia)
+        var opts = { attachments: [pdfBlob] };
+        var ccStr = ccCobro_(asesor.email);
+        if (ccStr) opts.cc = ccStr;
+        MailApp.sendEmail(GERENTE_EMAIL, asunto, cuerpo, opts);
+      } catch (eEnvioCC) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No se pudo generar o enviar la cuenta de cobro: ' + eEnvioCC.message + '. Revisa los correos e inténtalo de nuevo.' });
+      } finally {
+        // Borrar copia temporal del Doc pase lo que pase (el PDF ya fue adjuntado al correo)
+        try { copia.setTrashed(true); } catch(_) {}
+      }
 
       lock.releaseLock();
       return jsonResponse({
@@ -1970,6 +2009,7 @@ function doPost(e) {
       var templateFileB = DriveApp.getFileById(TEMPLATE_CUENTA_COBRO_ID);
       var nombreCopiaB = 'Cuenta de cobro ' + (asesorBon.nombre||'') + ' - Bonificación ' + nombreMesB + ' ' + anoActualB;
       var copiaB = templateFileB.makeCopy(nombreCopiaB);
+      try {
       var docB = DocumentApp.openById(copiaB.getId());
       var docBodyB = docB.getBody();
       Object.keys(reemplazosB).forEach(function(k){
@@ -2061,14 +2101,16 @@ function doPost(e) {
                     'Categoría: ' + actualB.categoria + (actualB.esMedio ? ' (1/2)' : '') + '\n' +
                     'TOTAL: $' + Number(totalB).toLocaleString('es-CO') + '\n';
       var optsB = { attachments: [pdfBlobB] };
-      var ccListB = [];
-      if (asesorBon.email) ccListB.push(String(asesorBon.email).trim());
-      emailsDirectora_().forEach(function(em){ if (ccListB.indexOf(em) === -1 && em !== GERENTE_EMAIL) ccListB.push(em); });
-      if (ccListB.length) optsB.cc = ccListB.join(',');
+      var ccStrB = ccCobro_(asesorBon.email);
+      if (ccStrB) optsB.cc = ccStrB;
       MailApp.sendEmail(GERENTE_EMAIL, asuntoB, cuerpoB, optsB);
-
-      // Limpiar archivo temporal del Doc (PDF ya enviado)
-      copiaB.setTrashed(true);
+      } catch (eEnvioBon) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'No se pudo generar o enviar la cuenta de cobro de bonificación: ' + eEnvioBon.message + '. Revisa los correos e inténtalo de nuevo.' });
+      } finally {
+        // Borrar copia temporal del Doc pase lo que pase (el PDF ya fue adjuntado)
+        try { copiaB.setTrashed(true); } catch(_) {}
+      }
 
       // Marcar la liquidación como cobrada (o crear fila si el mes no había sido liquidado)
       var ahoraCobro = new Date();
@@ -2448,9 +2490,14 @@ function doPost(e) {
       }
       var inmRefEA = leerHoja(HOJAS.inmuebles);
       var cliRefEA = leerHoja(HOJAS.clientes);
-      if (!inmRefEA.find(function(i){ return String(i.id_inmueble) === String(datosEA.id_inmueble); })) {
+      var inmEA = inmRefEA.find(function(i){ return String(i.id_inmueble) === String(datosEA.id_inmueble); });
+      if (!inmEA) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datosEA.id_inmueble + '" no existe' });
+      }
+      if (String(inmEA.estado || '').toLowerCase() === 'inactivo') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El inmueble "' + datosEA.id_inmueble + '" está inactivo. Reactívelo antes de editar el negocio.' });
       }
       // Duplicado: mismo inmueble + mes + año, excluyendo este mismo arriendo
       var dupEA = leerHoja(HOJAS.arriendos).find(function(a){
@@ -2541,9 +2588,14 @@ function doPost(e) {
       }
       var inmRefEV = leerHoja(HOJAS.inmuebles);
       var cliRefEV = leerHoja(HOJAS.clientes);
-      if (!inmRefEV.find(function(i){ return String(i.id_inmueble) === String(datosEV.id_inmueble); })) {
+      var inmEV = inmRefEV.find(function(i){ return String(i.id_inmueble) === String(datosEV.id_inmueble); });
+      if (!inmEV) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Inmueble "' + datosEV.id_inmueble + '" no existe' });
+      }
+      if (String(inmEV.estado || '').toLowerCase() === 'inactivo') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'El inmueble "' + datosEV.id_inmueble + '" está inactivo. Reactívelo antes de editar el negocio.' });
       }
 
       // Validaciones (sin escribir todavía)

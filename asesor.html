@@ -377,7 +377,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
       </div>
     </div>
     <div class="fcard-ft">
-      <button class="btn btn-limpiar" onclick="resetArriendo()">Limpiar</button>
+      <button class="btn btn-limpiar" id="btnLimpiarArr" onclick="resetArriendo()">Limpiar</button>
       <button class="btn btn-guardar" id="btnGuardarArr" onclick="guardarArriendo()">&#10003; Guardar Arriendo</button>
     </div>
   </div>
@@ -469,7 +469,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
       </div>
     </div>
     <div class="fcard-ft">
-      <button class="btn btn-limpiar" onclick="resetVenta()">Limpiar</button>
+      <button class="btn btn-limpiar" id="btnLimpiarVnt" onclick="resetVenta()">Limpiar</button>
       <button class="btn btn-guardar" id="btnGuardarVnt" onclick="guardarVenta()">&#10003; Guardar Venta</button>
     </div>
   </div>
@@ -1421,8 +1421,13 @@ async function apiGet(params){
   params = _inyectarSesion(params);
   if (_IS_GAS) return _gasCall('apiGet', params);
   if(!SCRIPT_URL){toast('Configure SCRIPT_URL en el código','er');return null}
-  const url=SCRIPT_URL+'?'+new URLSearchParams(params).toString();
-  const r=await fetch(url);
+  // Enviar por POST (en el cuerpo), NO por query string, para que la contraseña no quede
+  // en la URL ni en logs de navegador/servidor/proxy. El backend delega estas lecturas a dispatchGet.
+  const r=await fetch(SCRIPT_URL,{
+    method:'POST',
+    body:JSON.stringify(params),
+    headers:{'Content-Type':'text/plain'}
+  });
   if(!r.ok) throw new Error('HTTP '+r.status);
   return await r.json();
 }
@@ -1538,9 +1543,39 @@ async function cargarCatalogos(){
         const a=String(t.activo||'').toUpperCase();
         return a==='' || a==='TRUE' || a==='SI' || a==='S\u00cd' || a==='1' || t.activo===true;
       });
+      ocultarBannerCatalogos();
       prepararFormularios();
+      return true;
     }
-  }catch(e){toast('Error cargando cat\u00e1logos','er')}
+    throw new Error((r&&r.error)||'Respuesta inv\u00e1lida del servidor');
+  }catch(e){
+    // No dejar la app a medias en silencio: avisar y ofrecer reintentar.
+    mostrarBannerCatalogos(e.message);
+    return false;
+  }
+}
+// Banner fijo cuando los cat\u00e1logos no cargan: sin estos datos los formularios no sirven.
+function mostrarBannerCatalogos(msg){
+  let b=document.getElementById('catalogosBanner');
+  if(!b){
+    b=document.createElement('div');
+    b.id='catalogosBanner';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b91c1c;color:#fff;padding:12px 16px;display:flex;gap:12px;align-items:center;justify-content:center;font-size:14px;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+    document.body.appendChild(b);
+  }
+  b.innerHTML='';
+  const span=document.createElement('span');
+  span.textContent='No se pudieron cargar los datos (inmuebles, clientes, etc.). Los formularios no funcionar\u00e1n bien.'+(msg?(' ['+msg+']'):'');
+  const btn=document.createElement('button');
+  btn.textContent='Reintentar';
+  btn.style.cssText='background:#fff;color:#b91c1c;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer;flex:0 0 auto';
+  btn.onclick=function(){ btn.textContent='Cargando...'; btn.disabled=true; cargarCatalogos(); };
+  b.appendChild(span); b.appendChild(btn);
+  b.style.display='flex';
+}
+function ocultarBannerCatalogos(){
+  const b=document.getElementById('catalogosBanner');
+  if(b) b.style.display='none';
 }
 
 // ===== NAVEGACIÓN =====
@@ -1576,8 +1611,12 @@ document.getElementById('menuBtn').addEventListener('click',()=>document.getElem
 function prepararFormularios(){
   // Salir de modo edición: por defecto los formularios son para REGISTRO nuevo.
   // (editarNegocio vuelve a activar el modo edición justo después de llamar a esta función.)
+  const eraEdicion = !!editandoNeg;
   editandoNeg = null;
   restaurarBotonesRegistro();
+  // Si veníamos de una edición a medias, limpiar TODO el formulario (montos, comisiones,
+  // pagos) para no dejar datos viejos pegados que el usuario podría guardar por error.
+  if (eraEdicion) { resetArriendo(); resetVenta(); }
   // Meses
   ['ar_mes','v_mes'].forEach(id=>fillSel(id,CAT.meses,'-- Mes --'));
   // Inmuebles
@@ -1685,9 +1724,11 @@ function actualizarSumaPartes(tipo, rol){
     tag.className = 'partes-sum';
     list.parentElement.appendChild(tag);
   }
-  const ok = Math.abs(suma - 100) < 0.01;
+  // Misma tolerancia que la validaci\u00f3n al guardar (\u00b10.5%) para que el aviso visual
+  // no marque "mal" un 99.99% que el sistema s\u00ed acepta.
+  const ok = Math.abs(suma - 100) <= 0.5;
   tag.className = 'partes-sum ' + (ok ? 'ok' : 'bad');
-  tag.textContent = 'Suma: ' + suma.toFixed(2) + '%' + (ok ? ' \u2713' : ' (debe ser 100)');
+  tag.textContent = 'Suma: ' + suma.toFixed(2) + '%' + (ok ? ' \u2713' : ' (debe sumar 100)');
 }
 
 function recolectarPartes(tipo){
@@ -2342,7 +2383,7 @@ function buscarInmuebleVivo(){
   const matches=(inmuebles||[]).filter(im=>{
     const nm=normalizarTexto(im.nombre);
     const cod=String(im.codigo_plataforma||'').trim();
-    const matchNombre = qNombre==='' || nm.includes(qNombre) || (cod && cod===qNombre);
+    const matchNombre = qNombre==='' || nm.includes(qNombre) || (cod && cod===qNombre) || normalizarTexto(im.id_inmueble)===qNombre;
     const matchCiudad = !qCiudad || (im.ciudad||'')===qCiudad;
     return matchNombre && matchCiudad;
   });
@@ -2834,28 +2875,48 @@ function renderGestion(){
   cont.innerHTML=html;
 }
 
+// Valida que una cadena sea una fecha real en formato YYYY-MM-DD.
+function fechaISOValida(s){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const p = s.split('-').map(Number);
+  const dt = new Date(p[0], p[1]-1, p[2]);
+  return dt.getFullYear()===p[0] && dt.getMonth()===p[1]-1 && dt.getDate()===p[2];
+}
+// Refresca la vista de negocios que el usuario est\u00e1 mirando (Gesti\u00f3n o Mis Negocios).
+function refrescarVistaNegocios(){
+  const g = document.getElementById('sec-gestion');
+  if (g && g.classList.contains('show')) cargarGestion(); else cargarMisNegocios();
+}
+
 async function editarCobro(idCobro, btn) {
   const estado = prompt('Estado del cobro (COBRADO, NO_COBRADO o CANCELADO):');
   if (estado === null) return;
   const estadoU = String(estado).trim().toUpperCase();
-  if (!['COBRADO','NO_COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido','er'); return; }
+  if (!['COBRADO','NO_COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido. Usa COBRADO, NO_COBRADO o CANCELADO.','er'); return; }
   let fecha = null;
   if (estadoU === 'COBRADO' || estadoU === '') {
     fecha = prompt('Fecha de pago (YYYY-MM-DD, dejar vac\u00edo para no cambiar):');
     if (fecha === null) return;
+    fecha = fecha.trim();
+    if (fecha && !fechaISOValida(fecha)) { toast('Fecha inv\u00e1lida. Usa el formato YYYY-MM-DD (ej: 2026-03-15).','er'); return; }
   }
   const valorStr = prompt('Valor cobrado (dejar vac\u00edo para no cambiar):');
   if (valorStr === null) return;
+  let valor = null;
+  if (valorStr.trim() !== '') {
+    valor = moneyToNum(valorStr);
+    if (!(valor > 0)) { toast('El valor cobrado debe ser un n\u00famero mayor a 0.','er'); return; }
+  }
   const obs = prompt('Observaci\u00f3n (dejar vac\u00edo para no cambiar):');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
     const datos = { action:'actualizar_cobro_arriendo', id_cobro: idCobro, id_asesor: asesorActual.id_asesor };
     if (estadoU) datos.estado = estadoU;
     if (fecha) datos.fecha_pago = fecha;
-    if (valorStr) datos.valor_cobrado = Number(String(valorStr).replace(/\./g,'').replace(',','.')) || 0;
-    if (obs !== null && obs !== '') datos.observacion = obs;
+    if (valor !== null) datos.valor_cobrado = valor;
+    if (obs !== null && obs.trim() !== '') datos.observacion = obs;
     const r = await apiPost(datos);
-    if (r && r.ok) { toast('Cobro actualizado'); cargarMisNegocios(); }
+    if (r && r.ok) { toast('Cobro actualizado'); refrescarVistaNegocios(); }
     else { toast(r?.error || 'Error al actualizar','er'); }
   } catch (e) { toast('Error: ' + e.message,'er'); }
   btn.disabled = false; btn.textContent = 'Editar';
@@ -2886,22 +2947,30 @@ async function liquidarBonificaciones() {
 }
 
 async function editarPago(idPago, idVenta, btn) {
-  const fecha = prompt('Nueva fecha de pago (YYYY-MM-DD):');
+  const fecha = prompt('Nueva fecha de pago (YYYY-MM-DD, dejar vacío para no cambiar):');
   if (fecha === null) return;
-  const valorStr = prompt('Nuevo monto del pago del inmueble ($):');
+  const fechaT = fecha.trim();
+  if (fechaT && !fechaISOValida(fechaT)) { toast('Fecha inválida. Usa el formato YYYY-MM-DD (ej: 2026-03-15).','er'); return; }
+  const valorStr = prompt('Nuevo monto del pago del inmueble ($, dejar vacío para no cambiar):');
   if (valorStr === null) return;
+  let valor = null;
+  if (valorStr.trim() !== '') {
+    valor = moneyToNum(valorStr);
+    if (!(valor > 0)) { toast('El monto del pago debe ser un número mayor a 0.','er'); return; }
+  }
+  if (!fechaT && valor === null) { toast('No cambiaste nada (fecha y monto vacíos).','er'); return; }
   const obs = prompt('Observación (dejar vacío para no cambiar):');
 
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
     const datos = { action: 'actualizar_pago', id_pago: idPago, id_asesor: asesorActual.id_asesor };
-    if (fecha) datos.fecha_pago = fecha;
-    if (valorStr) datos.valor_pago = Number(valorStr.replace(/\./g,'').replace(',','.')) || 0;
-    if (obs !== null && obs !== '') datos.observacion = obs;
+    if (fechaT) datos.fecha_pago = fechaT;
+    if (valor !== null) datos.valor_pago = valor;
+    if (obs !== null && obs.trim() !== '') datos.observacion = obs;
     const r = await apiPost(datos);
     if (r && r.ok) {
       toast('Pago actualizado');
-      cargarMisNegocios();
+      refrescarVistaNegocios();
     } else { toast(r?.error || 'Error al actualizar', 'er'); }
   } catch (e) { toast('Error: ' + e.message, 'er'); }
   btn.disabled = false; btn.textContent = 'Editar';
@@ -2915,7 +2984,7 @@ async function cancelarVenta(idVenta, btn) {
     const r = await apiPost({ action: 'cancelar_venta', id_venta: idVenta, id_asesor: asesorActual.id_asesor });
     if (r && r.ok) {
       toast('Venta cancelada');
-      cargarMisNegocios();
+      refrescarVistaNegocios();
     } else { toast(r?.error || 'Error al cancelar', 'er'); }
   } catch (e) { toast('Error: ' + e.message, 'er'); }
   btn.disabled = false; btn.textContent = 'Cancelar venta';
@@ -2929,7 +2998,7 @@ async function cancelarArriendo(idArriendo, btn) {
     const r = await apiPost({ action: 'cancelar_arriendo', id_arriendo: idArriendo, id_asesor: asesorActual.id_asesor });
     if (r && r.ok) {
       toast(r.mensaje || 'Arriendo cancelado');
-      cargarMisNegocios();
+      refrescarVistaNegocios();
     } else { toast(r?.error || 'Error al cancelar', 'er'); }
   } catch (e) { toast('Error: ' + e.message, 'er'); }
   btn.disabled = false; btn.textContent = 'Cancelar arriendo';
@@ -2966,6 +3035,8 @@ function restaurarBotonesRegistro(){
   const bv=document.getElementById('btnGuardarVnt'); if(bv){bv.textContent='✓ Guardar Venta';bv.disabled=false;}
   const ha=document.querySelector('#sec-arriendo .fcard-hd h3'); if(ha)ha.textContent='Registrar nuevo arriendo';
   const hv=document.querySelector('#sec-venta .fcard-hd h3'); if(hv)hv.textContent='Registrar nueva venta';
+  const la=document.getElementById('btnLimpiarArr'); if(la){la.textContent='Limpiar';la.onclick=function(){resetArriendo();};}
+  const lv=document.getElementById('btnLimpiarVnt'); if(lv){lv.textContent='Limpiar';lv.onclick=function(){resetVenta();};}
 }
 
 function marcarModoEdicion(tipo,id){
@@ -2973,6 +3044,9 @@ function marcarModoEdicion(tipo,id){
   if(btn)btn.textContent='✓ Guardar cambios ('+id+')';
   const hd=document.querySelector('#sec-'+(tipo==='arr'?'arriendo':'venta')+' .fcard-hd h3');
   if(hd)hd.textContent='Editar '+(tipo==='arr'?'arriendo':'venta')+' '+id;
+  // El botón "Limpiar" pasa a "Cancelar edición" para salir del modo edición sin guardar.
+  const lim=document.getElementById(tipo==='arr'?'btnLimpiarArr':'btnLimpiarVnt');
+  if(lim){lim.textContent='✕ Cancelar edición';lim.onclick=function(){finalizarEdicion(tipo);};}
 }
 
 function finalizarEdicion(tipo){
@@ -3390,8 +3464,37 @@ function makeSearchable(selectEl) {
     dropdown.classList.add('open');
   });
 
+  // Al salir del campo, resolver lo que el usuario escribió contra las opciones.
+  // Evita el caso típico: teclea un nombre, NO hace clic en la lista, y el <select>
+  // queda vacío → al guardar sale "Falta escoger ...". Si el texto coincide (exacto o
+  // de forma única) se autoselecciona; si no coincide con nada, se limpia y se avisa.
+  function resolverSeleccionSS() {
+    const txt = (input.value || '').trim();
+    if (selectEl.selectedIndex > 0 && selectEl.options[selectEl.selectedIndex].text === txt) {
+      input.style.borderColor = ''; return;
+    }
+    if (txt === '') { selectEl.selectedIndex = 0; input.style.borderColor = ''; return; }
+    const lower = txt.toLowerCase();
+    let exact = -1; const matches = [];
+    for (let i = 1; i < selectEl.options.length; i++) {
+      const t = selectEl.options[i].text.toLowerCase();
+      if (t === lower) { exact = i; break; }
+      if (t.indexOf(lower) !== -1) matches.push(i);
+    }
+    const idx = exact !== -1 ? exact : (matches.length === 1 ? matches[0] : -1);
+    if (idx !== -1) {
+      selectEl.selectedIndex = idx;
+      input.value = selectEl.options[idx].text;
+      input.style.borderColor = '';
+      selectEl.dispatchEvent(new Event('change'));
+    } else {
+      selectEl.selectedIndex = 0;
+      input.style.borderColor = '#e74c3c';
+      toast('"' + txt + '" no está en la lista. Escógelo de las opciones.', 'er');
+    }
+  }
   input.addEventListener('blur', function() {
-    setTimeout(() => dropdown.classList.remove('open'), 150);
+    setTimeout(() => { dropdown.classList.remove('open'); resolverSeleccionSS(); }, 150);
   });
 
   // Sync: when select value changes programmatically
