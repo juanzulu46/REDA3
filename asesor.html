@@ -1534,11 +1534,12 @@ async function cargarCatalogos(){
   try{
     const r=await apiGet({action:'catalogos'});
     if(r&&r.ok){
-      inmuebles=r.inmuebles||[];
-      clientes=r.clientes||[];
-      oficinas=r.oficinas||[];
-      origenes=r.origenes||[];
-      zonas=r.zonas||[];
+      // Invertir: los registros más recientes (últimas filas de la hoja) quedan de primeros en los desplegables.
+      inmuebles=(r.inmuebles||[]).reverse();
+      clientes=(r.clientes||[]).reverse();
+      oficinas=(r.oficinas||[]).reverse();
+      origenes=(r.origenes||[]).reverse();
+      zonas=(r.zonas||[]).reverse();
       tiposAccion=(r.tipos_accion||[]).filter(t=>{
         const a=String(t.activo||'').toUpperCase();
         return a==='' || a==='TRUE' || a==='SI' || a==='S\u00cd' || a==='1' || t.activo===true;
@@ -2264,7 +2265,7 @@ async function guardarInmueble() {
       }
     });
     if (r && r.ok) {
-      inmuebles.push({ id_inmueble: r.id, nombre, ciudad, zona, tipo, residencial_comercial: rc, estado: 'Disponible' });
+      inmuebles.unshift({ id_inmueble: r.id, nombre, ciudad, zona, tipo, residencial_comercial: rc, estado: 'Disponible' }); // unshift: el más reciente arriba en los desplegables
       ['ar_inmueble', 'v_inmueble'].forEach(id => { fillSelectInmuebles(id, '-- Escoja el inmueble --'); refreshSearchable(id); });
       document.getElementById('okInmMsg').textContent = r.id + ' \u2014 ' + nombre;
       document.getElementById('okInm').classList.add('show');
@@ -2293,7 +2294,7 @@ async function guardarCliente() {
       datos: { nombre, telefono: document.getElementById('c_tel').value || '', email: document.getElementById('c_email').value || '' }
     });
     if (r && r.ok) {
-      clientes.push({ id_cliente: r.id, nombre, telefono: '', email: '', activo: true });
+      clientes.unshift({ id_cliente: r.id, nombre, telefono: '', email: '', activo: true }); // unshift: el más reciente arriba en los desplegables
       // Refrescar todos los selects dinámicos de partes existentes
       document.querySelectorAll('.parte-cli').forEach(sel => {
         const prev = sel.value;
@@ -2582,24 +2583,7 @@ function renderMisNegocios(){
       const partesArr = (r.partes||[]).filter(p=>p.id_negocio===a.id_arriendo);
       const arrendadores = partesArr.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
       const arrendatarios = partesArr.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
-      const cobrosArr=(r.cobros_arriendo||[]).filter(c=>c.id_arriendo===a.id_arriendo)
-        .sort((x,y)=>(Number(x['año_cobro'])||0)*12+(Number(x.mes_cobro)||0)-((Number(y['año_cobro'])||0)*12+(Number(y.mes_cobro)||0)));
       const mesesC=parseInt(a.meses_contrato,10)||0;
-      const esGerenteArr=['gerente','directora'].includes(String(asesorActual.rol||'').toLowerCase());
-      let cobrosHTML='';
-      if(cobrosArr.length>0){
-        cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
-        cobrosArr.forEach(c=>{
-          const est=String(c.estado||'COBRADO').toUpperCase();
-          const colorE=est==='COBRADO'?'#10b981':est==='NO_COBRADO'?'#ef4444':est==='CANCELADO'?'#888':'#f59e0b';
-          const editBtn=esGerenteArr?`<button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>`:'';
-          cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
-            <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
-            ${editBtn}
-          </div>`;
-        });
-        cobrosHTML+='</div>';
-      }
       const canceladaArr=String(a.estado_arriendo||'').toUpperCase()==='CANCELADO';
       const estadoArrHdr=canceladaArr?'<span style="margin-left:auto;font-weight:700;font-size:11px;color:#888">CANCELADO</span>':'';
       const cardStyleArr=canceladaArr?'opacity:0.55;background:#f5f5f5':'';
@@ -2614,7 +2598,6 @@ function renderMisNegocios(){
           <div><strong>Mi punta:</strong> ${puntas}</div>
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
-        ${cobrosHTML}
         ${!canceladaArr?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-cc" title="Generar PDF de cobro de la comisi&oacute;n por este arriendo" onclick="imprimirCuentaCobro(\'arriendo\',\''+a.id_arriendo+'\',this)">Cuenta de cobro del arriendo</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar arriendo</button></div>':''}
       </div>`;
     });
@@ -2781,33 +2764,16 @@ function renderGestion(){
 
   // Renderizar arriendos primero
   arriendosFilt.forEach(a=>{
-    const cobrosA=(r.cobros_arriendo||[]).filter(c=>c.id_arriendo===a.id_arriendo)
-      .sort((x,y)=>(Number(x['año_cobro'])||0)*12+(Number(x.mes_cobro)||0)-((Number(y['año_cobro'])||0)*12+(Number(y.mes_cobro)||0)));
     const mesesA=parseInt(a.meses_contrato,10)||0;
     const asesoresArr=r.comisiones.filter(c=>c.id_negocio===a.id_arriendo).map(c=>nomAse(c.id_asesor)+' ('+c.punta+')').join(', ');
     const partesA=(r.partes||[]).filter(p=>p.id_negocio===a.id_arriendo);
     const arrendadores=partesA.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)).join(', ')||'&mdash;';
     const arrendatarios=partesA.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)).join(', ')||'&mdash;';
-    const totalCobrado=cobrosA.filter(c=>String(c.estado).toUpperCase()==='COBRADO').reduce((s,c)=>s+numVal(c.valor_cobrado),0);
-    const totalProyectado=cobrosA.reduce((s,c)=>s+numVal(c.valor_cobrado),0);
-    let cobrosHTML='';
-    if(cobrosA.length>0){
-      cobrosHTML='<div style="padding:8px 16px;border-top:1px solid #eee"><strong style="font-size:12px;color:#555">Cobros mensuales:</strong>';
-      cobrosA.forEach(c=>{
-        const est=String(c.estado||'COBRADO').toUpperCase();
-        const colorE=est==='COBRADO'?'#10b981':est==='NO_COBRADO'?'#ef4444':est==='CANCELADO'?'#888':'#f59e0b';
-        cobrosHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px dashed #eee">
-          <span>${nomMes(c.mes_cobro)} ${c['año_cobro']||''} &mdash; ${fmtP(c.valor_cobrado)} <span style="color:${colorE};font-weight:600">${est}</span>${c.observacion?' &middot; <em>'+c.observacion+'</em>':''}</span>
-          <button class="btn btn-cc" style="font-size:10px;padding:3px 8px;background:#f59e0b" onclick="editarCobro('${c.id_cobro}',this)">Editar</button>
-        </div>`;
-      });
-      cobrosHTML+='</div>';
-    }
     const canceladaArrG=String(a.estado_arriendo||'').toUpperCase()==='CANCELADO';
     const cardStyleArrG=canceladaArrG?'opacity:0.55;background:#f5f5f5':'';
     const headerEstadoG=canceladaArrG
       ? '<span style="margin-left:auto;font-weight:700;font-size:11px;color:#888">CANCELADO</span>'
-      : `<span style="margin-left:auto;font-weight:700;font-size:11px;color:#10b981">${fmtP(totalCobrado)} / ${fmtP(totalProyectado)}</span>`;
+      : '';
     html+=`<div class="neg-card arriendo" style="${cardStyleArrG}">
       <div class="neg-top">
         <span class="neg-id">${a.id_arriendo}</span>
@@ -2823,7 +2789,6 @@ function renderGestion(){
         <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
         <div><strong>Asesores:</strong> ${asesoresArr}</div>
       </div>
-      ${cobrosHTML}
       ${!canceladaArrG?'<div class="neg-actions">'+
         '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button>'+
         '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar</button>'+
@@ -2886,40 +2851,6 @@ function fechaISOValida(s){
 function refrescarVistaNegocios(){
   const g = document.getElementById('sec-gestion');
   if (g && g.classList.contains('show')) cargarGestion(); else cargarMisNegocios();
-}
-
-async function editarCobro(idCobro, btn) {
-  const estado = prompt('Estado del cobro (COBRADO, NO_COBRADO o CANCELADO):');
-  if (estado === null) return;
-  const estadoU = String(estado).trim().toUpperCase();
-  if (!['COBRADO','NO_COBRADO','CANCELADO',''].includes(estadoU)) { toast('Estado inv\u00e1lido. Usa COBRADO, NO_COBRADO o CANCELADO.','er'); return; }
-  let fecha = null;
-  if (estadoU === 'COBRADO' || estadoU === '') {
-    fecha = prompt('Fecha de pago (YYYY-MM-DD, dejar vac\u00edo para no cambiar):');
-    if (fecha === null) return;
-    fecha = fecha.trim();
-    if (fecha && !fechaISOValida(fecha)) { toast('Fecha inv\u00e1lida. Usa el formato YYYY-MM-DD (ej: 2026-03-15).','er'); return; }
-  }
-  const valorStr = prompt('Valor cobrado (dejar vac\u00edo para no cambiar):');
-  if (valorStr === null) return;
-  let valor = null;
-  if (valorStr.trim() !== '') {
-    valor = moneyToNum(valorStr);
-    if (!(valor > 0)) { toast('El valor cobrado debe ser un n\u00famero mayor a 0.','er'); return; }
-  }
-  const obs = prompt('Observaci\u00f3n (dejar vac\u00edo para no cambiar):');
-  btn.disabled = true; btn.textContent = 'Guardando...';
-  try {
-    const datos = { action:'actualizar_cobro_arriendo', id_cobro: idCobro, id_asesor: asesorActual.id_asesor };
-    if (estadoU) datos.estado = estadoU;
-    if (fecha) datos.fecha_pago = fecha;
-    if (valor !== null) datos.valor_cobrado = valor;
-    if (obs !== null && obs.trim() !== '') datos.observacion = obs;
-    const r = await apiPost(datos);
-    if (r && r.ok) { toast('Cobro actualizado'); refrescarVistaNegocios(); }
-    else { toast(r?.error || 'Error al actualizar','er'); }
-  } catch (e) { toast('Error: ' + e.message,'er'); }
-  btn.disabled = false; btn.textContent = 'Editar';
 }
 
 async function liquidarBonificaciones() {
