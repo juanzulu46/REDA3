@@ -3234,7 +3234,7 @@ async function cargarBonificaciones(mes) {
       </div>
       <div class="bon-grid">
         <div class="bon-stat"><div class="bs-label">Comisi&oacute;n generada a oficina</div><div class="bs-val">${fmtP(r.comision_generada_oficina)}</div></div>
-        <div class="bon-stat"><div class="bs-label">Acciones comerciales</div><div class="bs-val">${r.num_acciones}</div></div>
+        <div class="bon-stat"><div class="bs-label">Puntaje de acciones</div><div class="bs-val">${r.num_acciones}</div></div>
         <div class="bon-stat v"><div class="bs-label">Total recibido (comisiones)</div><div class="bs-val">${fmtP(r.total_recibido)}</div></div>
         <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n fija${r.es_medio?' (1/2)':''}</div><div class="bs-val">${fmtP(r.bonificacion_fija)}</div></div>
         <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n variable (${(r.pct_variable*100).toFixed(0)}%)</div><div class="bs-val">${fmtP(r.bonificacion_variable)}</div></div>
@@ -3263,7 +3263,7 @@ function prepararFormAccion() {
   // Llenar tipos de acción dinámicamente desde el catálogo
   const sel = document.getElementById('ac_tipo');
   sel.innerHTML = '<option value="">-- Tipo --</option>' +
-    tiposAccion.map(t => '<option value="'+t.nombre+'">'+t.nombre+'</option>').join('');
+    tiposAccion.map(t => '<option value="'+t.nombre+'">'+t.nombre+' ('+(parseFloat(String(t.puntaje).replace(',','.'))||1)+' pts)</option>').join('');
   if (!sel._ssInit) makeSearchableById('ac_tipo');
   else refreshSearchable('ac_tipo');
 }

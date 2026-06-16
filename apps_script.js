@@ -89,7 +89,7 @@ const COLUMNAS = {
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
   acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
-  tipos_accion: ['id_tipo', 'nombre', 'activo'],
+  tipos_accion: ['id_tipo', 'nombre', 'activo', 'puntaje'],
   cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion'],
   bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'fecha', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en', 'cobrada_en']
 };
@@ -234,6 +234,35 @@ function mesesContratoDe(arriendo) {
   return (pct > 0 && pct <= 0.10) ? 12 : 1;
 }
 
+// Normaliza un nombre para comparar tipos de acción sin importar mayúsculas,
+// acentos ni espacios repetidos (ej. "Open  HOUSE" === "open house").
+function normalizarNombre(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Construye un mapa { nombreNormalizado: puntaje } a partir de las filas de TipoAccion.
+// Puntaje vacío o no numérico → 1. Si no se pasan tipos (undefined) → mapa vacío
+// (comportamiento legacy: cada acción vale 1 vía el default de puntajeDeTipo).
+function construirMapaPuntajesAccion(tipos_accion) {
+  var mapa = {};
+  if (!tipos_accion || !tipos_accion.length) return mapa;
+  tipos_accion.forEach(function(t) {
+    var p = numVal(t.puntaje);
+    mapa[normalizarNombre(t.nombre)] = (p > 0) ? p : 1;
+  });
+  return mapa;
+}
+
+// Puntaje de una acción según su tipo. Default 1 si el tipo no está en el mapa.
+function puntajeDeTipo(tipo, mapa) {
+  var p = mapa[normalizarNombre(tipo)];
+  return (typeof p === 'number' && p > 0) ? p : 1;
+}
+
 // Genera N filas en CobrosArriendo desde el mes de firma del arriendo hacia adelante
 // (N = meses_contrato). Cada fila nace COBRADO con fecha_pago = día 1 del mes_cobro.
 // Gerencia puede inhabilitar (NO_COBRADO) o cancelar desde su perfil si algún mes no se cobra.
@@ -300,6 +329,80 @@ function setupCobrosArriendo() {
   actualizarFila(HOJAS.bonificaciones, 'categoria', 'PIEDRA', { min_comision_oficina: 3260417 });
   resultado.piedra_actualizada = true;
 
+  return resultado;
+}
+
+// Puntajes oficiales por tipo de acción comercial (catálogo fijo de 11 tipos).
+// Fuente de verdad del seed; luego es editable desde la hoja TipoAccion.
+var PUNTAJES_ACCION = [
+  { nombre: 'Videos en redes sociales solo',     puntaje: 2 },
+  { nombre: 'Videos redes sociales compartido',  puntaje: 1 },
+  { nombre: 'Estados whatsapp',                   puntaje: 1 },
+  { nombre: 'Estados en instagram',               puntaje: 1 },
+  { nombre: 'Open house',                         puntaje: 2 },
+  { nombre: 'Marketplace',                        puntaje: 1 },
+  { nombre: 'Trabajo colegaje',                   puntaje: 1 },
+  { nombre: 'Gestion en porterias',               puntaje: 1 },
+  { nombre: 'Tik Tok',                            puntaje: 1 },
+  { nombre: 'Repost de estados en instagram',     puntaje: 0.5 },
+  { nombre: 'Repost en estados de whatsapp',      puntaje: 0.5 }
+];
+
+// Fija el catálogo TipoAccion a los 11 tipos oficiales con su puntaje.
+// - Agrega la columna 'puntaje' si falta.
+// - Por cada tipo del spec: lo actualiza (activo + puntaje) si ya existe (match por
+//   nombre normalizado), o lo crea si falta.
+// - Desactiva (activo=FALSE) cualquier tipo existente que no esté en el spec.
+// Idempotente. Se ejecuta una vez vía endpoint setup_puntajes_accion.
+function setupPuntajesAccion() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var resultado = { columna_agregada: false, creados: [], actualizados: [], desactivados: [] };
+
+  var hoja = ss.getSheetByName(HOJAS.tipos_accion);
+  if (!hoja) throw new Error('Hoja ' + HOJAS.tipos_accion + ' no existe');
+
+  // 1) Asegurar columna 'puntaje'
+  var headers = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
+  if (headers.indexOf('puntaje') === -1) {
+    hoja.getRange(1, headers.length + 1).setValue('puntaje').setFontWeight('bold');
+    resultado.columna_agregada = true;
+  }
+
+  // 2) Upsert de los 11 tipos del spec
+  var existentes = leerHoja(HOJAS.tipos_accion);
+  // Derivar el prefijo de id de las filas actuales (ej. 'TIP-001' → 'TIP'); fallback 'TIP'.
+  var prefijoTipo = 'TIP';
+  for (var pi = 0; pi < existentes.length; pi++) {
+    var partes = String(existentes[pi].id_tipo || '').split('-');
+    if (partes.length >= 2 && partes[0]) { prefijoTipo = partes[0]; break; }
+  }
+  var specNorm = {};
+  PUNTAJES_ACCION.forEach(function(s) {
+    var norm = normalizarNombre(s.nombre);
+    specNorm[norm] = true;
+    var fila = existentes.find(function(t) { return normalizarNombre(t.nombre) === norm; });
+    if (fila) {
+      actualizarFila(HOJAS.tipos_accion, 'id_tipo', fila.id_tipo, { activo: 'SI', puntaje: s.puntaje });
+      resultado.actualizados.push(s.nombre);
+    } else {
+      agregarFila(HOJAS.tipos_accion, COLUMNAS.tipos_accion, {
+        id_tipo: siguienteId(HOJAS.tipos_accion, prefijoTipo),
+        nombre: s.nombre, activo: 'SI', puntaje: s.puntaje
+      });
+      resultado.creados.push(s.nombre);
+    }
+  });
+
+  // 3) Desactivar tipos existentes que no estén en el spec
+  existentes.forEach(function(t) {
+    if (specNorm[normalizarNombre(t.nombre)]) return;
+    var act = String(t.activo || '').toUpperCase();
+    if (act === 'FALSE' || act === 'NO' || act === '0') return; // ya inactivo
+    actualizarFila(HOJAS.tipos_accion, 'id_tipo', t.id_tipo, { activo: 'FALSE' });
+    resultado.desactivados.push(t.nombre);
+  });
+
+  invalidarCacheHojas([HOJAS.tipos_accion]);
   return resultado;
 }
 
@@ -726,10 +829,14 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
       });
   });
 
-  // Acciones comerciales del mes
-  var numAcciones = acciones.filter(function(ac) {
-    return ac.id_asesor === idAsesor && parseInt(ac.mes, 10) === mes;
-  }).length;
+  // Acciones comerciales del mes: suma ponderada por puntaje de cada tipo
+  // (cada tipo tiene su peso en TipoAccion.puntaje; tipo no encontrado → 1).
+  var mapaPuntajes = construirMapaPuntajesAccion(datos.tipos_accion);
+  var numAcciones = acciones.reduce(function(sum, ac) {
+    if (ac.id_asesor !== idAsesor) return sum;
+    if (parseInt(ac.mes, 10) !== mes) return sum;
+    return sum + puntajeDeTipo(ac.tipo, mapaPuntajes);
+  }, 0);
 
   // Filtrar escalones vigentes para el mes consultado y ordenar por 'orden' asc
   // (asume año actual; vigente_desde/vigente_hasta son strings YYYY-MM-DD)
@@ -824,6 +931,7 @@ function liquidarMes(anio, mes) {
     pagos: leerHoja(HOJAS.pagos),
     comisiones: leerHoja(HOJAS.comisiones),
     acciones: leerHoja(HOJAS.acciones),
+    tipos_accion: leerHoja(HOJAS.tipos_accion),
     bonificaciones: leerHoja(HOJAS.bonificaciones)
   };
   var asesores = leerHoja(HOJAS.asesores).filter(function(a){
@@ -1160,6 +1268,7 @@ function dispatchGet(params) {
         pagos: leerHojaCache(HOJAS.pagos),
         comisiones: leerHojaCache(HOJAS.comisiones),
         acciones: leerHojaCache(HOJAS.acciones),
+        tipos_accion: leerHojaCache(HOJAS.tipos_accion),
         bonificaciones: leerHojaCache(HOJAS.bonificaciones)
       };
 
@@ -1755,6 +1864,15 @@ function doPost(e) {
         return jsonResponse({ ok:false, error:'No se puede generar cuenta de cobro: la venta está cancelada' });
       }
 
+      // Origen (para círculo de influencia). Espejo de origenTieneCirculo() del frontend:
+      // un origen tiene círculo cuando circulo === 'con'.
+      var origenes = leerHoja(HOJAS.origen);
+      function origenCirculo(idOrigen){
+        if (!idOrigen) return false;
+        var o = origenes.find(function(x){ return x.id_origen === idOrigen; });
+        return !!(o && (o.circulo === 'con' || o.circulo === true));
+      }
+
       // Sumar comisiones del asesor en este negocio (puede tener varias puntas)
       var comisiones = leerHoja(HOJAS.comisiones);
       var misCom = comisiones.filter(function(c){
@@ -1835,6 +1953,48 @@ function doPost(e) {
         // Anexar al documento el detalle del negocio completo: tabla individual por asesor
         // + total del negocio (todos los participantes). Visible para la dirección comercial.
         var fmtCopCC = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
+
+        // Bloque "DATOS DEL NEGOCIO": réplica del recuadro verde del frontend para que la
+        // dirección comercial vea el negocio completo (valores crudos + calculados). En
+        // cuenta de cobro por pago se muestran los valores TOTALES del negocio, sin prorratear.
+        var ciCapCC = origenCirculo(negocio.origen_captacion);
+        var ciCieCC = origenCirculo(negocio.origen_cierre);
+        var pctNeg  = numVal(negocio.pct_comision_oficina);
+        var rowsDatos = [['DATOS DEL NEGOCIO', '']];
+        if (tipoNeg === 'arriendo') {
+          var canonCC = numVal(negocio.valor_canon);
+          var admonCC = numVal(negocio.administracion);
+          var mesesCC = numVal(negocio.meses_contrato) || 1;
+          var comOfMensual = numVal(negocio.comision_oficina);
+          rowsDatos.push(['Canon', fmtCopCC(canonCC)]);
+          rowsDatos.push(['Administración', fmtCopCC(admonCC)]);
+          rowsDatos.push(['Base mensual (canon + administración)', fmtCopCC(canonCC + admonCC)]);
+          rowsDatos.push(['% comisión oficina', Math.round(pctNeg * 100) + '%']);
+          rowsDatos.push(['Comisión oficina (mensual)', fmtCopCC(comOfMensual)]);
+          rowsDatos.push(['Meses de contrato', String(mesesCC)]);
+          rowsDatos.push(['Ingreso empresa total', fmtCopCC(comOfMensual * mesesCC)]);
+        } else {
+          rowsDatos.push(['Valor del negocio', fmtCopCC(numVal(negocio.valor_base_comision))]);
+          rowsDatos.push(['% comisión oficina', Math.round(pctNeg * 100) + '%']);
+          rowsDatos.push(['Comisión oficina', fmtCopCC(numVal(negocio.comision_oficina))]);
+        }
+        rowsDatos.push(['Círculo de influencia',
+          'Captación: ' + (ciCapCC ? 'Con' : 'Sin') + ' · Cierre: ' + (ciCieCC ? 'Con' : 'Sin')]);
+        // Referidos: sólo si hay nombre o valor, para no ensuciar el PDF en negocios sin referido.
+        var refCapNom = String(negocio.referido_captador || '').trim();
+        var refCapVal = numVal(negocio.valor_ref_captador);
+        if (refCapNom || refCapVal > 0) {
+          rowsDatos.push(['Referido captador', refCapNom + (refCapVal > 0 ? ' — ' + fmtCopCC(refCapVal) : '')]);
+        }
+        var refCerNom = String(negocio.referido_cerrador || '').trim();
+        var refCerVal = numVal(negocio.valor_ref_cerrador);
+        if (refCerNom || refCerVal > 0) {
+          rowsDatos.push(['Referido cerrador', refCerNom + (refCerVal > 0 ? ' — ' + fmtCopCC(refCerVal) : '')]);
+        }
+        docBody.appendParagraph('').setSpacingBefore(12);
+        var tblDatos = docBody.appendTable(rowsDatos);
+        tblDatos.getRow(0).editAsText().setBold(true);
+
         docBody.appendParagraph('').setSpacingBefore(12);
         var hdNeg = docBody.appendParagraph('DETALLE DEL NEGOCIO ' + idNegocio);
         hdNeg.setHeading(DocumentApp.ParagraphHeading.HEADING2);
@@ -1913,6 +2073,7 @@ function doPost(e) {
         pagos: leerHoja(HOJAS.pagos),
         comisiones: leerHoja(HOJAS.comisiones),
         acciones: leerHoja(HOJAS.acciones),
+        tipos_accion: leerHoja(HOJAS.tipos_accion),
         bonificaciones: leerHoja(HOJAS.bonificaciones)
       };
       var actualB = calcularCategoriaMes(idAsesorBon, mesBon, datosBonC);
@@ -2077,7 +2238,7 @@ function doPost(e) {
       var rowsLiq = [
         ['Concepto','Valor'],
         ['Comisión generada a la oficina (total)', fmtCop(actualB.comisionGeneradaOficina)],
-        ['Acciones comerciales del mes', String(actualB.numAcciones)],
+        ['Puntaje de acciones del mes', String(actualB.numAcciones)],
         ['Categoría', actualB.categoria + (actualB.esMedio ? ' (1/2)' : '')],
         ['Vinculación', String(asesorBon.vinculacion || '')],
         ['% Variable aplicado', (pctVarB*100).toFixed(0) + '%'],
@@ -2234,6 +2395,19 @@ function doPost(e) {
       var res = setupCobrosArriendo();
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Setup ejecutado', resultado: res });
+    }
+
+    // --- SETUP PUNTAJES ACCIÓN (one-shot, sólo gerente) ---
+    if (action === 'setup_puntajes_accion') {
+      var idAsesorPA = body.id_asesor;
+      var asesorPA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorPA; });
+      if (!esGestor_(asesorPA)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden ejecutar el setup' });
+      }
+      var resPA = setupPuntajesAccion();
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Catálogo de puntajes actualizado', resultado: resPA });
     }
 
     // --- LIQUIDAR BONIFICACIONES DEL MES (sólo gerente) ---
