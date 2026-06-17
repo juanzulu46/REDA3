@@ -1255,7 +1255,8 @@ const CAT = {
 //             factorArriendo = officePct × 10 si officePct ≤ 20%, sino 1
 //             Ejemplo: canon 2M, oficina 8% → base = 2M × 0.8 = 1.6M
 //                      asesor 15% × 1.6M = 240,000
-//             Pago único el primer mes (con dinero de la empresa)
+//             Administración (oficina ≤ 10%): se prorratea × meses_contrato/12.
+//             Colocación (oficina > 10%): pago único.
 //   VENTA:    base = COMISIÓN OFICINA
 //
 // Comisión asesor = % × base × (participación/100)
@@ -1868,6 +1869,10 @@ function recalcComisiones(tipo) {
   //   venta    → comisión de la oficina
   const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
   const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
+  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
+  // Comisión del asesor en arriendo: si es administración (≤ 10%) se prorratea por meses/12;
+  // si es colocación (> 10%) es pago único (factor 1). En venta no aplica.
+  const factorAsesorMeses = (isArr && officePct > 0 && officePct <= 0.10) ? (mesesContratoArr / 12) : 1;
 
   if (!comisionOficina && !baseAsesor) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
@@ -1905,7 +1910,7 @@ function recalcComisiones(tipo) {
       if (!sel.value) { valSpan.textContent = '$0'; return; }
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(partInput.value) || 0;
-      const bruto = calcComisionAsesor(baseAsesor, vinc, conCirculo, tipoNeg, mercado, punta, participacion);
+      const bruto = calcComisionAsesor(baseAsesor, vinc, conCirculo, tipoNeg, mercado, punta, participacion) * factorAsesorMeses;
       let neto = bruto;
       let refValor = 0;
       if (hayRefPunta) {
@@ -1932,7 +1937,6 @@ function recalcComisiones(tipo) {
 
   // Para arriendos: la empresa cobra comisionOficina × meses_contrato
   // Para ventas: la empresa cobra comisionOficina una vez
-  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
   const ingresoEmpresaTotal = isArr ? (comisionOficina * mesesContratoArr) : comisionOficina;
   const empresaRecibe = ingresoEmpresaTotal - totalBruto - refEmpresa;
 
@@ -1946,7 +1950,7 @@ function recalcComisiones(tipo) {
       : `Base asesor (canon completo)`;
     gridHtml = `
       <div class="com-r-item"><span class="crl">${baseLabel}</span><span class="crv">${fmtP(baseAsesor)}</span></div>
-      <div class="com-r-item"><span class="crl">Asesores (pago &uacute;nico)</span><span class="crv">${fmtP(totalBruto)}</span></div>
+      <div class="com-r-item"><span class="crl">Asesores ${factorAsesorMeses !== 1 ? '(&times; ' + mesesContratoArr + '/12)' : '(pago &uacute;nico)'}</span><span class="crv">${fmtP(totalBruto)}</span></div>
     `;
   } else {
     gridHtml = `
@@ -2028,6 +2032,10 @@ function recolectarComisiones(tipo) {
   const comisionOficina = isArr ? canonTotal * officePct : valorVenta * officePct;
   const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
   const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
+  // Arriendo administración (≤ 10%): comisión del asesor prorrateada por meses/12.
+  // Arriendo colocación (> 10%) y venta: factor 1 (pago único).
+  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
+  const factorAsesorMeses = (isArr && officePct > 0 && officePct <= 0.10) ? (mesesContratoArr / 12) : 1;
   const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
   const tipoNeg = isArr ? 'arriendo' : 'venta';
   const prefix = isArr ? 'ar' : 'v';
@@ -2059,7 +2067,7 @@ function recolectarComisiones(tipo) {
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(row.querySelector('.com-part').value) || 0;
       sumaPartPunta += participacion;
-      const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion);
+      const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion) * factorAsesorMeses;
       let valor = bruto;
       if (hayRef) valor = bruto - (bruto * 0.20 * 0.25);
       result.push({
@@ -2493,6 +2501,10 @@ async function cargarMisNegocios(){
   }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
 }
 
+// Extrae el número final de un ID incremental (ARR-007 -> 7). Sirve para ordenar
+// listas con el último creado de primero.
+function numIdNeg(id){ const m=String(id||'').match(/(\d+)\s*$/); return m?Number(m[1]):0; }
+
 function renderMisNegocios(){
   const cont=document.getElementById('misNegContent');
   const r = misNegociosData;
@@ -2531,6 +2543,10 @@ function renderMisNegocios(){
     arriendosFilt = arriendosFilt.filter(a => Number(a.mes) === fMes);
     ventasFilt = ventasFilt.filter(v => Number(v.mes) === fMes);
   }
+
+  // Último creado primero (ID incremental descendente)
+  arriendosFilt.sort((a,b)=>numIdNeg(b.id_arriendo)-numIdNeg(a.id_arriendo));
+  ventasFilt.sort((a,b)=>numIdNeg(b.id_venta)-numIdNeg(a.id_venta));
 
   // Total comisiones (filtradas)
   const negociosFiltradosIds = new Set([...arriendosFilt.map(a=>a.id_arriendo), ...ventasFilt.map(v=>v.id_venta)]);
@@ -2700,13 +2716,21 @@ function renderGestion(){
   const hoyAM=new Date().getFullYear()*12+(new Date().getMonth()+1);
 
   // Filtros
+  const fAnio=Number(document.getElementById('gFiltroAnio')?.value||0);
   const fMes=Number(document.getElementById('gFiltroMes')?.value||0);
   const fAsesor=document.getElementById('gFiltroAsesor')?.value||'';
   const fEstado=document.getElementById('gFiltroEstado')?.value||'';
   const fTipo=document.getElementById('gFiltroTipo')?.value||'';
 
+  // Años disponibles (a partir de todos los negocios)
+  const aniosSet=new Set();
+  (r.arriendos||[]).forEach(a=>{const y=Number(a['año']);if(y)aniosSet.add(y)});
+  (r.ventas||[]).forEach(v=>{const y=Number(v['año']);if(y)aniosSet.add(y)});
+  const aniosDisp=[...aniosSet].sort((a,b)=>b-a);
+
   // Filtrar ventas
   let ventasFilt=r.ventas.slice();
+  if(fAnio)ventasFilt=ventasFilt.filter(v=>Number(v['año'])===fAnio);
   if(fMes)ventasFilt=ventasFilt.filter(v=>Number(v.mes)===fMes);
   if(fEstado==='CANCELADA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()==='CANCELADA');
   else if(fEstado==='ACTIVA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()!=='CANCELADA');
@@ -2718,6 +2742,7 @@ function renderGestion(){
 
   // Filtrar arriendos
   let arriendosFilt=(r.arriendos||[]).slice();
+  if(fAnio)arriendosFilt=arriendosFilt.filter(a=>Number(a['año'])===fAnio);
   if(fMes)arriendosFilt=arriendosFilt.filter(a=>Number(a.mes)===fMes);
   if(fAsesor){
     const idsNegA=new Set(r.comisiones.filter(c=>c.id_asesor===fAsesor).map(c=>c.id_negocio));
@@ -2725,9 +2750,19 @@ function renderGestion(){
   }
   if(fTipo==='venta')arriendosFilt=[];
 
+  // Último creado primero (ID incremental descendente)
+  arriendosFilt.sort((a,b)=>numIdNeg(b.id_arriendo)-numIdNeg(a.id_arriendo));
+  ventasFilt.sort((a,b)=>numIdNeg(b.id_venta)-numIdNeg(a.id_venta));
+
   // Construir filtros HTML
   const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   let html=`<div class="neg-filtros">
+    <div class="neg-filtro-grupo"><label>A&ntilde;o:</label>
+      <select id="gFiltroAnio" onchange="renderGestion()">
+        <option value="0">Todos</option>
+        ${aniosDisp.map(y=>'<option value="'+y+'"'+(y===fAnio?' selected':'')+'>'+y+'</option>').join('')}
+      </select>
+    </div>
     <div class="neg-filtro-grupo"><label>Tipo:</label>
       <select id="gFiltroTipo" onchange="renderGestion()">
         <option value="">Todos</option>
@@ -2754,7 +2789,7 @@ function renderGestion(){
         <option value="CANCELADA"${fEstado==='CANCELADA'?' selected':''}>Canceladas</option>
       </select>
     </div>
-    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';document.getElementById('gFiltroTipo').value='';renderGestion()">Limpiar</button></div>
+    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroAnio').value=0;document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';document.getElementById('gFiltroTipo').value='';renderGestion()">Limpiar</button></div>
   </div>
   <div class="neg-resumen">
     <div class="neg-stat"><div class="ns-val">${arriendosFilt.length}</div><div class="ns-label">Arriendos</div></div>
@@ -2866,9 +2901,12 @@ async function liquidarBonificaciones() {
     const r = await apiPost({ action:'liquidar_bonificaciones', id_asesor: asesorActual.id_asesor, 'año': anio, mes: mes });
     if (r && r.ok) {
       const errs = (r.errores || []).length;
+      const correoTxt = r.correo_enviado
+        ? ' <span style="color:#10b981">· informe enviado a gerencia y dirección comercial</span>'
+        : (r.correo_error ? ' <span style="color:#ef4444">· correo NO enviado: ' + r.correo_error + '</span>' : '');
       status.innerHTML = '<span style="color:#10b981">✓ ' + r.filas_escritas + ' liquidaciones escritas</span>' +
-        (errs ? ' <span style="color:#ef4444">(' + errs + ' errores)</span>' : '');
-      toast('Liquidación completada: ' + r.filas_escritas + ' asesores');
+        (errs ? ' <span style="color:#ef4444">(' + errs + ' errores)</span>' : '') + correoTxt;
+      toast('Liquidación completada: ' + r.filas_escritas + ' asesores' + (r.correo_enviado ? ' · informe enviado' : ''));
     } else {
       status.textContent = r?.error || 'Error';
       toast(r?.error || 'Error al liquidar','er');

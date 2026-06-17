@@ -966,6 +966,7 @@ function liquidarMes(anio, mes) {
 
   var filasEscritas = 0;
   var errores = [];
+  var filasReporte = []; // detalle por asesor para el PDF que se envía por correo
   var ahora = new Date();
 
   asesores.forEach(function(asesor) {
@@ -1023,6 +1024,16 @@ function liquidarMes(anio, mes) {
         calculado_en: ahora
       });
       filasEscritas++;
+      filasReporte.push({
+        nombre: asesor.nombre || asesor.id_asesor,
+        categoria: categoriaLabel,
+        comision_generada: actual.comisionGeneradaOficina,
+        acciones: actual.numAcciones,
+        fijo: fijo,
+        variable: variable,
+        total: fijo + variable,
+        continuidad: continuidadLabel
+      });
     } catch (err) {
       errores.push({ id_asesor: asesor.id_asesor, error: err.message });
     }
@@ -1033,9 +1044,73 @@ function liquidarMes(anio, mes) {
     filas_escritas: filasEscritas,
     asesores_procesados: asesores.length,
     errores: errores,
+    filas_reporte: filasReporte,
     anio: anio,
     mes: mes
   };
+}
+
+// Genera un PDF con la tabla de la liquidación mensual (todos los asesores) y lo envía
+// por correo a gerencia (GERENTE_EMAIL) con copia a la(s) directora(s) comercial(es).
+// `filas` son los objetos acumulados por liquidarMes. Retorna { enviado, total, error }.
+function enviarCorreoLiquidacionMensual_(anio, mes, filas) {
+  if (!filas || filas.length === 0) return { enviado: false, error: 'Sin asesores liquidados' };
+  var mesesEs = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var nombreMes = mesesEs[mes] || String(mes);
+  var titulo = 'Liquidación de bonificaciones - ' + nombreMes + ' ' + anio;
+  var fmtCop = function(n){ return '$' + Number(Math.round(n)).toLocaleString('es-CO'); };
+
+  var doc = DocumentApp.create(titulo);
+  try {
+    var body = doc.getBody();
+    var hEmp = body.appendParagraph(EMPRESA_RAZON_SOCIAL);
+    hEmp.editAsText().setBold(true);
+    var hTit = body.appendParagraph(titulo.toUpperCase());
+    hTit.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+    hTit.editAsText().setBold(true);
+
+    var rows = [['Asesor','Categoría','Com. generada','Acciones','Fijo','Variable','Total','Continuidad']];
+    var totalGeneral = 0;
+    filas.forEach(function(f){
+      totalGeneral += Number(f.total) || 0;
+      rows.push([
+        String(f.nombre || ''),
+        String(f.categoria || ''),
+        fmtCop(f.comision_generada),
+        String(f.acciones),
+        fmtCop(f.fijo),
+        fmtCop(f.variable),
+        fmtCop(f.total),
+        String(f.continuidad || '')
+      ]);
+    });
+    rows.push(['TOTAL','','','','','', fmtCop(totalGeneral), '']);
+    var tbl = body.appendTable(rows);
+    tbl.getRow(0).editAsText().setBold(true);
+    tbl.getRow(rows.length - 1).editAsText().setBold(true);
+    doc.saveAndClose();
+
+    var pdf = DriveApp.getFileById(doc.getId()).getAs('application/pdf').setName(titulo + '.pdf');
+    var asunto = 'Liquidación de bonificaciones ' + nombreMes + ' ' + anio;
+    var cuerpo = 'Adjunto el informe de liquidación de bonificaciones del mes de ' + nombreMes + ' ' + anio + ', ' +
+                 'generado automáticamente por el portal REDA3.\n\n' +
+                 'Asesores liquidados: ' + filas.length + '\n' +
+                 'Total bonificaciones del mes: ' + fmtCop(totalGeneral) + '\n';
+    var opts = { attachments: [pdf] };
+    // Copia a la(s) directora(s) comercial(es), sin duplicar el destinatario principal.
+    var ccList = [];
+    var emailRe = /^[^\s,]+@[^\s,]+\.[^\s,]+$/;
+    emailsDirectora_().forEach(function(em){
+      em = String(em || '').trim();
+      if (em && em !== GERENTE_EMAIL && emailRe.test(em) && ccList.indexOf(em) === -1) ccList.push(em);
+    });
+    if (ccList.length) opts.cc = ccList.join(',');
+    MailApp.sendEmail(GERENTE_EMAIL, asunto, cuerpo, opts);
+    return { enviado: true, total: totalGeneral };
+  } finally {
+    // Borrar el Doc temporal pase lo que pase (el PDF ya quedó adjuntado al correo).
+    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (_) {}
+  }
 }
 
 // Respuesta JSON con CORS
@@ -2423,6 +2498,19 @@ function doPost(e) {
       try {
         var resultadoL = liquidarMes(anioL, mesL);
         invalidarCacheHojas([HOJAS.bonificaciones_mes]);
+        // Enviar el informe del mes por correo a gerencia y dirección comercial.
+        // Un fallo de correo NO revierte la liquidación (ya quedó persistida): se reporta.
+        var correoL = { enviado: false };
+        try {
+          if (resultadoL.filas_escritas > 0) {
+            correoL = enviarCorreoLiquidacionMensual_(resultadoL.anio, resultadoL.mes, resultadoL.filas_reporte || []);
+          }
+        } catch (eMail) {
+          correoL = { enviado: false, error: eMail.message };
+        }
+        resultadoL.correo_enviado = !!correoL.enviado;
+        if (correoL.error) resultadoL.correo_error = correoL.error;
+        delete resultadoL.filas_reporte; // no exponer el detalle crudo al cliente
         lock.releaseLock();
         return jsonResponse(resultadoL);
       } catch (eL) {
