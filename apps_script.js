@@ -241,6 +241,23 @@ function mesesContratoDe(arriendo) {
   return (pct > 0 && pct <= 0.10) ? 12 : 1;
 }
 
+// True si el pago de una venta ya ingresó a la oficina a la fecha `hoy`.
+// Usa fecha_pago; si no parsea, compara año_pago/mes_pago contra el mes actual.
+// Pago sin ninguna fecha → se cuenta como ingresado (criterio indulgente,
+// consistente con el resto del módulo de bonificaciones).
+function pagoYaIngresado_(p, hoy) {
+  if (p.fecha_pago && p.fecha_pago !== '') {
+    var fp = new Date(p.fecha_pago);
+    if (!isNaN(fp.getTime())) return fp <= hoy;
+  }
+  var ap = Number(p['año_pago'] || p['ano_pago']) || 0;
+  var mp = Number(p.mes_pago) || 0;
+  if (ap && mp) {
+    return (ap * 100 + mp) <= (hoy.getFullYear() * 100 + (hoy.getMonth() + 1));
+  }
+  return true;
+}
+
 // Normaliza un nombre para comparar tipos de acción sin importar mayúsculas,
 // acentos ni espacios repetidos (ej. "Open  HOUSE" === "open house").
 function normalizarNombre(s) {
@@ -803,16 +820,26 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
     comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * meses * 0.5 * sumParticipacion(a.id_arriendo);
   });
 
-  // --- Ventas: filtran por mes/año del NEGOCIO (metodología oficial de liquidación).
-  // La comisión de oficina completa cuenta en el mes en que se cerró la venta,
-  // independiente de cuándo entren los pagos. (Antes se sumaba por mes_pago de cada
-  // pago, lo que arrastraba a un mes comisiones de negocios de otros meses.)
+  // --- Ventas: aportan a la bonificación del mes/año del NEGOCIO, pero solo con
+  // el dinero efectivamente ingresado a la oficina (pagos con fecha ya cumplida).
+  // Igual que las comisiones: se atribuyen al negocio y se causan al entrar la plata.
+  // Así un negocio de junio con cuotas a diciembre no suma su comisión completa de
+  // una vez, y la plata que entra de negocios de otros meses no infla el mes actual.
   ventas.forEach(function(v) {
     if (parseInt(v.mes, 10) !== mes) return;
     if (parseInt(v['año'], 10) !== anio) return;
     if (String(v.estado_venta).toUpperCase() === 'CANCELADA') return;
     if (negociosIds.indexOf(v.id_venta) === -1) return;
-    comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * sumParticipacion(v.id_venta);
+    var ingresado = pagos.reduce(function(sum, p) {
+      if (p.id_venta !== v.id_venta) return sum;
+      if (!pagoYaIngresado_(p, hoy)) return sum;
+      return sum + (Number(p.valor_cobrado) || 0);
+    }, 0);
+    var comOfiV = Number(v.comision_oficina) || 0;
+    // Tope: lo ingresado nunca puede superar la comisión pactada del negocio
+    // (protege contra pagos duplicados en la hoja).
+    if (comOfiV > 0 && ingresado > comOfiV) ingresado = comOfiV;
+    comisionGeneradaOficina += ingresado * 0.5 * sumParticipacion(v.id_venta);
   });
 
   // Pagos del mes: solo para el total recibido informativo (criterio de caja)
@@ -2383,15 +2410,25 @@ function doPost(e) {
       if (cierresVntB.length > 0) {
         var pVnt = docBodyB.appendParagraph('Cierres de venta');
         pVnt.editAsText().setBold(true);
-        var rowsVnt = [['Inmueble','Valor venta','% Com.','Comisión oficina','Mi part.','Comisión generada']];
+        var rowsVnt = [['Inmueble','Valor venta','% Com.','Comisión oficina','Ingresado oficina','Mi part.','Comisión generada']];
         cierresVntB.forEach(function(v){
           var partV = sumPart(v.id_venta) * 0.5;
-          var comGen = numVal(v.comision_oficina) * partV;
+          // Igual que en calcularCategoriaMes: la venta aporta solo lo ya ingresado
+          // a la oficina (con tope en la comisión pactada del negocio).
+          var ingresadoV = datosBonC.pagos.reduce(function(sum, p){
+            if (p.id_venta !== v.id_venta) return sum;
+            if (!pagoYaIngresado_(p, hoyB)) return sum;
+            return sum + (numVal(p.valor_cobrado) || 0);
+          }, 0);
+          var comOfiPdf = numVal(v.comision_oficina);
+          if (comOfiPdf > 0 && ingresadoV > comOfiPdf) ingresadoV = comOfiPdf;
+          var comGen = ingresadoV * partV;
           rowsVnt.push([
             nomInmB(v.id_inmueble),
             fmtCop(numVal(v.valor_base_comision)),
             (numVal(v.pct_comision_oficina)*100).toFixed(2) + '%',
-            fmtCop(numVal(v.comision_oficina)),
+            fmtCop(comOfiPdf),
+            fmtCop(ingresadoV),
             (partV*100).toFixed(0) + '%',
             fmtCop(comGen)
           ]);
