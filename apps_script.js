@@ -2339,7 +2339,11 @@ function doPost(e) {
       // PDF cuenta de cobro con tabla embebida
       var mesesEs = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
       var nombreMesB = mesesEs[mesBon];
-      var fechaTextoB = hoyB.getDate() + ' de ' + mesesEs[hoyB.getMonth()+1] + ' de ' + anoActualB;
+      // Fecha del documento: primero del mes SIGUIENTE al mes liquidado (no la fecha
+      // de generación). Bonificación de julio → "1 de agosto"; diciembre cruza de año.
+      var mesSigB = mesBon === 12 ? 1 : mesBon + 1;
+      var anioSigB = mesBon === 12 ? anoActualB + 1 : anoActualB;
+      var fechaTextoB = '1 de ' + mesesEs[mesSigB] + ' de ' + anioSigB;
       var conceptoB = 'Bonificación correspondiente al mes de ' + nombreMesB + ' de ' + anoActualB;
       var reemplazosB = {
         'ciudad_emision':       CIUDAD_EMISION,
