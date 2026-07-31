@@ -213,6 +213,13 @@ function invalidarCacheHojas(listaNombres) {
   } catch (e) { /* ignore */ }
 }
 
+// Ejecutar manualmente desde el editor de Apps Script (menú Ejecutar) tras editar
+// hojas directamente en Google Sheets, para que los cambios se reflejen al instante
+// sin esperar a que expire el TTL del caché.
+function limpiarCacheCatalogos() {
+  invalidarCacheHojas(Object.keys(HOJAS).map(function(k){ return HOJAS[k]; }));
+}
+
 // Genera el siguiente ID secuencial (ASE-054, INM-219, etc.)
 function siguienteId(nombreHoja, prefijo) {
   const datos = leerHoja(nombreHoja);
@@ -332,9 +339,12 @@ function setupCobrosArriendo() {
   return resultado;
 }
 
-// Puntajes oficiales por tipo de acción comercial (catálogo fijo de 11 tipos).
+// Puntajes oficiales por tipo de acción comercial (catálogo fijo de 14 tipos).
 // Fuente de verdad del seed; luego es editable desde la hoja TipoAccion.
 var PUNTAJES_ACCION = [
+  { nombre: 'Captacion en venta',                puntaje: 1 },
+  { nombre: 'Captacion en arriendo',             puntaje: 1 },
+  { nombre: 'Captacion compartida',              puntaje: 0.5 },
   { nombre: 'Videos en redes sociales solo',     puntaje: 2 },
   { nombre: 'Videos redes sociales compartido',  puntaje: 1 },
   { nombre: 'Estados whatsapp',                   puntaje: 1 },
@@ -348,7 +358,7 @@ var PUNTAJES_ACCION = [
   { nombre: 'Repost en estados de whatsapp',      puntaje: 0.5 }
 ];
 
-// Fija el catálogo TipoAccion a los 11 tipos oficiales con su puntaje.
+// Fija el catálogo TipoAccion a los 14 tipos oficiales con su puntaje.
 // - Agrega la columna 'puntaje' si falta.
 // - Por cada tipo del spec: lo actualiza (activo + puntaje) si ya existe (match por
 //   nombre normalizado), o lo crea si falta.
@@ -368,7 +378,7 @@ function setupPuntajesAccion() {
     resultado.columna_agregada = true;
   }
 
-  // 2) Upsert de los 11 tipos del spec
+  // 2) Upsert de los 14 tipos del spec
   var existentes = leerHoja(HOJAS.tipos_accion);
   // Derivar el prefijo de id de las filas actuales (ej. 'TIP-001' → 'TIP'); fallback 'TIP'.
   var prefijoTipo = 'TIP';
@@ -737,11 +747,23 @@ function actualizarFila(nombreHoja, colId, idBuscado, datos) {
   throw new Error(colId + ' "' + idBuscado + '" no encontrado');
 }
 
-// Calcula la categoría de bonificación de un asesor en un mes específico.
+// Año de una acción comercial. La hoja Acciones no tiene columna 'año', así que se
+// deriva de 'fecha'. Si la fecha falta o no parsea, retorna null (acción sin año
+// determinable → se cuenta de forma indulgente para no perder acciones legítimas).
+function anioDeAccion_(ac) {
+  if (!ac || !ac.fecha || ac.fecha === '') return null;
+  var f = new Date(ac.fecha);
+  return isNaN(f.getTime()) ? null : f.getFullYear();
+}
+
+// Calcula la categoría de bonificación de un asesor en un mes/año específico.
 // Usa los datos pre-cargados (datos.arriendos, ventas, comisiones, acciones, bonificaciones)
 // para evitar releer las hojas.
+// IMPORTANTE: filtra por mes Y año. Sin el filtro de año, meses homónimos de distintos
+// años (p.ej. Junio 2025 y Junio 2026) se sumaban juntos e inflaban la bonificación.
 // Retorna: { categoria, esMedio, escalon, comisionGeneradaOficina, totalRecibido, numAcciones }
-function calcularCategoriaMes(idAsesor, mes, datos) {
+function calcularCategoriaMes(idAsesor, mes, anio, datos) {
+  anio = parseInt(anio, 10) || 0;
   var arriendos = datos.arriendos;
   var ventas = datos.ventas;
   var pagos = datos.pagos;
@@ -775,14 +797,28 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   // --- Arriendos: filtran por mes del arriendo, anualizados según meses_contrato ---
   arriendos.forEach(function(a) {
     if (parseInt(a.mes, 10) !== mes) return;
+    if (parseInt(a['año'], 10) !== anio) return;
     if (negociosIds.indexOf(a.id_arriendo) === -1) return;
     var meses = mesesContratoDe(a);
     comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * meses * 0.5 * sumParticipacion(a.id_arriendo);
   });
 
-  // --- Ventas: filtran por mes_pago de cada pago efectuado (fecha_pago <= hoy) ---
+  // --- Ventas: filtran por mes/año del NEGOCIO (metodología oficial de liquidación).
+  // La comisión de oficina completa cuenta en el mes en que se cerró la venta,
+  // independiente de cuándo entren los pagos. (Antes se sumaba por mes_pago de cada
+  // pago, lo que arrastraba a un mes comisiones de negocios de otros meses.)
+  ventas.forEach(function(v) {
+    if (parseInt(v.mes, 10) !== mes) return;
+    if (parseInt(v['año'], 10) !== anio) return;
+    if (String(v.estado_venta).toUpperCase() === 'CANCELADA') return;
+    if (negociosIds.indexOf(v.id_venta) === -1) return;
+    comisionGeneradaOficina += (Number(v.comision_oficina) || 0) * 0.5 * sumParticipacion(v.id_venta);
+  });
+
+  // Pagos del mes: solo para el total recibido informativo (criterio de caja)
   var pagosDelMes = pagos.filter(function(p) {
     if (parseInt(p.mes_pago, 10) !== mes) return false;
+    if (parseInt(p['año_pago'] || p['ano_pago'], 10) !== anio) return false;
     if (!p.fecha_pago || p.fecha_pago === '') return true;
     // Comparar usando año_pago y mes_pago si la fecha no parsea bien
     var fp = new Date(p.fecha_pago);
@@ -799,19 +835,10 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
     return fp <= hoy;
   });
 
-  pagosDelMes.forEach(function(p) {
-    var venta = ventas.find(function(v) { return v.id_venta === p.id_venta; });
-    if (!venta) return;
-    if (String(venta.estado_venta).toUpperCase() === 'CANCELADA') return;
-    if (negociosIds.indexOf(venta.id_venta) === -1) return;
-    // El pago representa dinero que entró a la oficina
-    comisionGeneradaOficina += (Number(p.valor_cobrado) || 0) * 0.5 * sumParticipacion(venta.id_venta);
-  });
-
   // Total recibido: arriendos del mes + ventas proporcional a pagos del mes
   misCom.forEach(function(c) {
     var arriendo = arriendos.find(function(a) { return a.id_arriendo === c.id_negocio; });
-    if (arriendo && parseInt(arriendo.mes, 10) === mes) {
+    if (arriendo && parseInt(arriendo.mes, 10) === mes && parseInt(arriendo['año'], 10) === anio) {
       totalRecibido += Number(c.valor_comision) || 0;
     }
   });
@@ -835,6 +862,8 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   var numAcciones = acciones.reduce(function(sum, ac) {
     if (ac.id_asesor !== idAsesor) return sum;
     if (parseInt(ac.mes, 10) !== mes) return sum;
+    var anioAcc = anioDeAccion_(ac);
+    if (anioAcc !== null && anioAcc !== anio) return sum; // sin fecha → se cuenta (indulgente)
     return sum + puntajeDeTipo(ac.tipo, mapaPuntajes);
   }, 0);
 
@@ -910,6 +939,80 @@ function calcularCategoriaMes(idAsesor, mes, datos) {
   };
 }
 
+// ===== CONTINUIDAD DE CATEGORÍA (regla del % variable) =====
+// Regla de negocio: el primer mes en una categoría paga pct_variable_inicial (4%).
+// Si el mes siguiente el asesor MANTIENE la misma categoría, sube a
+// pct_variable_continuidad (5%). Si cambia de categoría (superior o inferior),
+// la continuidad se reinicia: vuelve al inicial (4%) en la nueva categoría.
+// Ej.: Junio BRONCE → 4% · Julio BRONCE → 5% · Agosto PLATA → 4%.
+//
+// Fuente de verdad del mes anterior: la categoría CERRADA en BonificacionesMes
+// (lo que quedó liquidado/pagado). Solo si ese mes no fue liquidado se recalcula
+// en vivo. PIEDRA y PIEDRA (1/2) cuentan como la misma categoría.
+// Enero (mes 1) siempre arranca en inicial: la continuidad no cruza de año.
+function categoriaAnteriorContinuidad_(idAsesor, mes, anio, datos) {
+  if (mes <= 1) return null;
+  var liq = leerHojaCache(HOJAS.bonificaciones_mes).find(function(b) {
+    return b.id_asesor === idAsesor
+      && parseInt(b['año'], 10) === anio
+      && parseInt(b.mes, 10) === mes - 1;
+  });
+  if (liq && liq.categoria) {
+    return String(liq.categoria).toUpperCase().replace(/\s*\(1\/2\)\s*$/, '').trim();
+  }
+  var ant = calcularCategoriaMes(idAsesor, mes - 1, anio, datos);
+  return ant && ant.categoria ? String(ant.categoria).toUpperCase() : null;
+}
+
+// AJUSTE MANUAL — SOLO cierre julio 2026: asesores con continuidad de categoría
+// desde junio que el dashboard no puede detectar (junio nunca se liquidó en
+// BonificacionesMes). Liquidan con pct de continuidad (5%). Eliminar tras el cierre.
+var AJUSTE_CONTINUIDAD_2026_07 = ['ASE-024', 'ASE-032', 'ASE-013']; // Mariana Rosero, Sandra Zapata, Jeisson Naranjo
+function ajusteManualContinuidad_(idAsesor, mes, anio) {
+  return parseInt(anio, 10) === 2026 && parseInt(mes, 10) === 7
+    && AJUSTE_CONTINUIDAD_2026_07.indexOf(idAsesor) !== -1;
+}
+
+// True si `actual` (resultado de calcularCategoriaMes) repite la categoría del mes
+// anterior y por tanto aplica pct_variable_continuidad. PISO 4% y categorías sin
+// escalón nunca tienen continuidad.
+function esContinuidad_(idAsesor, mes, anio, datos, actual) {
+  if (!actual || !actual.escalon) return false;
+  if (ajusteManualContinuidad_(idAsesor, mes, anio)) return true;
+  var catAnt = categoriaAnteriorContinuidad_(idAsesor, mes, anio, datos);
+  return catAnt !== null && catAnt === String(actual.categoria).toUpperCase();
+}
+
+// Bases de la bonificación de un asesor/mes a partir del resultado de
+// calcularCategoriaMes. Único punto donde se decide % variable y fijo, usado por
+// liquidarMes, mis_bonificaciones y cobrar_bonificacion (antes estaba triplicado).
+// Retorna { pctVariable, fijoBase, variableBase, esContinuidad }.
+function basesBonificacion_(idAsesor, mes, anio, datos, actual) {
+  var esContinuidad = esContinuidad_(idAsesor, mes, anio, datos, actual);
+  var pctVariable = 0, fijoBase = 0, variableBase = 0;
+  if (actual.escalon) {
+    pctVariable = esContinuidad
+      ? (Number(actual.escalon.pct_variable_continuidad) || 0)
+      : (Number(actual.escalon.pct_variable_inicial) || 0);
+    fijoBase = actual.esMedio
+      ? (Number(actual.escalon.fijo_medio) || 0)
+      : (Number(actual.escalon.fijo) || 0);
+    variableBase = actual.comisionGeneradaOficina * pctVariable;
+  } else if (actual.esPiso4) {
+    // PISO 4%: % de la comisión generada a la oficina, sin fijo.
+    // El ajuste manual de continuidad también sube este % a 5%.
+    pctVariable = ajusteManualContinuidad_(idAsesor, mes, anio) ? 0.05 : 0.04;
+    fijoBase = 0;
+    variableBase = actual.comisionGeneradaOficina * pctVariable;
+  }
+  return {
+    pctVariable: pctVariable,
+    fijoBase: fijoBase,
+    variableBase: variableBase,
+    esContinuidad: esContinuidad
+  };
+}
+
 // ===== LIQUIDACIÓN MENSUAL DE BONIFICACIONES =====
 // Calcula la bonificación de todos los asesores activos para un año/mes dado
 // y la persiste en la hoja BonificacionesMes (sobreescribe el periodo si ya existía).
@@ -971,30 +1074,12 @@ function liquidarMes(anio, mes) {
 
   asesores.forEach(function(asesor) {
     try {
-      var actual = calcularCategoriaMes(asesor.id_asesor, mes, datos);
+      var actual = calcularCategoriaMes(asesor.id_asesor, mes, anio, datos);
 
-      // Determinar continuidad con mes anterior
-      var esContinuidad = false;
-      if (mes > 1 && actual.escalon) {
-        var anterior = calcularCategoriaMes(asesor.id_asesor, mes - 1, datos);
-        if (anterior.categoria === actual.categoria) esContinuidad = true;
-      }
-
-      var pctVariable = 0, fijoBase = 0, variableBase = 0;
-      if (actual.escalon) {
-        pctVariable = esContinuidad
-          ? (Number(actual.escalon.pct_variable_continuidad) || 0)
-          : (Number(actual.escalon.pct_variable_inicial) || 0);
-        fijoBase = actual.esMedio
-          ? (Number(actual.escalon.fijo_medio) || 0)
-          : (Number(actual.escalon.fijo) || 0);
-        variableBase = actual.comisionGeneradaOficina * pctVariable;
-      } else if (actual.esPiso4) {
-        // PISO 4%: pagar 4% de la comisión generada a la oficina, sin fijo
-        pctVariable = 0.04;
-        fijoBase = 0;
-        variableBase = actual.comisionGeneradaOficina * pctVariable;
-      }
+      // Continuidad: misma categoría que el mes anterior → 5%; cambio o primer mes → 4%
+      var bases = basesBonificacion_(asesor.id_asesor, mes, anio, datos, actual);
+      var esContinuidad = bases.esContinuidad;
+      var pctVariable = bases.pctVariable, fijoBase = bases.fijoBase, variableBase = bases.variableBase;
 
       // Factor vinculación: empleado /1.3, freelance ×1
       var vinculacion = String(asesor.vinculacion || '').toLowerCase();
@@ -1335,6 +1420,7 @@ function dispatchGet(params) {
     if (action === 'mis_bonificaciones') {
       var idAsesorB = params.id_asesor || '';
       var mesB = parseInt(params.mes || '0', 10);
+      var anioB = parseInt(params['año'] || params.anio || '0', 10) || (new Date()).getFullYear();
       if (!idAsesorB || !mesB) return jsonResponse({ ok: false, error: 'Faltan parámetros (id_asesor, mes)' });
 
       var datosBon = {
@@ -1354,38 +1440,16 @@ function dispatchGet(params) {
       var factorVinc = vinculacion === 'empleado' ? (1 / 1.3) : 1;
 
       // Categoría del mes actual
-      var actual = calcularCategoriaMes(idAsesorB, mesB, datosBon);
+      var actual = calcularCategoriaMes(idAsesorB, mesB, anioB, datosBon);
 
       // Determinar pct_variable según continuidad con el mes anterior
-      // Regla: enero (mes 1) siempre arranca en pct_variable_inicial (4%)
-      var esContinuidad = false;
-      var catAnterior = null;
-      if (mesB > 1 && actual.escalon) {
-        var anterior = calcularCategoriaMes(idAsesorB, mesB - 1, datosBon);
-        catAnterior = anterior.categoria;
-        // PIEDRA y PIEDRA con fijo medio cuentan como la misma categoría
-        if (anterior.categoria === actual.categoria) {
-          esContinuidad = true;
-        }
-      }
-
-      var pctVariable = 0;
-      var fijoBase = 0;
-      var variableBase = 0;
-      if (actual.escalon) {
-        pctVariable = esContinuidad
-          ? Number(actual.escalon.pct_variable_continuidad) || 0
-          : Number(actual.escalon.pct_variable_inicial) || 0;
-        fijoBase = actual.esMedio
-          ? (Number(actual.escalon.fijo_medio) || 0)
-          : (Number(actual.escalon.fijo) || 0);
-        variableBase = actual.comisionGeneradaOficina * pctVariable;
-      } else if (actual.esPiso4) {
-        // PISO 4%: 4% de la comisión generada a la oficina, sin fijo
-        pctVariable = 0.04;
-        fijoBase = 0;
-        variableBase = actual.comisionGeneradaOficina * pctVariable;
-      }
+      // (usa la categoría cerrada en BonificacionesMes; ver esContinuidad_)
+      var catAnterior = categoriaAnteriorContinuidad_(idAsesorB, mesB, anioB, datosBon);
+      var basesB = basesBonificacion_(idAsesorB, mesB, anioB, datosBon, actual);
+      var esContinuidad = basesB.esContinuidad;
+      var pctVariable = basesB.pctVariable;
+      var fijoBase = basesB.fijoBase;
+      var variableBase = basesB.variableBase;
 
       // Aplicar factor de vinculación (empleado: ÷1.3; freelance: ×1)
       var fijo = fijoBase * factorVinc;
@@ -1419,13 +1483,22 @@ function dispatchGet(params) {
     if (action === 'mis_acciones') {
       var idAsesorA = params.id_asesor || '';
       var mesA = params.mes ? parseInt(params.mes, 10) : null;
+      var verTodosA = params.ver_todos === '1' || params.ver_todos === 1 || params.ver_todos === true;
       var todasAcciones = leerHojaCache(HOJAS.acciones);
+      var asesoresA = leerHojaCache(HOJAS.asesores);
+      var solicitanteA = asesoresA.find(function(a){ return a.id_asesor === idAsesorA; });
+      // Gerente/directora pueden ver TODAS las acciones (de todos los asesores).
+      var gestorA = verTodosA && esGestor_(solicitanteA);
+      var nombrePorId = {};
+      asesoresA.forEach(function(a){ nombrePorId[a.id_asesor] = a.nombre; });
       var filt = todasAcciones.filter(function(a) {
-        if (a.id_asesor !== idAsesorA) return false;
+        if (!gestorA && a.id_asesor !== idAsesorA) return false;
         if (mesA && parseInt(a.mes, 10) !== mesA) return false;
         return true;
+      }).map(function(a){
+        return Object.assign({}, a, { asesor_nombre: nombrePorId[a.id_asesor] || a.id_asesor });
       });
-      return jsonResponse({ ok: true, acciones: filt });
+      return jsonResponse({ ok: true, acciones: filt, es_gestor: !!gestorA });
     }
 
     // --- TODOS LOS NEGOCIOS (solo gerente) ---
@@ -1481,10 +1554,16 @@ function dispatchGet(params) {
       var datosDup = leerHojaCache(hojaDup);
       var duplicado = null;
 
+      // Los negocios cancelados no cuentan como duplicado (deben poder recrearse)
+      function noCancelado(d){
+        var e = String(d.estado_arriendo || d.estado_venta || '').toUpperCase();
+        return e !== 'CANCELADO' && e !== 'CANCELADA';
+      }
+
       // 1) Duplicado por inmueble + mes
       for (var i = 0; i < datosDup.length; i++) {
         var d = datosDup[i];
-        if (String(d.id_inmueble) === String(idInmueble) && String(d.mes) === String(mesDup)) {
+        if (String(d.id_inmueble) === String(idInmueble) && String(d.mes) === String(mesDup) && noCancelado(d)) {
           duplicado = d;
           break;
         }
@@ -1494,7 +1573,7 @@ function dispatchGet(params) {
       if (!duplicado && tipoDup === 'ventas' && compradoresList.length > 0) {
         var partesAll = leerHojaCache(HOJAS.partes);
         var ventasConInm = datosDup.filter(function(v){
-          return String(v.id_inmueble) === String(idInmueble);
+          return String(v.id_inmueble) === String(idInmueble) && noCancelado(v);
         });
         for (var vi = 0; vi < ventasConInm.length && !duplicado; vi++) {
           var compsVenta = partesAll.filter(function(p){
@@ -1617,7 +1696,8 @@ function doPost(e) {
       var dup = arrExist.find(function(a){
         return String(a.id_inmueble) === String(datos.id_inmueble)
             && String(a.mes) === String(datos.mes)
-            && String(a['año']) === String(datos['año']);
+            && String(a['año']) === String(datos['año'])
+            && String(a.estado_arriendo || '').toUpperCase() !== 'CANCELADO';
       });
       if (dup) {
         lock.releaseLock();
@@ -1905,14 +1985,15 @@ function doPost(e) {
       if (!asesor) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
 
       // Cargar negocio + inmueble
-      var negocio, mesNeg, anoNeg, conceptoBase;
+      var negocio, mesNeg, anoNeg, conceptoBase, nombreInmueble;
       var inmuebles = leerHoja(HOJAS.inmuebles);
       if (tipoNeg === 'arriendo') {
         negocio = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idNegocio; });
         if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo no encontrado' }); }
         mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
         var inmA = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
-        conceptoBase = 'Comisión por arriendo del inmueble ' + (inmA ? inmA.nombre : negocio.id_inmueble);
+        nombreInmueble = inmA ? inmA.nombre : negocio.id_inmueble;
+        conceptoBase = 'Comisión por arriendo del inmueble ' + nombreInmueble;
       } else if (tipoNeg === 'venta_pago') {
         // Cuenta de cobro por pago individual
         var pago = leerHoja(HOJAS.pagos).find(function(p){ return p.id_pago === idNegocio; });
@@ -1922,14 +2003,16 @@ function doPost(e) {
         idNegocio = negocio.id_venta; // para buscar comisiones
         mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
         var inmP = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
-        conceptoBase = 'Comisión por venta del inmueble ' + (inmP ? inmP.nombre : negocio.id_inmueble) +
+        nombreInmueble = inmP ? inmP.nombre : negocio.id_inmueble;
+        conceptoBase = 'Comisión por venta del inmueble ' + nombreInmueble +
           ' — Cuota ' + pago.id_pago + (pago.observacion ? ' (' + pago.observacion + ')' : '');
       } else {
         negocio = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idNegocio; });
         if (!negocio) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta no encontrada' }); }
         mesNeg = parseInt(negocio.mes,10); anoNeg = negocio['año'];
         var inmV = inmuebles.find(function(i){ return i.id_inmueble === negocio.id_inmueble; });
-        conceptoBase = 'Comisión por venta del inmueble ' + (inmV ? inmV.nombre : negocio.id_inmueble);
+        nombreInmueble = inmV ? inmV.nombre : negocio.id_inmueble;
+        conceptoBase = 'Comisión por venta del inmueble ' + nombreInmueble;
       }
 
       // Bloquear cuenta de cobro si la venta está CANCELADA
@@ -2036,6 +2119,8 @@ function doPost(e) {
         var ciCieCC = origenCirculo(negocio.origen_cierre);
         var pctNeg  = numVal(negocio.pct_comision_oficina);
         var rowsDatos = [['DATOS DEL NEGOCIO', '']];
+        rowsDatos.push(['Inmueble', String(nombreInmueble || '—')]);
+        rowsDatos.push(['Mercado', String(negocio.mercado || '—')]);
         if (tipoNeg === 'arriendo') {
           var canonCC = numVal(negocio.valor_canon);
           var admonCC = numVal(negocio.administracion);
@@ -2044,31 +2129,69 @@ function doPost(e) {
           rowsDatos.push(['Canon', fmtCopCC(canonCC)]);
           rowsDatos.push(['Administración', fmtCopCC(admonCC)]);
           rowsDatos.push(['Base mensual (canon + administración)', fmtCopCC(canonCC + admonCC)]);
-          rowsDatos.push(['% comisión oficina', Math.round(pctNeg * 100) + '%']);
+          rowsDatos.push(['% comisión oficina', parseFloat((pctNeg * 100).toFixed(2)) + '%']);
           rowsDatos.push(['Comisión oficina (mensual)', fmtCopCC(comOfMensual)]);
           rowsDatos.push(['Meses de contrato', String(mesesCC)]);
           rowsDatos.push(['Ingreso empresa total', fmtCopCC(comOfMensual * mesesCC)]);
         } else {
           rowsDatos.push(['Valor del negocio', fmtCopCC(numVal(negocio.valor_base_comision))]);
-          rowsDatos.push(['% comisión oficina', Math.round(pctNeg * 100) + '%']);
+          rowsDatos.push(['% comisión oficina', parseFloat((pctNeg * 100).toFixed(2)) + '%']);
           rowsDatos.push(['Comisión oficina', fmtCopCC(numVal(negocio.comision_oficina))]);
         }
         rowsDatos.push(['Círculo de influencia',
           'Captación: ' + (ciCapCC ? 'Con' : 'Sin') + ' · Cierre: ' + (ciCieCC ? 'Con' : 'Sin')]);
         // Referidos: sólo si hay nombre o valor, para no ensuciar el PDF en negocios sin referido.
+        // El referido se paga según el dinero que va entrando, así que en la cuenta de cobro por
+        // cuota (venta_pago) se prorratea con la misma fracción del pago (fraccionCC = 1 en arriendo
+        // y venta completa).
         var refCapNom = String(negocio.referido_captador || '').trim();
-        var refCapVal = numVal(negocio.valor_ref_captador);
+        var refCapVal = Math.round(numVal(negocio.valor_ref_captador) * fraccionCC);
         if (refCapNom || refCapVal > 0) {
           rowsDatos.push(['Referido captador', refCapNom + (refCapVal > 0 ? ' — ' + fmtCopCC(refCapVal) : '')]);
         }
         var refCerNom = String(negocio.referido_cerrador || '').trim();
-        var refCerVal = numVal(negocio.valor_ref_cerrador);
+        var refCerVal = Math.round(numVal(negocio.valor_ref_cerrador) * fraccionCC);
         if (refCerNom || refCerVal > 0) {
           rowsDatos.push(['Referido cerrador', refCerNom + (refCerVal > 0 ? ' — ' + fmtCopCC(refCerVal) : '')]);
         }
         docBody.appendParagraph('').setSpacingBefore(12);
         var tblDatos = docBody.appendTable(rowsDatos);
         tblDatos.getRow(0).editAsText().setBold(true);
+
+        // Cronograma de cuotas (solo ventas): muestra las fechas en que efectivamente se paga el
+        // negocio. La columna "Valor cobrado" es la comisión de oficina por esa cuota. En cuenta
+        // de cobro por pago (venta_pago) se marca la cuota que se está cobrando.
+        if (tipoNeg === 'venta' || tipoNeg === 'venta_pago') {
+          var pagosVenta = leerHoja(HOJAS.pagos).filter(function(p){ return p.id_venta === idNegocio; });
+          if (pagosVenta.length) {
+            var fechaCuota = function(p){
+              if (p.fecha_pago) {
+                var d = new Date(p.fecha_pago + (String(p.fecha_pago).indexOf('T') > -1 ? '' : 'T12:00:00'));
+                if (!isNaN(d.getTime())) return d.getDate() + ' de ' + mesesNom[d.getMonth()] + ' de ' + d.getFullYear();
+              }
+              var mp = parseInt(p.mes_pago, 10);
+              var ap = parseInt(p['año_pago'] !== undefined ? p['año_pago'] : p.ano_pago, 10);
+              if (mp && ap) return mesesNom[mp - 1] + ' de ' + ap;
+              return '(sin fecha)';
+            };
+            docBody.appendParagraph('').setSpacingBefore(12);
+            var hdCuotas = docBody.appendParagraph('CUOTAS / CRONOGRAMA DE PAGO');
+            hdCuotas.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+            hdCuotas.editAsText().setBold(true);
+            var rowsCuotas = [['Cuota', 'Fecha de pago', 'Valor cobrado', 'Estado']];
+            pagosVenta.forEach(function(p, i){
+              var esCobrada = (tipoNeg === 'venta_pago' && p.id_pago === pago.id_pago);
+              rowsCuotas.push([
+                'Cuota ' + (i + 1) + (esCobrada ? ' (en cobro)' : ''),
+                fechaCuota(p),
+                fmtCopCC(numVal(p.valor_cobrado)),
+                String(p.estado || (p.observacion || ''))
+              ]);
+            });
+            var tblCuotas = docBody.appendTable(rowsCuotas);
+            tblCuotas.getRow(0).editAsText().setBold(true);
+          }
+        }
 
         docBody.appendParagraph('').setSpacingBefore(12);
         var hdNeg = docBody.appendParagraph('DETALLE DEL NEGOCIO ' + idNegocio);
@@ -2127,13 +2250,16 @@ function doPost(e) {
       var mesBon = parseInt(body.mes, 10);
       if (!idAsesorBon || !mesBon) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Faltan parámetros (id_asesor, mes)' }); }
 
-      // Validación: sólo meses cerrados (estricto: mes < mes actual)
+      // Validación: el mes pasa a cobrable en su ÚLTIMO día (meses anteriores siempre cobrables)
       var hoyB = new Date();
       var anoActualB = hoyB.getFullYear();
       var mesActualB = hoyB.getMonth() + 1;
-      if (mesBon >= mesActualB) {
+      var ultimoDiaB = new Date(anoActualB, mesActualB, 0).getDate();
+      var esUltimoDiaB = hoyB.getDate() === ultimoDiaB;
+      var mesCerradoB = (mesBon < mesActualB) || (mesBon === mesActualB && esUltimoDiaB);
+      if (!mesCerradoB || mesBon > mesActualB) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo puede cobrar la bonificación de meses ya cerrados (desde el día 1 del mes siguiente)' });
+        return jsonResponse({ ok:false, error:'Sólo puede cobrar la bonificación del mes a partir de su último día' });
       }
 
       // Cargar asesor
@@ -2151,23 +2277,11 @@ function doPost(e) {
         tipos_accion: leerHoja(HOJAS.tipos_accion),
         bonificaciones: leerHoja(HOJAS.bonificaciones)
       };
-      var actualB = calcularCategoriaMes(idAsesorBon, mesBon, datosBonC);
-      var esContB = false;
-      if (mesBon > 1 && actualB.escalon) {
-        var antB = calcularCategoriaMes(idAsesorBon, mesBon - 1, datosBonC);
-        if (antB.categoria === actualB.categoria) esContB = true;
-      }
-      var pctVarB = 0, fijoBaseB = 0, varBaseB = 0;
-      if (actualB.escalon) {
-        pctVarB = esContB ? Number(actualB.escalon.pct_variable_continuidad) || 0 : Number(actualB.escalon.pct_variable_inicial) || 0;
-        fijoBaseB = actualB.esMedio ? (Number(actualB.escalon.fijo_medio) || 0) : (Number(actualB.escalon.fijo) || 0);
-        varBaseB = actualB.comisionGeneradaOficina * pctVarB;
-      } else if (actualB.esPiso4) {
-        // PISO 4%: 4% de la comisión generada, sin fijo
-        pctVarB = 0.04;
-        fijoBaseB = 0;
-        varBaseB = actualB.comisionGeneradaOficina * pctVarB;
-      }
+      var actualB = calcularCategoriaMes(idAsesorBon, mesBon, anoActualB, datosBonC);
+      // Continuidad: misma categoría que el mes anterior → 5%; cambio o primer mes → 4%
+      var basesBon = basesBonificacion_(idAsesorBon, mesBon, anoActualB, datosBonC, actualB);
+      var esContB = basesBon.esContinuidad;
+      var pctVarB = basesBon.pctVariable, fijoBaseB = basesBon.fijoBase, varBaseB = basesBon.variableBase;
       var vincB = String(asesorBon.vinculacion || '').toLowerCase();
       var factorB = vincB === 'empleado' ? (1 / 1.3) : 1;
       var fijoB = fijoBaseB * factorB;
@@ -2208,15 +2322,16 @@ function doPost(e) {
           .reduce(function(s,c){ return s + (c.participacion === '' ? 1 : numVal(c.participacion)); }, 0);
       };
 
-      // Cierres de arriendo del mes
+      // Cierres de arriendo del mes (mismo criterio mes/año que calcularCategoriaMes)
       var cierresArrB = datosBonC.arriendos.filter(function(a){
-        return parseInt(a.mes,10) === mesBon && misNegIdsB.indexOf(a.id_arriendo) !== -1;
+        return parseInt(a.mes,10) === mesBon
+          && parseInt(a['año'],10) === anoActualB
+          && misNegIdsB.indexOf(a.id_arriendo) !== -1;
       });
-      // Cierres de venta: por mes_pago
-      var pagosMesBonC = datosBonC.pagos.filter(function(p){ return parseInt(p.mes_pago,10) === mesBon; });
-      var ventasIdsB = pagosMesBonC.map(function(p){ return p.id_venta; });
+      // Cierres de venta: por mes/año del NEGOCIO (mismo criterio que calcularCategoriaMes)
       var cierresVntB = datosBonC.ventas.filter(function(v){
-        return ventasIdsB.indexOf(v.id_venta) !== -1
+        return parseInt(v.mes,10) === mesBon
+          && parseInt(v['año'],10) === anoActualB
           && misNegIdsB.indexOf(v.id_venta) !== -1
           && String(v.estado_venta||'').toUpperCase() !== 'CANCELADA';
       });
@@ -2964,6 +3079,84 @@ function doPost(e) {
       invalidarCacheHojas([HOJAS.arriendos, HOJAS.ventas, HOJAS.pagos, HOJAS.cobros_arriendo, HOJAS.comisiones, HOJAS.partes]);
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Negocio ' + idNegEL + ' eliminado por completo (' + comBorradas + ' comisión(es), ' + parBorradas + ' parte(s) y sus pagos/cobros).' });
+    }
+
+    // --- ELIMINAR ACCIÓN COMERCIAL ---
+    // Cada asesor puede borrar SUS propias acciones; gerente/directora cualquiera.
+    // body: { id_asesor, password, id_accion }
+    if (action === 'eliminar_accion') {
+      var idAccionEL = body.id_accion;
+      if (!idAccionEL) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta parámetro (id_accion)' }); }
+      var asesorAccEL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!asesorAccEL) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
+      var filaAccEL = leerHoja(HOJAS.acciones).find(function(x){ return x.id_accion === idAccionEL; });
+      if (!filaAccEL) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Acción "' + idAccionEL + '" no encontrada' }); }
+      if (!esGestor_(asesorAccEL) && filaAccEL.id_asesor !== body.id_asesor) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo puede borrar sus propias acciones' });
+      }
+      var accBorradas = borrarFilasPorColumna_(HOJAS.acciones, 'id_accion', idAccionEL);
+      if (!accBorradas) { lock.releaseLock(); return jsonResponse({ ok:false, error:'No se pudo eliminar la acción' }); }
+      invalidarCacheHojas([HOJAS.acciones]);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, mensaje:'Acción eliminada' });
+    }
+
+    // --- CREAR ASESOR (alta desde CasIA / CRM) ---
+    // body: { action, id_asesor, password, nombre, vinculacion?, estado?, email?, rol? }
+    // CasIA entra como el gerente (ASE-055), así que esGestor_ pasa. Solo llena las
+    // columnas que aporta el CRM; cédula/banco/cuenta/password se completan luego
+    // desde esta misma página de asesores. Devuelve el ASE-### que el CRM guarda
+    // como id_asesor_gas para enlazar ambas bases.
+    if (action === 'crear_asesor') {
+      var asesorCA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!esGestor_(asesorCA)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden crear asesores' });
+      }
+
+      var nombreCA = String(body.nombre || '').trim();
+      if (!nombreCA) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Falta el nombre del asesor' });
+      }
+
+      // Evitar duplicados por nombre normalizado (misma regla que clientes).
+      var nmAseNorm = normalizarNombre_(nombreCA);
+      var dupAse = leerHoja(HOJAS.asesores).find(function(a){
+        return normalizarNombre_(a.nombre) === nmAseNorm;
+      });
+      if (dupAse) {
+        lock.releaseLock();
+        return jsonResponse({
+          ok:false,
+          error:'Ya existe un asesor con ese nombre (' + dupAse.id_asesor + ' — ' + (dupAse.nombre || '') + ').',
+          duplicado: dupAse
+        });
+      }
+
+      var nuevoIdCA = siguienteId(HOJAS.asesores, 'ASE');
+      // password_asesor: clave (6 dígitos) del nuevo asesor para esta página.
+      // Es la MISMA que usa en el CRM. Va aparte de body.password, que son las
+      // credenciales del gerente que validó la sesión arriba.
+      agregarFila(HOJAS.asesores, COLUMNAS.asesores, {
+        id_asesor: nuevoIdCA,
+        nombre: nombreCA,
+        vinculacion: String(body.vinculacion || 'Freelance'),
+        estado: String(body.estado || 'Activo'),
+        cedula: String(body.cedula || ''),
+        ciudad_cc: String(body.ciudad_cc || ''),
+        direccion: String(body.direccion || ''),
+        banco: String(body.banco || ''),
+        tipo_cuenta: String(body.tipo_cuenta || ''),
+        numero_cuenta: String(body.numero_cuenta || ''),
+        email: String(body.email || ''),
+        password: String(body.password_asesor || ''),
+        rol: String(body.rol || '')
+      });
+      invalidarCacheHojas([HOJAS.asesores]);
+      lock.releaseLock();
+      return jsonResponse({ ok:true, id_asesor: nuevoIdCA, mensaje:'Asesor creado' });
     }
 
     lock.releaseLock();
