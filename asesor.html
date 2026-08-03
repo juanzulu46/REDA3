@@ -394,7 +394,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
       <div class="fg" id="frmVnt">
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 1 &mdash; Cu&aacute;ndo y qu&eacute; inmueble se vendi&oacute;</span><span class="fd-line"></span></div>
         <div class="ff"><label>Mes <span class="req">*</span></label><select id="v_mes"><option value="">-- Mes --</option></select></div>
-        <div class="ff"><label>Tipo de mercado <span class="req">*</span></label><select id="v_mercado"><option value="">-- Escoja --</option><option>Primario</option><option>Secundario</option></select></div>
+        <div class="ff"><label>Tipo de mercado <span class="req">*</span></label><select id="v_mercado" onchange="cambioMercadoVenta()"><option value="">-- Escoja --</option><option>Primario</option><option>Secundario</option></select></div>
         <div class="ff"><label>Inmueble <span class="req">*</span></label><select id="v_inmueble"><option value="">-- Escoja --</option></select></div>
         <div class="ff">&nbsp;</div>
         <div class="dupli-warn" id="dupliVnt"><strong>&#9888; Posible duplicado:</strong> Ya existe una venta para este inmueble en este mes.</div>
@@ -412,7 +412,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Cu&aacute;nto se vendi&oacute; y cu&aacute;nto cobra la oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor base comisi&oacute;n (COP) <span class="req">*</span></label><input type="text" id="v_valorbase" inputmode="numeric" placeholder="Ej: 350.000.000" oninput="calcularComisionVnt()"><div class="hint">Valor sobre el que se calcula la comisi&oacute;n (solo n&uacute;meros)</div></div>
         <div class="ff"><label>% Comisi&oacute;n oficina <span class="req">*</span></label><select id="v_pct" onchange="calcularComisionVnt()"><option value="">-- % --</option><option value="0.01">1%</option><option value="0.015">1.5%</option><option value="0.02">2%</option><option value="0.025">2.5%</option><option value="0.0252">2.52%</option><option value="0.03">3%</option></select></div>
-        <div class="form-div"><span class="fd-line"></span><span class="fd-text">C&oacute;mo va a pagar el comprador (cuotas)</span><span class="fd-line"></span></div>
+        <div class="form-div"><span class="fd-line"></span><span class="fd-text" id="pagosVntDivTxt">C&oacute;mo va a pagar el comprador (cuotas)</span><span class="fd-line"></span></div>
         <div id="pagosVntList"></div>
         <div class="com-add"><button type="button" onclick="addPagoRow()">+ Agregar cuota de pago</button></div>
         <div id="pagosVntResumen" style="font-size:12px;color:var(--g600);margin-top:4px"></div>
@@ -705,6 +705,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <button class="btn btn-cc" id="btnLiquidar" onclick="liquidarBonificaciones()">Liquidar mes</button>
         <div id="liqStatus" style="font-size:12px;color:#555"></div>
       </div>
+    </div>
+  </div>
+  <div class="fcard">
+    <div class="fcard-hd">
+      <h3>Bonificaciones por asesor</h3>
+      <p>Consulta la bonificaci&oacute;n de cada asesor para un mes: si el mes ya se liquid&oacute; muestra lo guardado; si no, un c&aacute;lculo <strong>preliminar</strong> en vivo con los datos actuales.</p>
+    </div>
+    <div class="fcard-bd">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+        <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">A&ntilde;o</label>
+          <input type="text" id="bonAseAnio" inputmode="numeric" maxlength="4" style="padding:8px;border:1px solid #ddd;border-radius:4px;width:100px"></div>
+        <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Mes</label>
+          <select id="bonAseMes" style="padding:8px;border:1px solid #ddd;border-radius:4px">
+            <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+            <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+            <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+            <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+          </select></div>
+        <button class="btn btn-cc" id="btnBonAse" onclick="cargarBonificacionesAsesores()">Ver bonificaciones</button>
+      </div>
+      <div id="bonAseContent"></div>
     </div>
   </div>
   <div class="fcard">
@@ -1394,7 +1415,7 @@ function inicializarInputsNumericos(){
   // Dinero: canon, administracion, valor base venta
   ['ar_canon','ar_admon','v_valorbase'].forEach(id=>attachMoneyInput(document.getElementById(id)));
   // Enteros sin formato: codigo plataforma, meses, anio de liquidacion
-  ['i_codigo','ar_meses','liqAnio'].forEach(id=>attachIntegerInput(document.getElementById(id)));
+  ['i_codigo','ar_meses','liqAnio','bonAseAnio'].forEach(id=>attachIntegerInput(document.getElementById(id)));
   // Telefono cliente
   attachIntegerInput(document.getElementById('c_tel'));
 }
@@ -1540,6 +1561,10 @@ async function hacerLogin(){
       const inMes = document.getElementById('liqMes');
       if (inAnio) inAnio.value = anioDef;
       if (inMes) inMes.value = mesDef;
+      const inAnioBA = document.getElementById('bonAseAnio');
+      const inMesBA = document.getElementById('bonAseMes');
+      if (inAnioBA) inAnioBA.value = anioDef;
+      if (inMesBA) inMesBA.value = mesDef;
     }
     btn.textContent='Cargando datos...';
     await cargarCatalogos();
@@ -1796,20 +1821,66 @@ function recolectarPartes(tipo){
   return { partes };
 }
 
-// ===== ASESOR ROWS (comisiones) =====
+// ===== CUOTAS / HITOS DE PAGO DE LA VENTA =====
+// Secundario: el comprador paga el inmueble en cuotas ($ del valor base).
+// Primario: la constructora paga la comisi\u00f3n de REDA3 por hitos (% de la comisi\u00f3n),
+// ej. primera parte, punto de equilibrio, escritura.
+function esVentaPrimario() {
+  return document.getElementById('v_mercado').value === 'Primario';
+}
+
 function addPagoRow() {
   const container = document.getElementById('pagosVntList');
   const row = document.createElement('div');
   row.className = 'com-row';
   row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
-  row.innerHTML = `
-    <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
-    <input type="text" class="pago-valor" inputmode="numeric" placeholder="Monto del pago ($)" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
-    <input type="text" class="pago-obs" placeholder="Ej: PE, Escrituraci\u00f3n" style="flex:0.8;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
-    <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
-  `;
+  if (esVentaPrimario()) {
+    row.innerHTML = `
+      <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
+      <input type="number" class="pago-pct" min="0" max="100" step="0.01" placeholder="% de la comisi\u00f3n" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
+      <input type="text" class="pago-obs" placeholder="Ej: Punto de equilibrio" style="flex:0.8;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
+      <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
+    `;
+  } else {
+    row.innerHTML = `
+      <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
+      <input type="text" class="pago-valor" inputmode="numeric" placeholder="Monto del pago ($)" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
+      <input type="text" class="pago-obs" placeholder="Ej: PE, Escrituraci\u00f3n" style="flex:0.8;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
+      <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
+    `;
+    attachMoneyInput(row.querySelector('.pago-valor'));
+  }
   container.appendChild(row);
-  attachMoneyInput(row.querySelector('.pago-valor'));
+  resumenPagos();
+}
+
+// Al cambiar el tipo de mercado, las filas de cuota cambian de modalidad
+// ($ del inmueble vs % de la comisi\u00f3n). Se conservan fecha y observaci\u00f3n;
+// el monto/% se limpia porque no son convertibles entre s\u00ed.
+function cambioMercadoVenta() {
+  const container = document.getElementById('pagosVntList');
+  const divTxt = document.getElementById('pagosVntDivTxt');
+  if (divTxt) {
+    divTxt.innerHTML = esVentaPrimario()
+      ? 'C\u00f3mo paga la constructora la comisi\u00f3n (hitos en % de la comisi\u00f3n REDA3)'
+      : 'C\u00f3mo va a pagar el comprador (cuotas)';
+  }
+  const previas = [];
+  container.querySelectorAll('.com-row').forEach(function(r) {
+    previas.push({
+      fecha: r.querySelector('.pago-fecha').value,
+      obs: r.querySelector('.pago-obs').value
+    });
+  });
+  container.innerHTML = '';
+  previas.forEach(function(p) {
+    addPagoRow();
+    const rows = container.querySelectorAll('.com-row');
+    const nueva = rows[rows.length - 1];
+    nueva.querySelector('.pago-fecha').value = p.fecha;
+    nueva.querySelector('.pago-obs').value = p.obs;
+  });
+  recalcComisiones('vnt');
   resumenPagos();
 }
 
@@ -1821,18 +1892,16 @@ function resumenPagos() {
   const valorBase = readMoney('v_valorbase');
   const pct = Number(document.getElementById('v_pct').value) || 0;
   const comOficina = valorBase * pct;
+  const primario = esVentaPrimario();
   const hoy = new Date(); hoy.setHours(23,59,59);
 
   let totalPago = 0;
+  let totalPct = 0;
   let htmlLines = '';
   const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
   rows.forEach(function(r, i) {
     const fecha = r.querySelector('.pago-fecha').value;
-    const valor = moneyToNum(r.querySelector('.pago-valor').value);
-    totalPago += valor;
-
-    const comCuota = valorBase > 0 ? (valor / valorBase) * comOficina : 0;
     const fp = fecha ? new Date(fecha + 'T12:00:00') : null;
     const cobrable = fp && fp <= hoy;
     const fechaTexto = fp ? (fp.getDate() + ' ' + meses[fp.getMonth()+1] + ' ' + fp.getFullYear()) : '(sin fecha)';
@@ -1840,32 +1909,61 @@ function resumenPagos() {
       ? '<span style="color:#10b981;font-weight:600">Cobrable</span>'
       : '<span style="color:#f59e0b;font-weight:600">Pendiente</span>';
 
+    let etiqueta, comCuota;
+    if (primario) {
+      const pctHito = Number(r.querySelector('.pago-pct').value) || 0;
+      totalPct += pctHito;
+      comCuota = (pctHito / 100) * comOficina;
+      etiqueta = 'Hito ' + (i+1) + ': ' + pctHito + '%';
+    } else {
+      const valor = moneyToNum(r.querySelector('.pago-valor').value);
+      totalPago += valor;
+      comCuota = valorBase > 0 ? (valor / valorBase) * comOficina : 0;
+      etiqueta = 'Cuota ' + (i+1) + ': ' + fmtP(valor);
+    }
+
     htmlLines += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--g200)">' +
-      '<span>Cuota ' + (i+1) + ': ' + fmtP(valor) + ' <small>(' + fechaTexto + ')</small></span>' +
+      '<span>' + etiqueta + ' <small>(' + fechaTexto + ')</small></span>' +
       '<span>Comisi\u00f3n: <strong>' + fmtP(comCuota) + '</strong> ' + estadoHTML + '</span></div>';
   });
 
-  const diff = valorBase - totalPago;
-  const cuadraHTML = valorBase > 0
-    ? (Math.abs(diff) > 1
-      ? ' <span style="color:var(--r500)">(' + (diff > 0 ? 'Faltan ' : 'Sobran ') + fmtP(Math.abs(diff)) + ' del valor base)</span>'
-      : ' <span style="color:#10b981">\u2713 Cuadra con valor base</span>')
-    : '';
+  let totalHTML;
+  if (primario) {
+    const diffPct = 100 - totalPct;
+    const cuadraPctHTML = Math.abs(diffPct) > 0.1
+      ? ' <span style="color:var(--r500)">(' + (diffPct > 0 ? 'Faltan ' : 'Sobran ') + Math.abs(diffPct).toFixed(1) + '% para el 100%)</span>'
+      : ' <span style="color:#10b981">\u2713 Suma 100%</span>';
+    totalHTML = '<span>Total hitos: ' + totalPct.toFixed(1) + '%' + cuadraPctHTML + '</span>';
+  } else {
+    const diff = valorBase - totalPago;
+    const cuadraHTML = valorBase > 0
+      ? (Math.abs(diff) > 1
+        ? ' <span style="color:var(--r500)">(' + (diff > 0 ? 'Faltan ' : 'Sobran ') + fmtP(Math.abs(diff)) + ' del valor base)</span>'
+        : ' <span style="color:#10b981">\u2713 Cuadra con valor base</span>')
+      : '';
+    totalHTML = '<span>Total pagos: ' + fmtP(totalPago) + cuadraHTML + '</span>';
+  }
 
   div.innerHTML = '<div style="margin-top:8px;font-size:12px">' + htmlLines +
     '<div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:700">' +
-    '<span>Total pagos: ' + fmtP(totalPago) + cuadraHTML + '</span>' +
+    totalHTML +
     '<span>Comisi\u00f3n oficina: ' + fmtP(comOficina) + '</span></div></div>';
 }
 
 function recolectarPagos() {
   const rows = document.querySelectorAll('#pagosVntList .com-row');
+  const primario = esVentaPrimario();
   const pagos = [];
   rows.forEach(function(r) {
     const fecha = r.querySelector('.pago-fecha').value;
-    const valor = moneyToNum(r.querySelector('.pago-valor').value);
     const obs = r.querySelector('.pago-obs').value || '';
-    if (fecha && valor > 0) pagos.push({ fecha_pago: fecha, valor_pago: valor, observacion: obs });
+    if (primario) {
+      const pctHito = Number(r.querySelector('.pago-pct').value) || 0;
+      if (fecha && pctHito > 0) pagos.push({ fecha_pago: fecha, pct_pago: pctHito, observacion: obs });
+    } else {
+      const valor = moneyToNum(r.querySelector('.pago-valor').value);
+      if (fecha && valor > 0) pagos.push({ fecha_pago: fecha, valor_pago: valor, observacion: obs });
+    }
   });
   return pagos;
 }
@@ -2225,11 +2323,19 @@ async function guardarVenta() {
   if (!comisiones || comisiones.length === 0) { toast('Agregue al menos un asesor', 'er'); return; }
 
   const pagos = recolectarPagos();
-  if (pagos.length === 0) { toast('Agregue al menos una cuota de pago', 'er'); return; }
-  const sumaPagos = pagos.reduce((s,p) => s + p.valor_pago, 0);
-  if (Math.abs(sumaPagos - valorbase) > 1) {
-    toast('Las cuotas de pago ($' + sumaPagos.toLocaleString() + ') no cuadran con el valor base ($' + valorbase.toLocaleString() + '). Corrija antes de guardar.', 'er');
-    return;
+  if (pagos.length === 0) { toast(esVentaPrimario() ? 'Agregue al menos un hito de pago' : 'Agregue al menos una cuota de pago', 'er'); return; }
+  if (esVentaPrimario()) {
+    const sumaPct = pagos.reduce((s,p) => s + (p.pct_pago || 0), 0);
+    if (Math.abs(sumaPct - 100) > 0.1) {
+      toast('Los % de los hitos deben sumar 100% (actual: ' + sumaPct.toFixed(1) + '%). Corrija antes de guardar.', 'er');
+      return;
+    }
+  } else {
+    const sumaPagos = pagos.reduce((s,p) => s + (p.valor_pago || 0), 0);
+    if (Math.abs(sumaPagos - valorbase) > 1) {
+      toast('Las cuotas de pago ($' + sumaPagos.toLocaleString() + ') no cuadran con el valor base ($' + valorbase.toLocaleString() + '). Corrija antes de guardar.', 'er');
+      return;
+    }
   }
 
   const btn = document.getElementById('btnGuardarVnt');
@@ -2556,10 +2662,11 @@ function renderMisNegocios(){
   const nomInm=id=>{const i=r.inmuebles.find(x=>x.id_inmueble===id);return i?i.nombre:id};
   const nomCli=id=>{const c=r.clientes.find(x=>x.id_cliente===id);return c?c.nombre:id};
 
-  // Años disponibles (a partir de los negocios del asesor)
+  // Años disponibles (negocios del asesor + años en que se cobran sus cuotas)
   const aniosSet = new Set();
   (r.arriendos||[]).forEach(a=>{const y=Number(a['año']);if(y)aniosSet.add(y)});
   (r.ventas||[]).forEach(v=>{const y=Number(v['año']);if(y)aniosSet.add(y)});
+  (r.pagos||[]).forEach(p=>{const y=Number(p['año_pago']);if(y)aniosSet.add(y)});
   const aniosDisp = completarAniosFiltro(aniosSet);
 
   // Obtener IDs de negocios donde el asesor cumple el filtro de punta
@@ -2572,11 +2679,20 @@ function renderMisNegocios(){
   let ventasFilt = r.ventas.filter(v => negocioIdsFiltrados.has(v.id_venta));
   if (fAnio) {
     arriendosFilt = arriendosFilt.filter(a => Number(a['año']) === fAnio);
-    ventasFilt = ventasFilt.filter(v => Number(v['año']) === fAnio);
   }
   if (fMes) {
     arriendosFilt = arriendosFilt.filter(a => Number(a.mes) === fMes);
-    ventasFilt = ventasFilt.filter(v => Number(v.mes) === fMes);
+  }
+  // Ventas: aparecen en el mes/año del negocio Y TAMBIÉN en los meses en que se
+  // cobra comisión (sus cuotas/hitos), para que el asesor las vea cuando entra la plata.
+  if (fAnio || fMes) {
+    ventasFilt = ventasFilt.filter(v => {
+      const negOk = (!fAnio || Number(v['año']) === fAnio) && (!fMes || Number(v.mes) === fMes);
+      if (negOk) return true;
+      return (r.pagos||[]).some(p => p.id_venta === v.id_venta
+        && (!fAnio || Number(p['año_pago']) === fAnio)
+        && (!fMes || Number(p.mes_pago) === fMes));
+    });
   }
 
   // Último creado primero (ID incremental descendente)
@@ -2693,8 +2809,14 @@ function renderMisNegocios(){
           const estadoPago=cobrable
             ?''
             :'<span style="color:#f59e0b;font-weight:600">Pendiente</span>';
-          cuotasHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #eee;font-size:12px">
-            <span>Cuota ${i+1}: ${fmtP(valorCom)} <small>(${fechaTxt})</small> ${estadoPago}</span>
+          // Hito de venta primario: mostrar el % de la comisión pactado
+          const pctHitoTxt=(p.pct_pago!==''&&p.pct_pago!=null)?' <small style="color:var(--g600)">('+(Math.round(Number(p.pct_pago)*1000)/10)+'% comisi&oacute;n)</small>':'';
+          // Resaltar la cuota que corresponde al mes/año filtrado
+          const esDelFiltro=(fMes&&mp===fMes)&&(!fAnio||ap===fAnio);
+          const badgeMes=esDelFiltro?'<span style="background:var(--azul-l);color:var(--azul);font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px">Cuota de este mes</span>':'';
+          const filaStyle=esDelFiltro?'background:var(--azul-l);border-radius:4px;padding:4px 6px':'padding:4px 0';
+          cuotasHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;${filaStyle};border-bottom:1px solid #eee;font-size:12px">
+            <span>Cuota ${i+1}: ${fmtP(valorCom)}${pctHitoTxt} <small>(${fechaTxt})</small> ${estadoPago}${badgeMes}</span>
             <span style="display:flex;align-items:center;gap:8px">
               <strong>Mi com: ${fmtP(miComPago)}</strong>
               ${cobrable?'<button class="btn btn-cc" style="font-size:10px;padding:3px 8px" title="Generar PDF de cobro de esta cuota (comisi&oacute;n por la venta)" onclick="imprimirCuentaCobro(\'venta_pago\',\''+p.id_pago+'\',this)">Cuenta de cobro de la venta</button>':''}
@@ -2977,34 +3099,153 @@ async function liquidarBonificaciones() {
   btn.disabled = false; btn.textContent = 'Liquidar mes';
 }
 
-async function editarPago(idPago, idVenta, btn) {
-  const fecha = prompt('Nueva fecha de pago (YYYY-MM-DD, dejar vacío para no cambiar):');
-  if (fecha === null) return;
-  const fechaT = fecha.trim();
-  if (fechaT && !fechaISOValida(fechaT)) { toast('Fecha inválida. Usa el formato YYYY-MM-DD (ej: 2026-03-15).','er'); return; }
-  const valorStr = prompt('Nuevo monto del pago del inmueble ($, dejar vacío para no cambiar):');
-  if (valorStr === null) return;
-  let valor = null;
-  if (valorStr.trim() !== '') {
-    valor = moneyToNum(valorStr);
-    if (!(valor > 0)) { toast('El monto del pago debe ser un número mayor a 0.','er'); return; }
-  }
-  if (!fechaT && valor === null) { toast('No cambiaste nada (fecha y monto vacíos).','er'); return; }
-  const obs = prompt('Observación (dejar vacío para no cambiar):');
-
-  btn.disabled = true; btn.textContent = 'Guardando...';
+// Tabla de bonificaciones por asesor para gerencia (liquidado o preliminar en vivo)
+async function cargarBonificacionesAsesores() {
+  const btn = document.getElementById('btnBonAse');
+  const cont = document.getElementById('bonAseContent');
+  const anio = readInt('bonAseAnio');
+  const mes = parseInt(document.getElementById('bonAseMes').value, 10);
+  if (!anio || !mes) { toast('Indica año y mes','er'); return; }
+  btn.disabled = true; btn.textContent = 'Consultando...';
+  cont.innerHTML = '<div class="loading"><span class="spinner"></span> Calculando bonificaciones...</div>';
   try {
-    const datos = { action: 'actualizar_pago', id_pago: idPago, id_asesor: asesorActual.id_asesor };
-    if (fechaT) datos.fecha_pago = fechaT;
-    if (valor !== null) datos.valor_pago = valor;
-    if (obs !== null && obs.trim() !== '') datos.observacion = obs;
-    const r = await apiPost(datos);
-    if (r && r.ok) {
-      toast('Pago actualizado');
-      refrescarVistaNegocios();
-    } else { toast(r?.error || 'Error al actualizar', 'er'); }
-  } catch (e) { toast('Error: ' + e.message, 'er'); }
-  btn.disabled = false; btn.textContent = 'Editar';
+    const r = await apiGet({ action:'bonificaciones_asesores', id_asesor: asesorActual.id_asesor, 'año': anio, mes: mes });
+    if (!r || !r.ok) { cont.innerHTML = '<div class="neg-empty">' + (r?.error || 'Error al consultar') + '</div>'; }
+    else {
+      const filas = (r.filas || []).slice().sort((a,b)=>(Number(b.total)||0)-(Number(a.total)||0));
+      const conBono = filas.filter(f=>(Number(f.total)||0)>0);
+      const sinBono = filas.length - conBono.length;
+      const estadoBadge = r.liquidado
+        ? '<span style="background:#dcfce7;color:#15803d;font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px">LIQUIDADO</span>'
+        : '<span style="background:#fef3c7;color:#b45309;font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px">PRELIMINAR (sin liquidar)</span>';
+      const filasHTML = conBono.map(f=>{
+        const cobradaTxt = f.cobrada ? ' <span style="color:#10b981;font-size:10px;font-weight:700">✓ cobrada</span>' : '';
+        const contTxt = f.continuidad==='CONTINUA' ? '5% continuidad' : (f.pct_variable>0 ? (f.pct_variable*100).toFixed(0)+'%' : '—');
+        return '<tr style="border-bottom:1px solid var(--g200)">'+
+          '<td style="padding:7px 8px"><strong>'+f.nombre+'</strong><br><small style="color:var(--g400)">'+(f.vinculacion||'')+'</small></td>'+
+          '<td style="padding:7px 8px">'+f.categoria+cobradaTxt+'</td>'+
+          '<td style="padding:7px 8px;text-align:right">'+fmtP(f.comision_generada)+'</td>'+
+          '<td style="padding:7px 8px;text-align:center">'+f.acciones+'</td>'+
+          '<td style="padding:7px 8px;text-align:center">'+contTxt+'</td>'+
+          '<td style="padding:7px 8px;text-align:right">'+fmtP(f.fijo)+'</td>'+
+          '<td style="padding:7px 8px;text-align:right">'+fmtP(f.variable)+'</td>'+
+          '<td style="padding:7px 8px;text-align:right;font-weight:700">'+fmtP(f.total)+'</td></tr>';
+      }).join('');
+      cont.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px">'+estadoBadge+
+        '<span style="color:var(--g600)">'+conBono.length+' asesores con bonificaci&oacute;n'+(sinBono?' · '+sinBono+' sin bonificaci&oacute;n':'')+'</span></div>'+
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">'+
+        '<thead><tr style="border-bottom:2px solid var(--g300);text-align:left;color:var(--g600)">'+
+        '<th style="padding:6px 8px">Asesor</th><th style="padding:6px 8px">Categor&iacute;a</th>'+
+        '<th style="padding:6px 8px;text-align:right">Com. generada</th><th style="padding:6px 8px;text-align:center">Acciones</th>'+
+        '<th style="padding:6px 8px;text-align:center">%</th><th style="padding:6px 8px;text-align:right">Fijo</th>'+
+        '<th style="padding:6px 8px;text-align:right">Variable</th><th style="padding:6px 8px;text-align:right">Total</th></tr></thead>'+
+        '<tbody>'+(filasHTML||'<tr><td colspan="8" style="padding:12px;text-align:center;color:var(--g400)">Ning&uacute;n asesor genera bonificaci&oacute;n este mes</td></tr>')+'</tbody>'+
+        '<tfoot><tr style="border-top:2px solid var(--g300);font-weight:700"><td colspan="7" style="padding:8px;text-align:right">TOTAL DEL MES:</td>'+
+        '<td style="padding:8px;text-align:right">'+fmtP(r.total_mes)+'</td></tr></tfoot></table></div>';
+    }
+  } catch (e) { cont.innerHTML = '<div class="neg-empty">Error: ' + e.message + '</div>'; }
+  btn.disabled = false; btn.textContent = 'Ver bonificaciones';
+}
+
+// Edita una cuota mostrando TODO el negocio como referencia (modal), en vez de
+// prompts a ciegas. El asesor ve inmueble, valores, todas las cuotas y cuál edita.
+function editarPago(idPago, idVenta, btn) {
+  // Fuente de datos: Mis Negocios (asesor) o Gestión (gerente), según cuál esté cargada
+  const src = (misNegociosData && (misNegociosData.ventas||[]).some(v=>v.id_venta===idVenta))
+    ? misNegociosData : gestionData;
+  if (!src) { toast('Recarga la sección e intenta de nuevo','er'); return; }
+  const v = (src.ventas||[]).find(x=>x.id_venta===idVenta);
+  const pagosV = (src.pagos||[]).filter(p=>p.id_venta===idVenta);
+  const p = pagosV.find(x=>x.id_pago===idPago);
+  if (!v || !p) { toast('Pago no encontrado','er'); return; }
+
+  const inm = (src.inmuebles||[]).find(i=>i.id_inmueble===v.id_inmueble);
+  const esPrimario = v.mercado === 'Primario';
+  const comOfi = Number(v.comision_oficina)||0;
+  const pctOfi = Number(v.pct_comision_oficina)||0;
+  const nomMesC = m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+
+  // Valores actuales de la cuota que se edita
+  const fechaActual = (()=>{ try{ return aFechaInput(p.fecha_pago); }catch(e){ return ''; } })();
+  const pctActual = (p.pct_pago!==''&&p.pct_pago!=null)
+    ? Math.round(Number(p.pct_pago)*10000)/100
+    : (comOfi>0 ? Math.round(((Number(p.valor_cobrado)||0)/comOfi)*10000)/100 : 0);
+  const montoActual = pctOfi>0 ? Math.round((Number(p.valor_cobrado)||0)/pctOfi) : 0;
+
+  const cuotasRef = pagosV.map((q,i)=>{
+    const mq=Number(q.mes_pago)||0, aq=Number(q['año_pago'])||Number(q['ano_pago'])||0;
+    const esEsta = q.id_pago===idPago;
+    const pctQ = (q.pct_pago!==''&&q.pct_pago!=null) ? ' · '+(Math.round(Number(q.pct_pago)*1000)/10)+'%' : '';
+    return '<div style="display:flex;justify-content:space-between;padding:4px 8px;font-size:12px;'+(esEsta?'background:var(--azul-l);border-radius:5px;font-weight:700':'')+'">'+
+      '<span>Cuota '+(i+1)+(esEsta?' (editando)':'')+'</span>'+
+      '<span>'+fmtP(q.valor_cobrado)+pctQ+' <small>('+((mq&&aq)?nomMesC(mq)+' '+aq:'sin fecha')+')</small> '+(q.observacion?'&mdash; '+q.observacion:'')+'</span></div>';
+  }).join('');
+
+  const campoValor = esPrimario
+    ? '<label style="font-size:12px;font-weight:600">% del hito (de la comisi&oacute;n REDA3)</label>'+
+      '<input type="number" id="ep_pct" min="0" max="100" step="0.01" value="'+pctActual+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">'
+    : '<label style="font-size:12px;font-weight:600">Monto del pago del inmueble ($)</label>'+
+      '<input type="text" id="ep_valor" inputmode="numeric" value="'+formatMiles(montoActual)+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'editarPagoModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,40,64,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;padding:22px">
+      <div style="font-size:16px;font-weight:700;color:var(--azul);margin-bottom:12px">Editar cuota de ${idVenta}</div>
+      <div style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+        <div style="font-weight:700;color:var(--azul);margin-bottom:6px">Referencia del negocio</div>
+        <div><strong>Inmueble:</strong> ${inm?inm.nombre:v.id_inmueble} &nbsp;&middot;&nbsp; <strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
+        <div><strong>Valor venta:</strong> ${fmtP(v.valor_base_comision)} &nbsp;&middot;&nbsp; <strong>% oficina:</strong> ${(pctOfi*100).toFixed(2)}% &nbsp;&middot;&nbsp; <strong>Comisi&oacute;n oficina:</strong> ${fmtP(comOfi)}</div>
+        <div style="margin-top:8px;font-weight:600">Cuotas del negocio ${esPrimario?'(hitos % de la comisi&oacute;n)':''}:</div>
+        ${cuotasRef}
+      </div>
+      <label style="font-size:12px;font-weight:600">Fecha del pago</label>
+      <input type="date" id="ep_fecha" value="${fechaActual}" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">
+      ${campoValor}
+      <label style="font-size:12px;font-weight:600">Observaci&oacute;n</label>
+      <input type="text" id="ep_obs" value="${String(p.observacion||'').replace(/"/g,'&quot;')}" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn" style="background:var(--g200);color:var(--g800)" onclick="cerrarEditarPago()">Cancelar</button>
+        <button class="btn btn-cc" id="ep_guardar">Guardar cambios</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) cerrarEditarPago(); });
+  document.body.appendChild(overlay);
+  const epValor = document.getElementById('ep_valor');
+  if (epValor) attachMoneyInput(epValor);
+
+  document.getElementById('ep_guardar').onclick = async function() {
+    const fechaT = document.getElementById('ep_fecha').value.trim();
+    if (fechaT && !fechaISOValida(fechaT)) { toast('Fecha inválida (formato YYYY-MM-DD).','er'); return; }
+    const gBtn = this; gBtn.disabled = true; gBtn.textContent = 'Guardando...';
+    try {
+      const datos = { action: 'actualizar_pago', id_pago: idPago, id_asesor: asesorActual.id_asesor };
+      if (fechaT) datos.fecha_pago = fechaT;
+      if (esPrimario) {
+        const pctN = Number(document.getElementById('ep_pct').value);
+        if (!(pctN >= 0)) { toast('El % del hito debe ser un número válido.','er'); gBtn.disabled=false; gBtn.textContent='Guardar cambios'; return; }
+        datos.pct_pago = pctN;
+      } else {
+        const valorN = moneyToNum(document.getElementById('ep_valor').value);
+        if (!(valorN > 0)) { toast('El monto del pago debe ser mayor a 0.','er'); gBtn.disabled=false; gBtn.textContent='Guardar cambios'; return; }
+        datos.valor_pago = valorN;
+      }
+      datos.observacion = document.getElementById('ep_obs').value || '';
+      const r = await apiPost(datos);
+      if (r && r.ok) {
+        toast('Pago actualizado');
+        cerrarEditarPago();
+        refrescarVistaNegocios();
+      } else { toast(r?.error || 'Error al actualizar', 'er'); gBtn.disabled=false; gBtn.textContent='Guardar cambios'; }
+    } catch (e) { toast('Error: ' + e.message, 'er'); gBtn.disabled=false; gBtn.textContent='Guardar cambios'; }
+  };
+}
+
+function cerrarEditarPago(){
+  const m=document.getElementById('editarPagoModal');
+  if(m)m.remove();
 }
 
 async function cancelarVenta(idVenta, btn) {
@@ -3062,6 +3303,7 @@ function setMoneyVal(id,value){ const e=document.getElementById(id); if(e)e.valu
 
 // Restaura los botones/encabezados de los formularios a modo "registro nuevo".
 function restaurarBotonesRegistro(){
+  quitarRefNegocio();
   const ba=document.getElementById('btnGuardarArr'); if(ba){ba.textContent='✓ Guardar Arriendo';ba.disabled=false;}
   const bv=document.getElementById('btnGuardarVnt'); if(bv){bv.textContent='✓ Guardar Venta';bv.disabled=false;}
   const ha=document.querySelector('#sec-arriendo .fcard-hd h3'); if(ha)ha.textContent='Registrar nuevo arriendo';
@@ -3078,6 +3320,62 @@ function marcarModoEdicion(tipo,id){
   // El botón "Limpiar" pasa a "Cancelar edición" para salir del modo edición sin guardar.
   const lim=document.getElementById(tipo==='arr'?'btnLimpiarArr':'btnLimpiarVnt');
   if(lim){lim.textContent='✕ Cancelar edición';lim.onclick=function(){finalizarEdicion(tipo);};}
+}
+
+// Panel de referencia (solo lectura) con el negocio COMPLETO tal como está guardado,
+// visible mientras se edita, para no ajustar cuotas/valores a ciegas.
+function quitarRefNegocio(){
+  const p=document.getElementById('refNegocioPanel');
+  if(p)p.remove();
+}
+
+function mostrarRefNegocio(tipo,id){
+  quitarRefNegocio();
+  if(!gestionData)return;
+  const esArr=tipo==='arriendo';
+  const neg=esArr
+    ?(gestionData.arriendos||[]).find(x=>x.id_arriendo===id)
+    :(gestionData.ventas||[]).find(x=>x.id_venta===id);
+  if(!neg)return;
+  const nomInmR=iid=>{const i=(gestionData.inmuebles||[]).find(x=>x.id_inmueble===iid);return i?i.nombre:iid};
+  const nomAseR=aid=>{const a=(gestionData.asesores||[]).find(x=>x.id_asesor===aid);return a?a.nombre:aid};
+  const nomMesR=m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
+  const comsNeg=(gestionData.comisiones||[]).filter(c=>c.id_negocio===id&&String(c.estado||'').toUpperCase()!=='ANULADA');
+  const partsHTML=comsNeg.map(c=>nomAseR(c.id_asesor)+' <small>('+c.punta+' '+Math.round((Number(c.participacion)||1)*100)+'% &mdash; '+fmtP(c.valor_comision)+')</small>').join('<br>')||'&mdash;';
+
+  let datosHTML, cuotasHTML='';
+  if(esArr){
+    datosHTML='<div><strong>Canon:</strong> '+fmtP(neg.valor_canon)+' &middot; <strong>Adm&oacute;n:</strong> '+fmtP(neg.administracion||0)+
+      ' &middot; <strong>% oficina:</strong> '+((Number(neg.pct_comision_oficina)||0)*100).toFixed(2)+'%'+
+      ' &middot; <strong>Comisi&oacute;n mensual:</strong> '+fmtP(neg.comision_oficina)+
+      ' &middot; <strong>Meses:</strong> '+(neg.meses_contrato||'&mdash;')+'</div>';
+  } else {
+    const comOfiR=Number(neg.comision_oficina)||0;
+    datosHTML='<div><strong>Valor venta:</strong> '+fmtP(neg.valor_base_comision)+
+      ' &middot; <strong>Mercado:</strong> '+(neg.mercado||'&mdash;')+
+      ' &middot; <strong>% oficina:</strong> '+((Number(neg.pct_comision_oficina)||0)*100).toFixed(2)+'%'+
+      ' &middot; <strong>Comisi&oacute;n oficina:</strong> '+fmtP(comOfiR)+'</div>';
+    const pagosNeg=(gestionData.pagos||[]).filter(p=>p.id_venta===id);
+    if(pagosNeg.length){
+      cuotasHTML='<div style="margin-top:6px"><strong>Cuotas guardadas:</strong></div>'+pagosNeg.map((q,i)=>{
+        const mq=Number(q.mes_pago)||0, aq=Number(q['año_pago'])||Number(q['ano_pago'])||0;
+        const pctQ=(q.pct_pago!==''&&q.pct_pago!=null)?' &middot; '+(Math.round(Number(q.pct_pago)*1000)/10)+'% comisi&oacute;n':'';
+        return '<div style="padding:2px 0 2px 12px;font-size:11px">Cuota '+(i+1)+': '+fmtP(q.valor_cobrado)+pctQ+
+          ' <small>('+((mq&&aq)?nomMesR(mq)+' '+aq:'sin fecha')+')</small>'+(q.observacion?' &mdash; '+q.observacion:'')+'</div>';
+      }).join('');
+    }
+  }
+
+  const panel=document.createElement('div');
+  panel.id='refNegocioPanel';
+  panel.style.cssText='background:var(--azul-l);border:1px solid var(--azul2);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--g800)';
+  panel.innerHTML='<div style="font-weight:700;color:var(--azul);margin-bottom:6px">&#128269; Referencia &mdash; as&iacute; est&aacute; guardado '+id+' ('+nomInmR(neg.id_inmueble)+')</div>'+
+    datosHTML+
+    '<div style="margin-top:6px"><strong>Asesores:</strong><br>'+partsHTML+'</div>'+
+    cuotasHTML+
+    '<div style="margin-top:8px;font-size:11px;color:var(--g600)">Los cambios que hagas abajo reemplazan estos valores al guardar.</div>';
+  const cardBody=document.querySelector('#sec-'+(esArr?'arriendo':'venta')+' .fcard-bd');
+  if(cardBody)cardBody.insertBefore(panel,cardBody.firstChild);
 }
 
 function finalizarEdicion(tipo){
@@ -3097,6 +3395,7 @@ function editarNegocio(tipo,id){
     prefillArriendo(a);
     editandoNeg={tipo:'arriendo',id};
     marcarModoEdicion('arr',id);
+    mostrarRefNegocio('arriendo',id);
   }else{
     const v=(gestionData.ventas||[]).find(x=>x.id_venta===id);
     if(!v){toast('Venta no encontrada','er');return;}
@@ -3104,6 +3403,7 @@ function editarNegocio(tipo,id){
     prefillVenta(v);
     editandoNeg={tipo:'venta',id};
     marcarModoEdicion('vnt',id);
+    mostrarRefNegocio('venta',id);
   }
   toast('Editando '+id+'. Ajusta y pulsa "Guardar cambios".');
 }
@@ -3175,22 +3475,51 @@ function aFechaInput(v){
 function prefillPagosForm(v){
   const list=document.getElementById('pagosVntList');
   list.innerHTML='';
+  // Actualizar el rótulo del bloque de cuotas según el mercado ya prefijado
+  const divTxt=document.getElementById('pagosVntDivTxt');
+  if(divTxt){
+    divTxt.innerHTML = v.mercado==='Primario'
+      ? 'Cómo paga la constructora la comisión (hitos en % de la comisión REDA3)'
+      : 'Cómo va a pagar el comprador (cuotas)';
+  }
   const pagos=(gestionData.pagos||[]).filter(p=>p.id_venta===v.id_venta);
   if(!pagos.length){ addPagoRow(); resumenPagos(); return; }
   const pct=Number(v.pct_comision_oficina)||0;
   const valorBase=Number(v.valor_base_comision)||0;
-  // Reconstruir montos; ajustar el último para que la suma cuadre exactamente con el valor base.
-  const montos=pagos.map(p=>pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0);
-  if(valorBase>0&&montos.length){
-    const sumOtros=montos.slice(0,-1).reduce((s,m)=>s+m,0);
-    montos[montos.length-1]=Math.max(0,valorBase-sumOtros);
+  const comOficina=Number(v.comision_oficina)||valorBase*pct;
+  const primario=v.mercado==='Primario';
+
+  let pcts=[], montos=[];
+  if(primario){
+    // Reconstruir % de cada hito: pct_pago guardado (fracción) o valor_cobrado/comisión.
+    pcts=pagos.map(p=>{
+      if(p.pct_pago!==''&&p.pct_pago!=null) return Math.round(Number(p.pct_pago)*10000)/100;
+      return comOficina>0?Math.round(((Number(p.valor_cobrado)||0)/comOficina)*10000)/100:0;
+    });
+    // Ajustar el último para que la suma cuadre exactamente en 100%.
+    if(pcts.length){
+      const sumOtros=pcts.slice(0,-1).reduce((s,x)=>s+x,0);
+      pcts[pcts.length-1]=Math.max(0,Math.round((100-sumOtros)*100)/100);
+    }
+  } else {
+    // Reconstruir montos; ajustar el último para que la suma cuadre con el valor base.
+    montos=pagos.map(p=>pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0);
+    if(valorBase>0&&montos.length){
+      const sumOtros=montos.slice(0,-1).reduce((s,m)=>s+m,0);
+      montos[montos.length-1]=Math.max(0,valorBase-sumOtros);
+    }
   }
+
   pagos.forEach(()=>addPagoRow());
   const rows=list.querySelectorAll('.com-row');
   rows.forEach((row,i)=>{
     const p=pagos[i];
     row.querySelector('.pago-fecha').value=aFechaInput(p.fecha_pago);
-    row.querySelector('.pago-valor').value=formatMiles(montos[i]);
+    if(primario){
+      row.querySelector('.pago-pct').value=pcts[i];
+    } else {
+      row.querySelector('.pago-valor').value=formatMiles(montos[i]);
+    }
     row.querySelector('.pago-obs').value=p.observacion||'';
   });
   resumenPagos();
@@ -3351,6 +3680,34 @@ async function cargarBonificaciones(mes) {
         <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n fija${r.es_medio?' (1/2)':''}</div><div class="bs-val">${fmtP(r.bonificacion_fija)}</div></div>
         <div class="bon-stat"><div class="bs-label">Bonificaci&oacute;n variable (${(r.pct_variable*100).toFixed(0)}%)</div><div class="bs-val">${fmtP(r.bonificacion_variable)}</div></div>
       </div>
+      ${(()=>{
+        const det = r.detalle || [];
+        if (!det.length) return '';
+        const filas = det.map(d=>{
+          const parts = (d.participantes||[]).map(p=>p.nombre+' <small style="color:var(--g400)">('+p.punta+')</small>').join('<br>')||'&mdash;';
+          const tipoBadge = d.tipo==='venta'
+            ? '<span style="background:#ede9fe;color:#6d28d9;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px">VENTA</span>'
+            : '<span style="background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px">ARRIENDO</span>';
+          return '<tr style="border-bottom:1px solid var(--g200)">'+
+            '<td style="padding:7px 8px;white-space:nowrap">'+tipoBadge+' <strong>'+d.id_negocio+'</strong></td>'+
+            '<td style="padding:7px 8px">'+d.inmueble+'</td>'+
+            '<td style="padding:7px 8px;font-size:11px">'+parts+'</td>'+
+            '<td style="padding:7px 8px;text-align:right">'+fmtP(d.mi_comision)+'</td>'+
+            '<td style="padding:7px 8px;text-align:right">'+fmtP(d.generado_oficina)+'</td>'+
+            '<td style="padding:7px 8px;text-align:right;font-weight:700">'+fmtP(d.aporte)+'</td></tr>';
+        }).join('');
+        const totAporte = det.reduce((s,d)=>s+(Number(d.aporte)||0),0);
+        return '<div style="background:var(--blanco);border:1px solid var(--g200);border-radius:8px;padding:14px;margin-bottom:14px;overflow-x:auto">'+
+          '<div style="font-weight:700;color:var(--azul);font-size:13px;margin-bottom:8px">Negocios que componen tu bonificaci&oacute;n de este mes</div>'+
+          '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px">'+
+          '<thead><tr style="border-bottom:2px solid var(--g300);text-align:left;color:var(--g600)">'+
+          '<th style="padding:6px 8px">Negocio</th><th style="padding:6px 8px">Inmueble</th><th style="padding:6px 8px">Participan</th>'+
+          '<th style="padding:6px 8px;text-align:right">Mi comisi&oacute;n</th><th style="padding:6px 8px;text-align:right">Gener&oacute; a la empresa</th><th style="padding:6px 8px;text-align:right">Aporte a mi bonificaci&oacute;n</th></tr></thead>'+
+          '<tbody>'+filas+'</tbody>'+
+          '<tfoot><tr style="border-top:2px solid var(--g300);font-weight:700"><td colspan="5" style="padding:7px 8px;text-align:right">Total comisi&oacute;n generada a oficina:</td>'+
+          '<td style="padding:7px 8px;text-align:right">'+fmtP(totAporte)+'</td></tr></tfoot></table>'+
+          '<div style="font-size:11px;color:var(--g400);margin-top:6px">Arriendos: comisi&oacute;n &times; meses de contrato. Ventas: lo que ingres&oacute; a la oficina este mes. El aporte aplica el 50% por punta y tu participaci&oacute;n.</div></div>';
+      })()}
       <div style="background:var(--g50);padding:18px;border-radius:8px;font-size:12px;color:var(--g600)">
         <strong style="color:var(--azul);font-size:13px">Cómo se calcula:</strong><br>
         &bull; <strong>ORO</strong>: ≥ $14.085.000 + 10 acciones &nbsp;&bull; <strong>PLATA</strong>: ≥ $10.955.000 + 10 acciones<br>
@@ -3362,7 +3719,7 @@ async function cargarBonificaciones(mes) {
         &bull; <strong>Variable</strong>: 4% el primer mes en una categor&iacute;a, 5% si contin&uacute;a en la misma. Si cambia de categor&iacute;a vuelve a 4%.<br>
         &bull; <strong>Empleado</strong>: total se divide entre 1.3. Enero siempre arranca en 4%.<br>
         &bull; Arriendos cuentan como <strong>comisi&oacute;n &times; meses del contrato</strong>.<br>
-        &bull; Ventas cuentan en el <strong>mes en que se cerr&oacute; el negocio</strong>, con el <strong>dinero ya ingresado</strong> a la oficina.
+        &bull; Ventas cuentan en el <strong>mes en que ingresa cada pago</strong> a la oficina (si la venta se paga en cuotas, cada cuota suma al mes en que entra).
       </div>
     `;
     cont.innerHTML = html;

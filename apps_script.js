@@ -82,7 +82,7 @@ const COLUMNAS = {
            'referido_captador', 'numero_captador_r', 'valor_ref_captador',
            'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
            'estado_venta'],
-  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado'],
+  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado', 'pct_pago'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
   partes: ['id_parte', 'id_negocio', 'tipo_negocio', 'rol', 'id_cliente', 'participacion_pct'],
   oficina: ['id_oficina', 'nombre'],
@@ -459,6 +459,71 @@ function asegurarColumnaEstadoPagos() {
   return false;
 }
 
+// Asegura que la hoja Pagos tenga la columna pct_pago (después de estado).
+// Idempotente. Guarda la fracción (0-1) del hito para ventas de mercado Primario,
+// donde la constructora paga por % de la comisión (primera parte, punto de
+// equilibrio, escritura...). Vacío en ventas secundario.
+function asegurarColumnaPctPago() {
+  asegurarColumnaEstadoPagos(); // garantiza el orden: ...observacion, estado, pct_pago
+  var sheet = getSheet(HOJAS.pagos);
+  if (!sheet) return false;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('pct_pago') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('pct_pago').setFontWeight('bold');
+    return true;
+  }
+  return false;
+}
+
+// Construye y valida las filas de la hoja Pagos a partir del payload del formulario
+// de venta. Dos modalidades:
+//  - Secundario: cuotas con valor_pago (monto del inmueble); deben sumar el valor
+//    base de la venta. valor_cobrado = proporción de la comisión de oficina.
+//  - Primario: hitos con pct_pago (% de la comisión REDA3, 0-100); deben sumar 100%.
+//    valor_cobrado = % × comisión de oficina.
+// Retorna { error: '...' } o { filas: [{fecha_pago, año_pago, mes_pago, valor_cobrado, pct_pago, observacion}] }.
+function construirPagosVenta_(pagosBody, datosVenta) {
+  var comOficina = numVal(datosVenta.comision_oficina);
+  var valorBase = numVal(datosVenta.valor_base_comision);
+  var esPorPct = pagosBody.some(function(p) {
+    return p.pct_pago !== undefined && p.pct_pago !== null && p.pct_pago !== '';
+  });
+
+  if (esPorPct) {
+    var sumaPct = pagosBody.reduce(function(acc, p) { return acc + numVal(p.pct_pago); }, 0);
+    if (Math.abs(sumaPct - 100) > 0.1) {
+      return { error: 'Los % de los hitos deben sumar 100% (actual: ' + sumaPct.toFixed(1) + '%)' };
+    }
+    for (var iH = 0; iH < pagosBody.length; iH++) {
+      if (numVal(pagosBody[iH].pct_pago) < 0) return { error: 'Los % de los hitos no pueden ser negativos' };
+    }
+  } else {
+    var sumaPagos = pagosBody.reduce(function(acc, p) { return acc + numVal(p.valor_pago); }, 0);
+    if (Math.abs(sumaPagos - valorBase) > 1) {
+      return { error: 'La suma de pagos ($' + Math.round(sumaPagos).toLocaleString() + ') no cuadra con el valor base ($' + Math.round(valorBase).toLocaleString() + ')' };
+    }
+    for (var iP = 0; iP < pagosBody.length; iP++) {
+      if (numVal(pagosBody[iP].valor_pago) < 0) return { error: 'Los pagos no pueden ser negativos' };
+    }
+  }
+
+  var filas = pagosBody.map(function(pago) {
+    var fechaPago = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
+    var fraccion = esPorPct
+      ? numVal(pago.pct_pago) / 100
+      : (valorBase > 0 ? numVal(pago.valor_pago) / valorBase : 0);
+    return {
+      fecha_pago: pago.fecha_pago || '',
+      'año_pago': fechaPago ? fechaPago.getFullYear() : '',
+      mes_pago: fechaPago ? (fechaPago.getMonth() + 1) : '',
+      valor_cobrado: Math.round(fraccion * comOficina),
+      pct_pago: esPorPct ? fraccion : '',
+      observacion: pago.observacion || ''
+    };
+  });
+  return { filas: filas };
+}
+
 // Asegura que la hoja Arriendos tenga la columna estado_arriendo al final.
 // Idempotente. Permite marcar arriendos como CANCELADO.
 function asegurarColumnaEstadoArriendo() {
@@ -810,6 +875,16 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
   var comisionGeneradaOficina = 0;
   var totalRecibido = 0;
   var hoy = new Date();
+  // Detalle por negocio de lo que compone la bonificación del mes (para mostrar
+  // al asesor qué negocios suman y cuánto). Mismos números del cálculo.
+  var detalleNegocios = [];
+
+  // Mi comisión pactada en un negocio (suma de mis puntas, sin prorratear)
+  function miComisionEn(idNegocio) {
+    return misCom
+      .filter(function(c) { return c.id_negocio === idNegocio; })
+      .reduce(function(acc, c) { return acc + (Number(c.valor_comision) || 0); }, 0);
+  }
 
   // --- Arriendos: filtran por mes del arriendo, anualizados según meses_contrato ---
   arriendos.forEach(function(a) {
@@ -817,32 +892,20 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
     if (parseInt(a['año'], 10) !== anio) return;
     if (negociosIds.indexOf(a.id_arriendo) === -1) return;
     var meses = mesesContratoDe(a);
-    comisionGeneradaOficina += (Number(a.comision_oficina) || 0) * meses * 0.5 * sumParticipacion(a.id_arriendo);
+    var generadoArr = (Number(a.comision_oficina) || 0) * meses;
+    var aporteArr = generadoArr * 0.5 * sumParticipacion(a.id_arriendo);
+    comisionGeneradaOficina += aporteArr;
+    detalleNegocios.push({
+      tipo: 'arriendo',
+      id_negocio: a.id_arriendo,
+      id_inmueble: a.id_inmueble,
+      mi_comision: miComisionEn(a.id_arriendo),
+      generado_oficina: generadoArr,
+      aporte: aporteArr
+    });
   });
 
-  // --- Ventas: aportan a la bonificación del mes/año del NEGOCIO, pero solo con
-  // el dinero efectivamente ingresado a la oficina (pagos con fecha ya cumplida).
-  // Igual que las comisiones: se atribuyen al negocio y se causan al entrar la plata.
-  // Así un negocio de junio con cuotas a diciembre no suma su comisión completa de
-  // una vez, y la plata que entra de negocios de otros meses no infla el mes actual.
-  ventas.forEach(function(v) {
-    if (parseInt(v.mes, 10) !== mes) return;
-    if (parseInt(v['año'], 10) !== anio) return;
-    if (String(v.estado_venta).toUpperCase() === 'CANCELADA') return;
-    if (negociosIds.indexOf(v.id_venta) === -1) return;
-    var ingresado = pagos.reduce(function(sum, p) {
-      if (p.id_venta !== v.id_venta) return sum;
-      if (!pagoYaIngresado_(p, hoy)) return sum;
-      return sum + (Number(p.valor_cobrado) || 0);
-    }, 0);
-    var comOfiV = Number(v.comision_oficina) || 0;
-    // Tope: lo ingresado nunca puede superar la comisión pactada del negocio
-    // (protege contra pagos duplicados en la hoja).
-    if (comOfiV > 0 && ingresado > comOfiV) ingresado = comOfiV;
-    comisionGeneradaOficina += ingresado * 0.5 * sumParticipacion(v.id_venta);
-  });
-
-  // Pagos del mes: solo para el total recibido informativo (criterio de caja)
+  // Pagos del mes: base de caja para las ventas y para el total recibido
   var pagosDelMes = pagos.filter(function(p) {
     if (parseInt(p.mes_pago, 10) !== mes) return false;
     if (parseInt(p['año_pago'] || p['ano_pago'], 10) !== anio) return false;
@@ -860,6 +923,37 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
       return true;
     }
     return fp <= hoy;
+  });
+
+  // --- Ventas: CAJA PURA — cada pago cuenta en la bonificación del mes en que
+  // ingresa a la oficina, sin importar de qué mes sea el negocio. Igual que las
+  // comisiones del asesor: si la venta se paga en 3 cuotas, cada cuota aporta a
+  // la bonificación de su propio mes. (Regla validada con la gerencia.)
+  var ingresadoPorVenta = {};
+  pagosDelMes.forEach(function(p) {
+    ingresadoPorVenta[p.id_venta] = (ingresadoPorVenta[p.id_venta] || 0) + (Number(p.valor_cobrado) || 0);
+  });
+  Object.keys(ingresadoPorVenta).forEach(function(idVenta) {
+    if (negociosIds.indexOf(idVenta) === -1) return;
+    var venta = ventas.find(function(v) { return v.id_venta === idVenta; });
+    if (!venta) return;
+    if (String(venta.estado_venta).toUpperCase() === 'CANCELADA') return;
+    var ingresadoMes = ingresadoPorVenta[idVenta];
+    var comOfiV = Number(venta.comision_oficina) || 0;
+    // Tope: lo ingresado en un mes nunca supera la comisión pactada del negocio
+    // (protege contra pagos duplicados en la hoja).
+    if (comOfiV > 0 && ingresadoMes > comOfiV) ingresadoMes = comOfiV;
+    var aporteVnt = ingresadoMes * 0.5 * sumParticipacion(idVenta);
+    comisionGeneradaOficina += aporteVnt;
+    detalleNegocios.push({
+      tipo: 'venta',
+      id_negocio: idVenta,
+      id_inmueble: venta.id_inmueble,
+      // Mi comisión de las cuotas de este mes (proporcional a lo ingresado)
+      mi_comision: comOfiV > 0 ? miComisionEn(idVenta) * (ingresadoMes / comOfiV) : 0,
+      generado_oficina: ingresadoMes,
+      aporte: aporteVnt
+    });
   });
 
   // Total recibido: arriendos del mes + ventas proporcional a pagos del mes
@@ -962,7 +1056,8 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
     escalon: escalonAsignado,
     comisionGeneradaOficina: comisionGeneradaOficina,
     totalRecibido: totalRecibido,
-    numAcciones: numAcciones
+    numAcciones: numAcciones,
+    detalleNegocios: detalleNegocios
   };
 }
 
@@ -1483,6 +1578,34 @@ function dispatchGet(params) {
       var variable = variableBase * factorVinc;
       var bonificacionTotal = fijo + variable;
 
+      // Decorar el detalle por negocio con nombre de inmueble y participantes
+      var inmueblesBon = leerHojaCache(HOJAS.inmuebles);
+      var asesoresBon = leerHojaCache(HOJAS.asesores);
+      var nombreInmBon = function(id) {
+        var i = inmueblesBon.find(function(x) { return x.id_inmueble === id; });
+        return i ? i.nombre : (id || '—');
+      };
+      var nombreAseBon = function(id) {
+        var a = asesoresBon.find(function(x) { return x.id_asesor === id; });
+        return a ? a.nombre : id;
+      };
+      var detalleBon = (actual.detalleNegocios || []).map(function(d) {
+        var participantes = datosBon.comisiones
+          .filter(function(c) {
+            return c.id_negocio === d.id_negocio && String(c.estado || '').toUpperCase() !== 'ANULADA';
+          })
+          .map(function(c) { return { nombre: nombreAseBon(c.id_asesor), punta: c.punta }; });
+        return {
+          tipo: d.tipo,
+          id_negocio: d.id_negocio,
+          inmueble: nombreInmBon(d.id_inmueble),
+          participantes: participantes,
+          mi_comision: d.mi_comision,
+          generado_oficina: d.generado_oficina,
+          aporte: d.aporte
+        };
+      });
+
       return jsonResponse({
         ok: true,
         mes: mesB,
@@ -1502,7 +1625,73 @@ function dispatchGet(params) {
         factor_vinculacion: factorVinc,
         pct_variable: pctVariable,
         es_continuidad: esContinuidad,
-        categoria_mes_anterior: catAnterior
+        categoria_mes_anterior: catAnterior,
+        detalle: detalleBon
+      });
+    }
+
+    // --- BONIFICACIONES DE TODOS LOS ASESORES (solo gerente/directora) ---
+    // Tabla por asesor para un año/mes: si el periodo ya se liquidó devuelve lo
+    // persistido en BonificacionesMes; si no, calcula un preliminar en vivo.
+    if (action === 'bonificaciones_asesores') {
+      var idAsesorBA = params.id_asesor || '';
+      var asesoresBA = leerHojaCache(HOJAS.asesores);
+      var solicitanteBA = asesoresBA.find(function(a){ return a.id_asesor === idAsesorBA; });
+      if (!esGestor_(solicitanteBA)) {
+        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden ver esta información' });
+      }
+      var mesBA = parseInt(params.mes || '0', 10);
+      var anioBA = parseInt(params['año'] || params.anio || '0', 10) || (new Date()).getFullYear();
+      if (!mesBA || mesBA < 1 || mesBA > 12) return jsonResponse({ ok:false, error:'Mes inválido' });
+
+      var datosBA = {
+        arriendos: leerHojaCache(HOJAS.arriendos),
+        ventas: leerHojaCache(HOJAS.ventas),
+        pagos: leerHojaCache(HOJAS.pagos),
+        comisiones: leerHojaCache(HOJAS.comisiones),
+        acciones: leerHojaCache(HOJAS.acciones),
+        tipos_accion: leerHojaCache(HOJAS.tipos_accion),
+        bonificaciones: leerHojaCache(HOJAS.bonificaciones)
+      };
+      var liqRowsBA = leerHojaCache(HOJAS.bonificaciones_mes).filter(function(b){
+        return parseInt(b['año'], 10) === anioBA && parseInt(b.mes, 10) === mesBA;
+      });
+      var activosBA = asesoresBA.filter(function(a){
+        return String(a.estado || '').toLowerCase() === 'activo';
+      });
+
+      var filasBA = activosBA.map(function(a) {
+        var liq = liqRowsBA.find(function(b){ return b.id_asesor === a.id_asesor; });
+        if (liq) {
+          return {
+            id_asesor: a.id_asesor, nombre: a.nombre, vinculacion: a.vinculacion,
+            categoria: liq.categoria, comision_generada: Number(liq.comision_generada) || 0,
+            acciones: Number(liq.acciones_mes) || 0, pct_variable: Number(liq.pct_variable) || 0,
+            fijo: Number(liq.fijo) || 0, variable: Number(liq.variable) || 0,
+            total: Number(liq.total) || 0, continuidad: liq.continuidad || '',
+            liquidado: true, cobrada: !!liq.cobrada_en
+          };
+        }
+        var actualBA = calcularCategoriaMes(a.id_asesor, mesBA, anioBA, datosBA);
+        var basesBA = basesBonificacion_(a.id_asesor, mesBA, anioBA, datosBA, actualBA);
+        var factorBA = String(a.vinculacion || '').toLowerCase() === 'empleado' ? (1 / 1.3) : 1;
+        return {
+          id_asesor: a.id_asesor, nombre: a.nombre, vinculacion: a.vinculacion,
+          categoria: actualBA.categoria + (actualBA.esMedio ? ' (1/2)' : ''),
+          comision_generada: actualBA.comisionGeneradaOficina,
+          acciones: actualBA.numAcciones, pct_variable: basesBA.pctVariable,
+          fijo: basesBA.fijoBase * factorBA, variable: basesBA.variableBase * factorBA,
+          total: (basesBA.fijoBase + basesBA.variableBase) * factorBA,
+          continuidad: actualBA.escalon ? (basesBA.esContinuidad ? 'CONTINUA' : 'INICIAL') : 'N/A',
+          liquidado: false, cobrada: false
+        };
+      });
+
+      return jsonResponse({
+        ok: true, mes: mesBA, 'año': anioBA,
+        liquidado: liqRowsBA.length > 0,
+        filas: filasBA,
+        total_mes: filasBA.reduce(function(s, f){ return s + (Number(f.total) || 0); }, 0)
       });
     }
 
@@ -1643,7 +1832,8 @@ function doPost(e) {
     // Lecturas enviadas por POST (credenciales en el cuerpo, NO en la URL → no quedan en
     // logs de navegador/servidor/proxy). Se delegan al mismo despachador de doGet.
     var READ_ACTIONS = ['login','catalogos','mis_negocios','siguiente_id','mis_bonificaciones',
-                        'mis_acciones','todos_negocios','mis_cobros_arriendo','verificar_duplicado'];
+                        'mis_acciones','todos_negocios','mis_cobros_arriendo','verificar_duplicado',
+                        'bonificaciones_asesores'];
     if (READ_ACTIONS.indexOf(action) !== -1) {
       var outRead = dispatchGet(body);
       lock.releaseLock();
@@ -1876,38 +2066,20 @@ function doPost(e) {
         });
       }
 
-      // Registrar pagos/cuotas
-      // El frontend envía valor_pago (monto del inmueble que se paga).
-      // Convertimos a valor_cobrado (comisión proporcional que entra a la oficina).
+      // Registrar pagos/cuotas.
+      // Secundario: valor_pago (monto del inmueble) → comisión proporcional.
+      // Primario: pct_pago (% de la comisión REDA3 por hito) → % × comisión.
       if (body.pagos && body.pagos.length > 0) {
-        var valorBase = numVal(datos.valor_base_comision);
-        // Validar que la suma de pagos cuadre con el valor base (tolerancia $1)
-        var sumaPagosV = body.pagos.reduce(function(acc, p){ return acc + numVal(p.valor_pago); }, 0);
-        if (Math.abs(sumaPagosV - valorBase) > 1) {
+        var resPagosV = construirPagosVenta_(body.pagos, datos);
+        if (resPagosV.error) {
           lock.releaseLock();
-          return jsonResponse({ ok:false, error:'La suma de pagos ($' + Math.round(sumaPagosV).toLocaleString() + ') no cuadra con el valor base ($' + Math.round(valorBase).toLocaleString() + ')' });
+          return jsonResponse({ ok:false, error: resPagosV.error });
         }
-        // Validar que ningún pago sea negativo
-        for (var iP = 0; iP < body.pagos.length; iP++) {
-          if (numVal(body.pagos[iP].valor_pago) < 0) {
-            lock.releaseLock();
-            return jsonResponse({ ok:false, error:'Los pagos no pueden ser negativos' });
-          }
-        }
-        body.pagos.forEach(function(pago) {
-          var idPago = siguienteId(HOJAS.pagos, 'PAG');
-          var fechaPago = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
-          var valorPago = numVal(pago.valor_pago);
-          var valorComision = valorBase > 0 ? (valorPago / valorBase) * datos.comision_oficina : 0;
-          agregarFila(HOJAS.pagos, COLUMNAS.pagos, {
-            id_pago: idPago,
-            id_venta: datos.id_venta,
-            fecha_pago: pago.fecha_pago || '',
-            año_pago: fechaPago ? fechaPago.getFullYear() : '',
-            mes_pago: fechaPago ? (fechaPago.getMonth() + 1) : '',
-            valor_cobrado: Math.round(valorComision),
-            observacion: pago.observacion || ''
-          });
+        asegurarColumnaPctPago();
+        resPagosV.filas.forEach(function(fila) {
+          fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
+          fila.id_venta = datos.id_venta;
+          agregarFila(HOJAS.pagos, COLUMNAS.pagos, fila);
         });
       }
 
@@ -2355,10 +2527,17 @@ function doPost(e) {
           && parseInt(a['año'],10) === anoActualB
           && misNegIdsB.indexOf(a.id_arriendo) !== -1;
       });
-      // Cierres de venta: por mes/año del NEGOCIO (mismo criterio que calcularCategoriaMes)
+      // Ventas: por CAJA — pagos que ingresaron en el mes liquidado (mismo criterio
+      // que calcularCategoriaMes). Se agrupa lo ingresado del mes por venta.
+      var ingresadoMesPorVentaB = {};
+      datosBonC.pagos.forEach(function(p){
+        if (parseInt(p.mes_pago,10) !== mesBon) return;
+        if (parseInt(p['año_pago'] || p['ano_pago'],10) !== anoActualB) return;
+        if (!pagoYaIngresado_(p, hoyB)) return;
+        ingresadoMesPorVentaB[p.id_venta] = (ingresadoMesPorVentaB[p.id_venta] || 0) + (numVal(p.valor_cobrado) || 0);
+      });
       var cierresVntB = datosBonC.ventas.filter(function(v){
-        return parseInt(v.mes,10) === mesBon
-          && parseInt(v['año'],10) === anoActualB
+        return ingresadoMesPorVentaB[v.id_venta]
           && misNegIdsB.indexOf(v.id_venta) !== -1
           && String(v.estado_venta||'').toUpperCase() !== 'CANCELADA';
       });
@@ -2408,18 +2587,14 @@ function doPost(e) {
       hd1.editAsText().setBold(true);
 
       if (cierresVntB.length > 0) {
-        var pVnt = docBodyB.appendParagraph('Cierres de venta');
+        var pVnt = docBodyB.appendParagraph('Ventas con ingreso en el mes');
         pVnt.editAsText().setBold(true);
-        var rowsVnt = [['Inmueble','Valor venta','% Com.','Comisión oficina','Ingresado oficina','Mi part.','Comisión generada']];
+        var rowsVnt = [['Inmueble','Valor venta','% Com.','Comisión oficina','Ingresado este mes','Mi part.','Comisión generada']];
         cierresVntB.forEach(function(v){
           var partV = sumPart(v.id_venta) * 0.5;
-          // Igual que en calcularCategoriaMes: la venta aporta solo lo ya ingresado
-          // a la oficina (con tope en la comisión pactada del negocio).
-          var ingresadoV = datosBonC.pagos.reduce(function(sum, p){
-            if (p.id_venta !== v.id_venta) return sum;
-            if (!pagoYaIngresado_(p, hoyB)) return sum;
-            return sum + (numVal(p.valor_cobrado) || 0);
-          }, 0);
+          // Caja: la venta aporta lo que ingresó en el mes liquidado (con tope en
+          // la comisión pactada, protección contra pagos duplicados).
+          var ingresadoV = ingresadoMesPorVentaB[v.id_venta] || 0;
           var comOfiPdf = numVal(v.comision_oficina);
           if (comOfiPdf > 0 && ingresadoV > comOfiPdf) ingresadoV = comOfiPdf;
           var comGen = ingresadoV * partV;
@@ -2725,6 +2900,31 @@ function doPost(e) {
         }
         datosUpdate.valor_cobrado = valorCobradoNuevo;
       }
+      // Hitos de venta primario: se edita el % de la comisión (0-100)
+      if (body.pct_pago !== undefined) {
+        var pctNuevo = numVal(body.pct_pago);
+        if (pctNuevo < 0 || pctNuevo > 100) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'El % del hito debe estar entre 0 y 100' });
+        }
+        var comOficinaPct = numVal(ventaPago.comision_oficina);
+        var fraccionNueva = pctNuevo / 100;
+        // La suma de % de los hitos de la venta no puede superar 100%
+        var todosPagosPct = leerHoja(HOJAS.pagos).filter(function(p){ return p.id_venta === pagoActual.id_venta; });
+        var sumPctFuturo = todosPagosPct.reduce(function(acc, p){
+          var fr = p.pct_pago !== '' && p.pct_pago != null
+            ? numVal(p.pct_pago)
+            : (comOficinaPct > 0 ? numVal(p.valor_cobrado) / comOficinaPct : 0);
+          return acc + (p.id_pago === idPago ? fraccionNueva : fr);
+        }, 0);
+        if (sumPctFuturo > 1.001) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'La suma de % de los hitos superaría el 100% (' + (sumPctFuturo * 100).toFixed(1) + '%)' });
+        }
+        asegurarColumnaPctPago();
+        datosUpdate.pct_pago = fraccionNueva;
+        datosUpdate.valor_cobrado = Math.round(fraccionNueva * comOficinaPct);
+      }
       if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
 
       actualizarFila(HOJAS.pagos, 'id_pago', idPago, datosUpdate);
@@ -3025,17 +3225,17 @@ function doPost(e) {
       if (errPartesEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPartesEV }); }
 
       var valorBaseEV = numVal(datosEV.valor_base_comision);
+      // Pre-validar y construir el plan de pagos ANTES de escribir nada.
+      // (construirPagosVenta_ maneja secundario por montos y primario por % de comisión.)
+      var resPagosEV = null;
       if (body.pagos && body.pagos.length > 0) {
-        var sumaPagosEV = body.pagos.reduce(function(acc, p){ return acc + numVal(p.valor_pago); }, 0);
-        if (Math.abs(sumaPagosEV - valorBaseEV) > 1) {
+        resPagosEV = construirPagosVenta_(body.pagos, {
+          valor_base_comision: valorBaseEV,
+          comision_oficina: valorBaseEV * numVal(datosEV.pct_comision_oficina)
+        });
+        if (resPagosEV.error) {
           lock.releaseLock();
-          return jsonResponse({ ok:false, error:'La suma de pagos ($' + Math.round(sumaPagosEV).toLocaleString() + ') no cuadra con el valor base ($' + Math.round(valorBaseEV).toLocaleString() + ')' });
-        }
-        for (var iPE = 0; iPE < body.pagos.length; iPE++) {
-          if (numVal(body.pagos[iPE].valor_pago) < 0) {
-            lock.releaseLock();
-            return jsonResponse({ ok:false, error:'Los pagos no pueden ser negativos' });
-          }
+          return jsonResponse({ ok:false, error: resPagosEV.error });
         }
       }
 
@@ -3058,22 +3258,14 @@ function doPost(e) {
         });
       }
 
-      // Regenerar plan de pagos con los nuevos valores
+      // Regenerar plan de pagos con los nuevos valores (filas ya validadas arriba)
       borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
-      if (body.pagos && body.pagos.length > 0) {
-        body.pagos.forEach(function(pago){
-          var fechaPagoEV = pago.fecha_pago ? new Date(pago.fecha_pago + 'T12:00:00') : null;
-          var valorPagoEV = numVal(pago.valor_pago);
-          var valorComEV = valorBaseEV > 0 ? (valorPagoEV / valorBaseEV) * datosEV.comision_oficina : 0;
-          agregarFila(HOJAS.pagos, COLUMNAS.pagos, {
-            id_pago: siguienteId(HOJAS.pagos, 'PAG'),
-            id_venta: idVntE,
-            fecha_pago: pago.fecha_pago || '',
-            'año_pago': fechaPagoEV ? fechaPagoEV.getFullYear() : '',
-            mes_pago: fechaPagoEV ? (fechaPagoEV.getMonth() + 1) : '',
-            valor_cobrado: Math.round(valorComEV),
-            observacion: pago.observacion || ''
-          });
+      if (resPagosEV && resPagosEV.filas.length > 0) {
+        asegurarColumnaPctPago();
+        resPagosEV.filas.forEach(function(fila){
+          fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
+          fila.id_venta = idVntE;
+          agregarFila(HOJAS.pagos, COLUMNAS.pagos, fila);
         });
       }
 
