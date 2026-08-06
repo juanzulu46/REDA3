@@ -3317,13 +3317,13 @@ function doPost(e) {
     // body: { id_asesor, password, id_negocio, tipo: 'arriendo' | 'venta' }
     if (action === 'eliminar_negocio') {
       var asesorEL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
-      if (!esGestor_(asesorEL)) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden eliminar negocios' });
-      }
       var idNegEL = body.id_negocio;
       var tipoEL = body.tipo;
       if (!idNegEL || !tipoEL) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Faltan parámetros (id_negocio, tipo)' }); }
+      if (!puedeGestionarNegocio_(asesorEL, idNegEL)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Solo gerencia o un asesor que participa en el negocio puede eliminarlo' });
+      }
       if (tipoEL !== 'arriendo' && tipoEL !== 'venta') { lock.releaseLock(); return jsonResponse({ ok:false, error:'Tipo inválido (use arriendo o venta)' }); }
 
       if (negocioBloqueadoPorCobro_(idNegEL, tipoEL)) {

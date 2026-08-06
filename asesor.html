@@ -1923,12 +1923,14 @@ function resumenPagos() {
 
     let etiqueta, comCuota;
     if (primario) {
-      const pctHito = Number(r.querySelector('.pago-pct').value) || 0;
+      const pctInp = r.querySelector('.pago-pct');
+      const pctHito = pctInp ? (Number(pctInp.value) || 0) : 0;
       totalPct += pctHito;
       comCuota = (pctHito / 100) * comOficina;
       etiqueta = 'Hito ' + (i+1) + ': ' + pctHito + '%';
     } else {
-      const valor = moneyToNum(r.querySelector('.pago-valor').value);
+      const valInp = r.querySelector('.pago-valor');
+      const valor = valInp ? moneyToNum(valInp.value) : 0;
       totalPago += valor;
       comCuota = valorBase > 0 ? (valor / valorBase) * comOficina : 0;
       etiqueta = 'Cuota ' + (i+1) + ': ' + fmtP(valor);
@@ -1970,10 +1972,12 @@ function recolectarPagos() {
     const fecha = r.querySelector('.pago-fecha').value;
     const obs = r.querySelector('.pago-obs').value || '';
     if (primario) {
-      const pctHito = Number(r.querySelector('.pago-pct').value) || 0;
+      const pctInp = r.querySelector('.pago-pct');
+      const pctHito = pctInp ? (Number(pctInp.value) || 0) : 0;
       if (fecha && pctHito > 0) pagos.push({ fecha_pago: fecha, pct_pago: pctHito, observacion: obs });
     } else {
-      const valor = moneyToNum(r.querySelector('.pago-valor').value);
+      const valInp = r.querySelector('.pago-valor');
+      const valor = valInp ? moneyToNum(valInp.value) : 0;
       if (fecha && valor > 0) pagos.push({ fecha_pago: fecha, valor_pago: valor, observacion: obs });
     }
   });
@@ -2121,17 +2125,31 @@ function recalcComisiones(tipo) {
   }
 
   // Agregar detalle de cuotas de pago al resumen (solo ventas)
+  // Ojo: en mercado Primario las filas son hitos con .pago-pct (no existe .pago-valor);
+  // leer el selector equivocado aquí tumbaba todo el prefill de edición y el
+  // formulario quedaba lleno pero en modo registro (negocios duplicados).
   if (!isArr) {
     const pagosRows = document.querySelectorAll('#pagosVntList .com-row');
     if (pagosRows.length > 0) {
       detHtml += '<div style="margin-top:12px;padding-top:10px;border-top:2px solid #c8e6c9"><strong style="font-size:12px">Plan de pagos:</strong></div>';
       const mesesN = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       const hoyP = new Date();
+      const primarioR = esVentaPrimario();
       pagosRows.forEach(function(r, i) {
-        const fecha = r.querySelector('.pago-fecha').value;
-        const valor = moneyToNum(r.querySelector('.pago-valor').value);
-        const obs = r.querySelector('.pago-obs').value || '';
-        const comCuota = valorVenta > 0 ? (valor / valorVenta) * comisionOficina : 0;
+        const fecha = r.querySelector('.pago-fecha') ? r.querySelector('.pago-fecha').value : '';
+        const obs = r.querySelector('.pago-obs') ? (r.querySelector('.pago-obs').value || '') : '';
+        let etiqueta, comCuota;
+        if (primarioR) {
+          const pctInp = r.querySelector('.pago-pct');
+          const pctHito = pctInp ? (Number(pctInp.value) || 0) : 0;
+          comCuota = (pctHito / 100) * comisionOficina;
+          etiqueta = 'Hito ' + (i+1) + ': ' + pctHito + '%';
+        } else {
+          const valInp = r.querySelector('.pago-valor');
+          const valor = valInp ? moneyToNum(valInp.value) : 0;
+          comCuota = valorVenta > 0 ? (valor / valorVenta) * comisionOficina : 0;
+          etiqueta = 'Cuota ' + (i+1) + ': ' + fmtP(valor);
+        }
         let fechaTxt = '(sin fecha)';
         if (fecha) {
           const fp = new Date(fecha + 'T12:00:00');
@@ -2140,7 +2158,7 @@ function recalcComisiones(tipo) {
         const fp2 = fecha ? new Date(fecha + 'T12:00:00') : null;
         const pendiente = fp2 && fp2 > hoyP;
         const estadoTxt = pendiente ? ' <span style="color:#f59e0b;font-weight:600">(Pendiente)</span>' : '';
-        detHtml += '<div class="com-detalle-row" style="font-size:11px"><span>Cuota ' + (i+1) + ': ' + fmtP(valor) + ' <small>(' + fechaTxt + ')</small>' + (obs ? ' - ' + obs : '') + estadoTxt + '</span><strong>' + fmtP(comCuota) + '</strong></div>';
+        detHtml += '<div class="com-detalle-row" style="font-size:11px"><span>' + etiqueta + ' <small>(' + fechaTxt + ')</small>' + (obs ? ' - ' + obs : '') + estadoTxt + '</span><strong>' + fmtP(comCuota) + '</strong></div>';
       });
     }
   }
@@ -2903,7 +2921,7 @@ function renderMisNegocios(){
         </div>
         <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
         ${negExpPanelHTML(r,a,'arriendo','m-arr-'+a.id_arriendo,{comisiones:r.comisiones_negocio})}
-        ${!canceladaArr?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-cc" title="Generar PDF de cobro de la comisi&oacute;n por este arriendo" onclick="imprimirCuentaCobro(\'arriendo\',\''+a.id_arriendo+'\',this)">Cuenta de cobro del arriendo</button><button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar arriendo</button></div>':''}
+        ${!canceladaArr?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-cc" title="Generar PDF de cobro de la comisi&oacute;n por este arriendo" onclick="imprimirCuentaCobro(\'arriendo\',\''+a.id_arriendo+'\',this)">Cuenta de cobro del arriendo</button><button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar arriendo</button><button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar</button></div>':''}
       </div>`;
     });
 
@@ -2984,7 +3002,7 @@ function renderMisNegocios(){
         <div class="neg-com">Mi comisi&oacute;n total: ${fmtP(miCom)}</div>
         <div style="padding:8px 16px">${cuotasHTML}</div>
         ${negExpPanelHTML(r,v,'venta','m-vnt-'+v.id_venta,{comisiones:r.comisiones_negocio})}
-        ${!cancelada?'<div class="neg-actions"><button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'venta\',\''+v.id_venta+'\')">Editar</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar venta</button></div>':''}
+        ${!cancelada?'<div class="neg-actions"><button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'venta\',\''+v.id_venta+'\')">Editar</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar venta</button><button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'venta\',\''+v.id_venta+'\',this)">Eliminar</button></div>':''}
       </div>`;
     });
   }
@@ -3629,24 +3647,25 @@ function editarNegocio(tipo,id){
   const src=fuenteNegocio(tipo,id);
   if(!src){toast('Recarga la sección e intenta de nuevo','er');return;}
   const origen=(src===misNegociosData)?'mis':'gestion';
-  if(tipo==='arriendo'){
-    const a=(src.arriendos||[]).find(x=>x.id_arriendo===id);
-    if(!a){toast('Arriendo no encontrado','er');return;}
-    irASeccion('arriendo');
-    resetArriendo(); // oculta el panel de éxito de un registro previo y muestra el formulario limpio
-    prefillArriendo(a,src);
-    editandoNeg={tipo:'arriendo',id,origen,anio:a['año']};
-    marcarModoEdicion('arr',id);
-    mostrarRefNegocio('arriendo',id,src);
-  }else{
-    const v=(src.ventas||[]).find(x=>x.id_venta===id);
-    if(!v){toast('Venta no encontrada','er');return;}
-    irASeccion('venta');
-    resetVenta();
-    prefillVenta(v,src);
-    editandoNeg={tipo:'venta',id,origen,anio:v['año']};
-    marcarModoEdicion('vnt',id);
-    mostrarRefNegocio('venta',id,src);
+  const esArr=tipo==='arriendo';
+  const neg=esArr
+    ?(src.arriendos||[]).find(x=>x.id_arriendo===id)
+    :(src.ventas||[]).find(x=>x.id_venta===id);
+  if(!neg){toast(esArr?'Arriendo no encontrado':'Venta no encontrada','er');return;}
+  irASeccion(esArr?'arriendo':'venta');
+  if(esArr)resetArriendo(); else resetVenta(); // oculta el panel de éxito de un registro previo y muestra el formulario limpio
+  // El modo edición se activa ANTES de prefillar: si el prefill fallara, el
+  // formulario jamás debe quedar lleno en modo registro (crearía un duplicado).
+  editandoNeg={tipo,id,origen,anio:neg['año']};
+  marcarModoEdicion(esArr?'arr':'vnt',id);
+  try{
+    if(esArr)prefillArriendo(neg,src); else prefillVenta(neg,src);
+    mostrarRefNegocio(tipo,id,src);
+  }catch(e){
+    // Prefill incompleto: abortar la edición por completo para no guardar datos a medias.
+    finalizarEdicion(esArr?'arr':'vnt');
+    toast('No se pudo cargar '+id+' para edición: '+e.message,'er');
+    return;
   }
   toast('Editando '+id+'. Ajusta y pulsa "Guardar cambios".');
 }
@@ -3761,9 +3780,11 @@ function prefillPagosForm(v,src){
     const p=pagos[i];
     row.querySelector('.pago-fecha').value=aFechaInput(p.fecha_pago);
     if(primario){
-      row.querySelector('.pago-pct').value=pcts[i];
+      const pctInp=row.querySelector('.pago-pct');
+      if(pctInp)pctInp.value=pcts[i];
     } else {
-      row.querySelector('.pago-valor').value=formatMiles(montos[i]);
+      const valInp=row.querySelector('.pago-valor');
+      if(valInp)valInp.value=formatMiles(montos[i]);
     }
     row.querySelector('.pago-obs').value=p.observacion||'';
   });
@@ -3811,14 +3832,14 @@ async function eliminarNegocio(tipo,id,btn){
   btn.disabled=true; const orig=btn.textContent; btn.textContent='Eliminando...';
   try{
     const r=await apiPost({action:'eliminar_negocio',id_negocio:id,tipo:tipo,id_asesor:asesorActual.id_asesor});
-    if(r&&r.ok){ toast(r.mensaje||'Negocio eliminado'); cargarGestion(); return; }
+    if(r&&r.ok){ toast(r.mensaje||'Negocio eliminado'); refrescarVistaNegocios(); return; }
     if(r&&r.requiere_cancelacion){
       if(confirm((r.error||'')+'\n\n¿Cancelar el negocio (soft) en su lugar? Quedará marcado como cancelado y sus comisiones anuladas.')){
         const accion=tipo==='arriendo'?'cancelar_arriendo':'cancelar_venta';
         const body={action:accion,id_asesor:asesorActual.id_asesor};
         body[tipo==='arriendo'?'id_arriendo':'id_venta']=id;
         const r2=await apiPost(body);
-        if(r2&&r2.ok){toast(r2.mensaje||'Negocio cancelado');cargarGestion();}
+        if(r2&&r2.ok){toast(r2.mensaje||'Negocio cancelado');refrescarVistaNegocios();}
         else toast(r2&&r2.error||'Error al cancelar','er');
       }
       btn.disabled=false; btn.textContent=orig; return;
