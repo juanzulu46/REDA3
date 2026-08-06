@@ -2067,6 +2067,27 @@ function doPost(e) {
         if (datos.id_comprador) partesArrV.push({ rol:'comprador', id_cliente:datos.id_comprador, participacion_pct:1 });
       }
 
+      // Posible duplicado: mismo inmueble + mes + año con venta activa. No se bloquea
+      // en seco porque en mercado Primario un proyecto puede vender varias unidades el
+      // mismo mes; se exige confirmación explícita (body.confirmar_duplicado).
+      if (!body.confirmar_duplicado) {
+        var dupVnt = leerHoja(HOJAS.ventas).find(function(v){
+          return String(v.id_inmueble) === String(datos.id_inmueble)
+              && String(v.mes) === String(datos.mes)
+              && String(v['año']) === String(datos['año'])
+              && String(v.estado_venta || '').toUpperCase() !== 'CANCELADA';
+        });
+        if (dupVnt) {
+          lock.releaseLock();
+          return jsonResponse({
+            ok:false, posible_duplicado:true,
+            error:'Ya existe la venta ' + dupVnt.id_venta + ' de este inmueble en ' + datos.mes + '/' + datos['año'] +
+              ' por $' + numVal(dupVnt.valor_base_comision).toLocaleString() + '. Si querías EDITARLA, usa el botón Editar de esa venta.',
+            duplicado: { id_venta: dupVnt.id_venta, valor_base_comision: dupVnt.valor_base_comision }
+          });
+        }
+      }
+
       datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
       datos.comision_oficina = numVal(datos.valor_base_comision) * numVal(datos.pct_comision_oficina);
       datos.comision_por_punta = datos.comision_oficina / 2;

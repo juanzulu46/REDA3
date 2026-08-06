@@ -2392,7 +2392,16 @@ async function guardarVenta() {
       pagos: pagos
     };
     if (_editVnt) _payloadVnt.id_venta = editandoNeg.id;
-    const r = await apiPost(_payloadVnt);
+    let r = await apiPost(_payloadVnt);
+    // El servidor frena registros de venta que parecen duplicados (mismo inmueble,
+    // mes y año). Solo se reintenta si el usuario confirma que es una venta distinta
+    // (ej. otra unidad del mismo proyecto en mercado Primario).
+    if (r && !r.ok && r.posible_duplicado) {
+      if (confirm((r.error || 'Posible venta duplicada.') + '\n\n¿Seguro que es una venta DISTINTA y quieres registrarla de todas formas?')) {
+        _payloadVnt.confirmar_duplicado = true;
+        r = await apiPost(_payloadVnt);
+      }
+    }
     if (r && r.ok) {
       if (_editVnt) { toast('Venta actualizada: ' + r.id); finalizarEdicion('vnt'); return; }
       const comOficina = valorbase * Number(pct);
