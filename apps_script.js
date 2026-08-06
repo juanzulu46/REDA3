@@ -1135,6 +1135,36 @@ function basesBonificacion_(idAsesor, mes, anio, datos, actual) {
   };
 }
 
+// Decora el detalle por negocio de calcularCategoriaMes con nombre de inmueble
+// y participantes (asesores con comisión no anulada). Compartido por
+// mis_bonificaciones y bonificaciones_asesores.
+function decorarDetalleNegocios_(detalleNegocios, comisiones, inmuebles, asesores) {
+  var nombreInm = function(id) {
+    var i = inmuebles.find(function(x) { return x.id_inmueble === id; });
+    return i ? i.nombre : (id || '—');
+  };
+  var nombreAse = function(id) {
+    var a = asesores.find(function(x) { return x.id_asesor === id; });
+    return a ? a.nombre : id;
+  };
+  return (detalleNegocios || []).map(function(d) {
+    var participantes = comisiones
+      .filter(function(c) {
+        return c.id_negocio === d.id_negocio && String(c.estado || '').toUpperCase() !== 'ANULADA';
+      })
+      .map(function(c) { return { nombre: nombreAse(c.id_asesor), punta: c.punta }; });
+    return {
+      tipo: d.tipo,
+      id_negocio: d.id_negocio,
+      inmueble: nombreInm(d.id_inmueble),
+      participantes: participantes,
+      mi_comision: d.mi_comision,
+      generado_oficina: d.generado_oficina,
+      aporte: d.aporte
+    };
+  });
+}
+
 // ===== LIQUIDACIÓN MENSUAL DE BONIFICACIONES =====
 // Calcula la bonificación de todos los asesores activos para un año/mes dado
 // y la persiste en la hoja BonificacionesMes (sobreescribe el periodo si ya existía).
@@ -1366,6 +1396,16 @@ function esGestor_(asesor) {
   return rol === 'gerente' || rol === 'directora';
 }
 
+// Gestor (gerente/directora) O asesor que figura en las Comisiones del negocio.
+// Incluye filas ANULADAS para no perder acceso tras una cancelación/reedición previa.
+function puedeGestionarNegocio_(asesor, idNegocio) {
+  if (!asesor) return false;
+  if (esGestor_(asesor)) return true;
+  return leerHoja(HOJAS.comisiones).some(function(c){
+    return String(c.id_negocio) === String(idNegocio) && c.id_asesor === asesor.id_asesor;
+  });
+}
+
 // Correos de la(s) directora(s) comercial(es): asesores con rol "directora" que tengan email.
 // Se usa para que las cuentas de cobro también lleguen a la dirección comercial.
 function emailsDirectora_() {
@@ -1391,8 +1431,9 @@ function ccCobro_(asesorEmail) {
 }
 
 function doGet(e) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  // Sin candado: doGet solo sirve el HTML y acciones de lectura. El candado global
+  // queda reservado a las escrituras (doPost); así abrir la app nunca se bloquea
+  // detrás de un cálculo o liquidación en curso.
   try {
     // Manejo seguro de parámetros (a veces e o e.parameter pueden venir vacíos)
     var params = {};
@@ -1427,8 +1468,6 @@ function doGet(e) {
 
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message, stack: err.stack });
-  } finally {
-    try { lock.releaseLock(); } catch(_) {}
   }
 }
 
@@ -1515,6 +1554,22 @@ function dispatchGet(params) {
         }
       });
 
+      // Comisiones de TODOS los asesores en mis negocios (para mostrar quién
+      // participó, con qué punta y %). Por privacidad se omite valor_comision
+      // en las filas de otros asesores; el propio ya viaja en `comisiones`.
+      var comisionesNegocio = comisiones
+        .filter(function(c) {
+          return misNegocioIds.indexOf(c.id_negocio) !== -1
+            && String(c.estado || '').toUpperCase() !== 'ANULADA';
+        })
+        .map(function(c) {
+          return {
+            id_asesor: c.id_asesor, id_negocio: c.id_negocio,
+            punta: c.punta, participacion: c.participacion,
+            valor_comision: c.id_asesor === idAsesor ? c.valor_comision : ''
+          };
+        });
+
       return jsonResponse({
         ok: true,
         arriendos: misArriendos,
@@ -1524,7 +1579,13 @@ function dispatchGet(params) {
         inmuebles: inmuebles,
         clientes: clientes,
         partes: misPartes,
-        cobros_arriendo: misCobros
+        cobros_arriendo: misCobros,
+        comisiones_negocio: comisionesNegocio,
+        origen: leerHojaCache(HOJAS.origen),
+        oficina: leerHojaCache(HOJAS.oficina),
+        asesores: leerHojaCache(HOJAS.asesores).map(function(a) {
+          return { id_asesor: a.id_asesor, nombre: a.nombre };
+        })
       });
     }
 
@@ -1579,32 +1640,9 @@ function dispatchGet(params) {
       var bonificacionTotal = fijo + variable;
 
       // Decorar el detalle por negocio con nombre de inmueble y participantes
-      var inmueblesBon = leerHojaCache(HOJAS.inmuebles);
-      var asesoresBon = leerHojaCache(HOJAS.asesores);
-      var nombreInmBon = function(id) {
-        var i = inmueblesBon.find(function(x) { return x.id_inmueble === id; });
-        return i ? i.nombre : (id || '—');
-      };
-      var nombreAseBon = function(id) {
-        var a = asesoresBon.find(function(x) { return x.id_asesor === id; });
-        return a ? a.nombre : id;
-      };
-      var detalleBon = (actual.detalleNegocios || []).map(function(d) {
-        var participantes = datosBon.comisiones
-          .filter(function(c) {
-            return c.id_negocio === d.id_negocio && String(c.estado || '').toUpperCase() !== 'ANULADA';
-          })
-          .map(function(c) { return { nombre: nombreAseBon(c.id_asesor), punta: c.punta }; });
-        return {
-          tipo: d.tipo,
-          id_negocio: d.id_negocio,
-          inmueble: nombreInmBon(d.id_inmueble),
-          participantes: participantes,
-          mi_comision: d.mi_comision,
-          generado_oficina: d.generado_oficina,
-          aporte: d.aporte
-        };
-      });
+      var detalleBon = decorarDetalleNegocios_(
+        actual.detalleNegocios, datosBon.comisiones,
+        leerHojaCache(HOJAS.inmuebles), leerHojaCache(HOJAS.asesores));
 
       return jsonResponse({
         ok: true,
@@ -1659,17 +1697,26 @@ function dispatchGet(params) {
       var activosBA = asesoresBA.filter(function(a){
         return String(a.estado || '').toLowerCase() === 'activo';
       });
+      var inmueblesBA = leerHojaCache(HOJAS.inmuebles);
 
       var filasBA = activosBA.map(function(a) {
         var liq = liqRowsBA.find(function(b){ return b.id_asesor === a.id_asesor; });
         if (liq) {
+          // Los valores oficiales salen de BonificacionesMes; el detalle por negocio
+          // no se persiste, así que se recalcula en vivo solo como información.
+          var detalleLiq = [];
+          try {
+            var recalcBA = calcularCategoriaMes(a.id_asesor, mesBA, anioBA, datosBA);
+            detalleLiq = decorarDetalleNegocios_(recalcBA.detalleNegocios, datosBA.comisiones, inmueblesBA, asesoresBA);
+          } catch (eDet) {}
           return {
             id_asesor: a.id_asesor, nombre: a.nombre, vinculacion: a.vinculacion,
             categoria: liq.categoria, comision_generada: Number(liq.comision_generada) || 0,
             acciones: Number(liq.acciones_mes) || 0, pct_variable: Number(liq.pct_variable) || 0,
             fijo: Number(liq.fijo) || 0, variable: Number(liq.variable) || 0,
             total: Number(liq.total) || 0, continuidad: liq.continuidad || '',
-            liquidado: true, cobrada: !!liq.cobrada_en
+            liquidado: true, cobrada: !!liq.cobrada_en,
+            detalle: detalleLiq, detalle_recalculado: true
           };
         }
         var actualBA = calcularCategoriaMes(a.id_asesor, mesBA, anioBA, datosBA);
@@ -1683,7 +1730,9 @@ function dispatchGet(params) {
           fijo: basesBA.fijoBase * factorBA, variable: basesBA.variableBase * factorBA,
           total: (basesBA.fijoBase + basesBA.variableBase) * factorBA,
           continuidad: actualBA.escalon ? (basesBA.esContinuidad ? 'CONTINUA' : 'INICIAL') : 'N/A',
-          liquidado: false, cobrada: false
+          liquidado: false, cobrada: false,
+          detalle: decorarDetalleNegocios_(actualBA.detalleNegocios, datosBA.comisiones, inmueblesBA, asesoresBA),
+          detalle_recalculado: false
         };
       });
 
@@ -1813,20 +1862,18 @@ function dispatchGet(params) {
 }
 
 function doPost(e) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-
+  // Parseo, sesión, lecturas y login corren SIN candado: son de solo lectura y no
+  // deben quedar bloqueados detrás de una escritura o cálculo largo. El candado
+  // global se toma únicamente para las acciones que escriben en las hojas.
+  var body, action;
   try {
-    var body = JSON.parse(e.postData.contents);
-    var action = body.action;
+    body = JSON.parse(e.postData.contents);
+    action = body.action || '';
 
     // Validar sesión para cualquier endpoint que no sea público
     if (ENDPOINTS_PUBLICOS.indexOf(action) === -1) {
       var errSesPost = validarSesion(body.id_asesor, body.password);
-      if (errSesPost) {
-        lock.releaseLock();
-        return jsonResponse({ ok: false, error: errSesPost });
-      }
+      if (errSesPost) return jsonResponse({ ok: false, error: errSesPost });
     }
 
     // Lecturas enviadas por POST (credenciales en el cuerpo, NO en la URL → no quedan en
@@ -1835,9 +1882,7 @@ function doPost(e) {
                         'mis_acciones','todos_negocios','mis_cobros_arriendo','verificar_duplicado',
                         'bonificaciones_asesores'];
     if (READ_ACTIONS.indexOf(action) !== -1) {
-      var outRead = dispatchGet(body);
-      lock.releaseLock();
-      return outRead;
+      return dispatchGet(body);
     }
 
     // --- LOGIN CON CONTRASEÑA ---
@@ -1846,31 +1891,30 @@ function doPost(e) {
     if (action === 'login_password') {
       var idLog = body.id_asesor || '';
       var pwdLog = body.password || '';
-      if (!idLog || !pwdLog) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Ingrese asesor y contraseña' });
-      }
+      if (!idLog || !pwdLog) return jsonResponse({ ok:false, error:'Ingrese asesor y contraseña' });
       var asesoresLog = leerHoja(HOJAS.asesores);
       var found = asesoresLog.find(function(a){ return a.id_asesor === idLog; });
-      if (!found) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Asesor no encontrado' });
-      }
+      if (!found) return jsonResponse({ ok:false, error:'Asesor no encontrado' });
       if (!found.password || String(found.password).trim() === '') {
-        lock.releaseLock();
         return jsonResponse({ ok:false, error:'Este asesor aún no tiene contraseña asignada. Contacta al administrador.' });
       }
       if (String(found.password) !== String(pwdLog)) {
-        lock.releaseLock();
         return jsonResponse({ ok:false, error:'Contraseña incorrecta' });
       }
       // Eliminar password del objeto antes de devolverlo
       var safe = {};
       Object.keys(found).forEach(function(k){ if (k !== 'password') safe[k] = found[k]; });
-      lock.releaseLock();
       return jsonResponse({ ok:true, asesor: safe });
     }
+  } catch (errLectura) {
+    return jsonResponse({ ok: false, error: errLectura.message, stack: errLectura.stack });
+  }
 
+  // A partir de aquí solo hay escrituras: candado global para serializarlas entre sí.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
     // --- REGISTRAR ARRIENDO ---
     if (action === 'registrar_arriendo') {
       const datos = body.datos;
@@ -2933,16 +2977,16 @@ function doPost(e) {
       return jsonResponse({ ok:true, mensaje:'Pago actualizado' });
     }
 
-    // --- CANCELAR VENTA (sólo gerente) ---
+    // --- CANCELAR VENTA (gestor o asesor que participa en la venta) ---
     if (action === 'cancelar_venta') {
       var idVentaCancel = body.id_venta;
       var idAsesorCV = body.id_asesor;
       if (!idVentaCancel) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
       if (!idAsesorCV) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_asesor' }); }
       var asesorCV = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCV; });
-      if (!esGestor_(asesorCV)) {
+      if (!puedeGestionarNegocio_(asesorCV, idVentaCancel)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden cancelar ventas' });
+        return jsonResponse({ ok:false, error:'Solo gerencia o un asesor que participa en la venta puede cancelarla' });
       }
 
       // Verificar que la venta exista y no esté ya cancelada
@@ -3007,7 +3051,6 @@ function doPost(e) {
 
       var asesorCA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorCA; });
       if (!asesorCA) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Asesor no encontrado' }); }
-      var esGerenteCA = esGestor_(asesorCA);
 
       asegurarColumnaEstadoArriendo();
       var arrC = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idArrCancel; });
@@ -3017,16 +3060,9 @@ function doPost(e) {
         return jsonResponse({ ok:false, error:'El arriendo ya estaba cancelado' });
       }
 
-      // Si no es gerente, verificar que el asesor figure en las comisiones del arriendo
-      if (!esGerenteCA) {
-        var comisionesArr = leerHoja(HOJAS.comisiones).filter(function(c){
-          return String(c.id_negocio) === String(idArrCancel);
-        });
-        var esSuyo = comisionesArr.some(function(c){ return c.id_asesor === idAsesorCA; });
-        if (!esSuyo) {
-          lock.releaseLock();
-          return jsonResponse({ ok:false, error:'Solo puede cancelar arriendos en los que figura como asesor' });
-        }
+      if (!puedeGestionarNegocio_(asesorCA, idArrCancel)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Solo puede cancelar arriendos en los que figura como asesor' });
       }
 
       actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrCancel, { estado_arriendo: 'CANCELADO' });
@@ -3073,17 +3109,17 @@ function doPost(e) {
       });
     }
 
-    // --- EDITAR ARRIENDO (gestor: gerente o directora) ---
+    // --- EDITAR ARRIENDO (gestor o asesor que participa en el negocio) ---
     // Reescribe en sitio el arriendo, sus partes, comisiones y regenera los cobros proyectados.
     // body: { id_asesor, password, id_arriendo, datos, partes, comisiones_asesores }
     if (action === 'editar_arriendo') {
       var asesorEA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
-      if (!esGestor_(asesorEA)) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden editar negocios' });
-      }
       var idArrE = body.id_arriendo;
       if (!idArrE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_arriendo' }); }
+      if (!puedeGestionarNegocio_(asesorEA, idArrE)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Solo gerencia o un asesor que participa en el negocio puede editarlo' });
+      }
       var arrE = leerHoja(HOJAS.arriendos).find(function(a){ return a.id_arriendo === idArrE; });
       if (!arrE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Arriendo "' + idArrE + '" no encontrado' }); }
       if (String(arrE.estado_arriendo || '').toUpperCase() === 'CANCELADO') {
@@ -3171,17 +3207,17 @@ function doPost(e) {
       return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado' });
     }
 
-    // --- EDITAR VENTA (gestor: gerente o directora) ---
+    // --- EDITAR VENTA (gestor o asesor que participa en el negocio) ---
     // Reescribe en sitio la venta, sus partes, comisiones y plan de pagos.
     // body: { id_asesor, password, id_venta, datos, partes, comisiones_asesores, pagos }
     if (action === 'editar_venta') {
       var asesorEV = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
-      if (!esGestor_(asesorEV)) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden editar negocios' });
-      }
       var idVntE = body.id_venta;
       if (!idVntE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Falta id_venta' }); }
+      if (!puedeGestionarNegocio_(asesorEV, idVntE)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Solo gerencia o un asesor que participa en el negocio puede editarlo' });
+      }
       var vntE = leerHoja(HOJAS.ventas).find(function(v){ return v.id_venta === idVntE; });
       if (!vntE) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Venta "' + idVntE + '" no encontrada' }); }
       if (String(vntE.estado_venta || '').toUpperCase() === 'CANCELADA') {
