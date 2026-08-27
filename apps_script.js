@@ -842,8 +842,34 @@ function asegurarColumnas_(nombreHoja, columnas) {
   });
   return creadas;
 }
-// Ejecutables desde el editor de Apps Script antes de publicar (o se invocan solos
-// desde las acciones que escriben).
+// EJECUTAR UNA VEZ DESDE EL EDITOR DE APPS SCRIPT (menú Ejecutar) tras pegar esta
+// versión: crea las columnas nuevas de colegaje y captación en Arriendos, Ventas,
+// Inmuebles y Acciones, y limpia el caché de hojas. Sin guion bajo al final para que
+// aparezca en el desplegable (Apps Script oculta las funciones terminadas en "_").
+// Es idempotente: se puede ejecutar las veces que se quiera. Las acciones que
+// escriben también la invocan solas, así que olvidarla no rompe nada.
+function prepararColumnasNuevas() {
+  asegurarColumnasColegaje_();
+  asegurarColumnasCaptacion_();
+  limpiarCacheCatalogos();
+  var chequeo = [
+    [HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']],
+    [HOJAS.ventas, ['modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']],
+    [HOJAS.inmuebles, ['fecha_captacion', 'id_asesor_captador', 'id_accion_captacion']],
+    [HOJAS.acciones, ['id_inmueble']]
+  ];
+  var faltan = [];
+  chequeo.forEach(function(par) {
+    var sheet = getSheet(par[0]);
+    var headers = sheet ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h){ return String(h || '').trim(); }) : [];
+    par[1].forEach(function(c) { if (headers.indexOf(c) === -1) faltan.push(par[0] + '.' + c); });
+  });
+  var msg = faltan.length ? 'FALTAN columnas: ' + faltan.join(', ') : 'OK: todas las columnas nuevas existen y el caché quedó limpio.';
+  Logger.log(msg);
+  return msg;
+}
+
+// Se invocan solas desde las acciones que escriben (y desde prepararColumnasNuevas).
 function asegurarColumnasCaptacion_() {
   asegurarColumnas_(HOJAS.acciones, ['id_inmueble']);
   asegurarColumnas_(HOJAS.inmuebles, ['fecha_captacion', 'id_asesor_captador', 'id_accion_captacion']);

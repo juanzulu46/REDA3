@@ -53,7 +53,7 @@ Columnas nuevas: `Acciones.id_inmueble`; `Inmuebles.fecha_captacion/id_asesor_ca
 
 ### Despliegue (pendiente — manual, ver NOTAS_SESION_2026-06-05.md)
 
-1. Pegar `apps_script.js` en `Code.gs` → ejecutar desde el editor `asegurarColumnasColegaje_` y `asegurarColumnasCaptacion_` (crean los encabezados) → `limpiarCacheCatalogos`.
+1. Pegar `apps_script.js` en `Code.gs` → guardar → menú Ejecutar → `prepararColumnasNuevas` (crea las columnas nuevas y limpia el caché; las funciones con `_` final no aparecen en el desplegable). Revisar en Ejecuciones/Registro que diga "OK".
 2. Pegar `asesor.html` en el archivo `asesor` → Implementar → Administrar implementaciones → ✏️ → **Nueva versión** (no nueva implementación).
 3. Pedir a los asesores refrescar la página (Ctrl+F5).
 4. Después: eliminar la venta duplicada VNT-086 desde Gestión y revisar otras ventas primarias repetidas de agosto.
