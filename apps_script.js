@@ -67,28 +67,36 @@ const COLUMNAS = {
   asesores: ['id_asesor', 'nombre', 'vinculacion', 'estado',
              'cedula', 'ciudad_cc', 'direccion', 'banco', 'tipo_cuenta', 'numero_cuenta', 'email',
              'password', 'rol'],
-  inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado'],
+  // fecha_captacion / id_asesor_captador / id_accion_captacion se sellan AUTOMÁTICAMENTE
+  // al registrar una acción comercial de tipo "Captación…" (ver recalcularCaptacionInmueble_).
+  inmuebles: ['id_inmueble', 'codigo_plataforma', 'nombre', 'ciudad', 'zona', 'tipo', 'residencial_comercial', 'estado',
+              'fecha_captacion', 'id_asesor_captador', 'id_accion_captacion'],
   clientes: ['id_cliente', 'nombre', 'telefono', 'email', 'tipo_persona', 'tipo_documento', 'numero_documento', 'activo'],
   arriendos: ['id_arriendo', 'año', 'mes', 'mercado', 'id_inmueble',
               'valor_canon', 'administracion', 'pct_comision_oficina', 'comision_oficina',
               'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
               'referido_captador', 'numero_captador_r', 'valor_ref_captador',
               'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
-              'meses_contrato', 'estado_arriendo'],
+              'meses_contrato', 'estado_arriendo',
+              // bono_captacion_pct: +0.02 / +0.01 / 0 según meses entre captación e inicio (derivado en servidor)
+              'bono_captacion_pct',
+              // Colegaje: comision_oficina guarda la parte NETA de REDA3; comision_bruta el total pactado
+              'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta'],
   ventas: ['id_venta', 'año', 'mes', 'mercado', 'id_inmueble',
            'valor_base_comision', 'pct_comision_oficina', 'comision_oficina',
            'comision_por_punta',
            'oficina_captacion', 'origen_captacion', 'oficina_cierre', 'origen_cierre',
            'referido_captador', 'numero_captador_r', 'valor_ref_captador',
            'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
-           'estado_venta'],
+           'estado_venta',
+           'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta'],
   pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado', 'pct_pago'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
   partes: ['id_parte', 'id_negocio', 'tipo_negocio', 'rol', 'id_cliente', 'participacion_pct'],
   oficina: ['id_oficina', 'nombre'],
   origen: ['id_origen', 'nombre', 'circulo'],
   zona: ['id_zona', 'comuna', 'ciudad'],
-  acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion'],
+  acciones: ['id_accion', 'id_asesor', 'fecha', 'mes', 'tipo', 'descripcion', 'id_inmueble'],
   tipos_accion: ['id_tipo', 'nombre', 'activo', 'puntaje'],
   cobros_arriendo: ['id_cobro', 'id_arriendo', 'año_cobro', 'mes_cobro', 'fecha_pago', 'valor_cobrado', 'estado', 'observacion'],
   bonificaciones_mes: ['id_bonmes', 'id_asesor', 'año', 'mes', 'fecha', 'categoria', 'comision_generada', 'acciones_mes', 'fijo', 'pct_variable', 'variable', 'total', 'continuidad', 'calculado_en', 'cobrada_en']
@@ -478,7 +486,7 @@ function asegurarColumnaPctPago() {
 // Construye y valida las filas de la hoja Pagos a partir del payload del formulario
 // de venta. Dos modalidades:
 //  - Secundario: cuotas con valor_pago (monto del inmueble); deben sumar el valor
-//    base de la venta. valor_cobrado = proporción de la comisión de oficina.
+//    base de la venta. valor_cobrado = proporción de la comisión de oficina (NETA de REDA3 si es colegaje).
 //  - Primario: hitos con pct_pago (% de la comisión REDA3, 0-100); deben sumar 100%.
 //    valor_cobrado = % × comisión de oficina.
 // Retorna { error: '...' } o { filas: [{fecha_pago, año_pago, mes_pago, valor_cobrado, pct_pago, observacion}] }.
@@ -801,12 +809,183 @@ function negocioBloqueadoPorCobro_(idNegocio, tipoNegocio) {
   });
 }
 
-// Agrega una fila a una hoja
+// Agrega una fila a una hoja. Se construye por los ENCABEZADOS FÍSICOS de la hoja
+// (no por el array `columnas`): así una columna nueva o un orden distinto en el
+// Sheet nunca corre los valores en silencio. `columnas` se conserva como respaldo
+// si la hoja no tiene encabezados aún.
 function agregarFila(nombreHoja, columnas, datos) {
   const sheet = getSheet(nombreHoja);
   if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
-  const fila = columnas.map(col => datos[col] !== undefined ? datos[col] : '');
+  var headers = [];
+  if (sheet.getLastColumn() > 0) {
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function(h){ return String(h == null ? '' : h).trim(); });
+  }
+  var base = headers.some(function(h){ return h !== ''; }) ? headers : columnas;
+  const fila = base.map(col => (col !== '' && datos[col] !== undefined) ? datos[col] : '');
   sheet.appendRow(fila);
+}
+
+// Asegura (idempotente) que la hoja tenga las columnas indicadas, agregándolas al
+// final en el orden dado. Devuelve cuántas creó.
+function asegurarColumnas_(nombreHoja, columnas) {
+  var sheet = getSheet(nombreHoja);
+  if (!sheet) return 0;
+  var creadas = 0;
+  columnas.forEach(function(col) {
+    var last = sheet.getLastColumn();
+    var headers = last > 0 ? sheet.getRange(1, 1, 1, last).getValues()[0].map(function(h){ return String(h || '').trim(); }) : [];
+    if (headers.indexOf(col) === -1) {
+      sheet.getRange(1, headers.length + 1).setValue(col).setFontWeight('bold');
+      creadas++;
+    }
+  });
+  return creadas;
+}
+// Ejecutables desde el editor de Apps Script antes de publicar (o se invocan solos
+// desde las acciones que escriben).
+function asegurarColumnasCaptacion_() {
+  asegurarColumnas_(HOJAS.acciones, ['id_inmueble']);
+  asegurarColumnas_(HOJAS.inmuebles, ['fecha_captacion', 'id_asesor_captador', 'id_accion_captacion']);
+  asegurarColumnaEstadoArriendo();
+  asegurarColumnas_(HOJAS.arriendos, ['bono_captacion_pct']);
+}
+function asegurarColumnasColegaje_() {
+  asegurarColumnaEstadoArriendo();
+  asegurarColumnas_(HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']);
+  asegurarColumnas_(HOJAS.ventas, ['modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']);
+}
+
+// ===== CAPTACIÓN DE INMUEBLES (bono +2 pp / +1 pp) =====
+// Regla de gerencia: si un inmueble se capta y se arrienda el MISMO mes, los asesores
+// del arriendo (captador y cerrador) suman 2 puntos a su % de comisión; si se arrienda
+// el mes SIGUIENTE, 1 punto; después, nada. La fecha de captación no se digita: la
+// sella la acción comercial de tipo "Captación…" más reciente del inmueble.
+var BONO_CAPTACION = { 0: 0.02, 1: 0.01 };
+
+function esTipoCaptacion_(tipo) {
+  return normalizarNombre(tipo).indexOf('captacion') === 0;
+}
+
+// {anio, mes} de un valor de fecha que puede venir como Date, ISO, 'yyyy-MM-dd' o
+// 'dd/MM/yyyy'. null si no se puede interpretar.
+function anioMesDe_(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  if (valor instanceof Date) {
+    return isNaN(valor.getTime()) ? null : { anio: valor.getFullYear(), mes: valor.getMonth() + 1 };
+  }
+  var s = String(valor).trim();
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return { anio: parseInt(m[1], 10), mes: parseInt(m[2], 10) };
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return { anio: parseInt(m[3], 10), mes: parseInt(m[2], 10) };
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : { anio: d.getFullYear(), mes: d.getMonth() + 1 };
+}
+
+// Bono (fracción) que corresponde a un arriendo de (anio, mes) sobre un inmueble.
+function bonoCaptacionDe_(inmueble, anio, mes) {
+  if (!inmueble) return 0;
+  var cap = anioMesDe_(inmueble.fecha_captacion);
+  if (!cap) return 0;
+  var diff = (parseInt(anio, 10) * 12 + parseInt(mes, 10)) - (cap.anio * 12 + cap.mes);
+  return BONO_CAPTACION[diff] || 0;
+}
+
+// Recalcula y escribe en Inmuebles la captación vigente del inmueble: la acción de
+// tipo "Captación…" más reciente (por fecha; a igual fecha, la de id mayor). Si no
+// queda ninguna, vacía las tres columnas. Se llama al registrar y al eliminar acciones.
+function recalcularCaptacionInmueble_(idInmueble) {
+  if (!idInmueble) return;
+  asegurarColumnasCaptacion_();
+  var caps = leerHoja(HOJAS.acciones).filter(function(a) {
+    return String(a.id_inmueble || '') === String(idInmueble) && esTipoCaptacion_(a.tipo);
+  });
+  var mejor = null, mejorKey = -1;
+  caps.forEach(function(a) {
+    var am = anioMesDe_(a.fecha);
+    var d = a.fecha instanceof Date ? a.fecha : new Date(String(a.fecha).indexOf('T') > -1 ? a.fecha : String(a.fecha) + 'T12:00:00');
+    var t = (!isNaN(d.getTime())) ? d.getTime() : (am ? new Date(am.anio, am.mes - 1, 1).getTime() : 0);
+    var idn = parseInt(String(a.id_accion || '').split('-')[1], 10) || 0;
+    var key = t * 10000 + idn;
+    if (key > mejorKey) { mejorKey = key; mejor = a; }
+  });
+  var cambios = mejor
+    ? { fecha_captacion: fechaTexto_(mejor.fecha), id_asesor_captador: mejor.id_asesor || '', id_accion_captacion: mejor.id_accion || '' }
+    : { fecha_captacion: '', id_asesor_captador: '', id_accion_captacion: '' };
+  try { actualizarFila(HOJAS.inmuebles, 'id_inmueble', idInmueble, cambios); }
+  catch (e) { /* inmueble inexistente: nada que sellar */ }
+  invalidarCacheHojas([HOJAS.inmuebles]);
+}
+
+// 'yyyy-MM-dd' a partir de Date o string; devuelve el texto original si no parsea.
+function fechaTexto_(valor) {
+  if (valor instanceof Date && !isNaN(valor.getTime())) {
+    return Utilities.formatDate(valor, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var s = String(valor || '').trim();
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : s;
+}
+
+// ===== COLEGAJE =====
+// Negocio compartido con otra inmobiliaria/agente: parte de la comisión va al colega
+// y TODO lo de REDA3 (comisiones de asesores, bonificaciones, plan de pagos, cobros,
+// PDFs, dashboard) se calcula sobre la parte neta. Constantes espejo en asesor.html.
+var COLEGAJE_PCT_ARRIENDO = 0.30;
+var COLEGAJE_PCT_VENTA = { 'Inmobiliaria': 0.5, 'Persona natural': 1 / 3 };
+var TIPOS_COLEGA = ['Inmobiliaria', 'Persona natural'];
+function pctColegaDe(tipoNeg, tipoColega) {
+  return tipoNeg === 'arriendo' ? COLEGAJE_PCT_ARRIENDO : (COLEGAJE_PCT_VENTA[tipoColega] || 0);
+}
+
+// Valida y normaliza los campos de colegaje del payload (MUTA datos). Deriva
+// pct_colega en servidor (nunca se confía del cliente). Deja SIEMPRE las claves
+// presentes ('' en modalidad normal) para que actualizarFila limpie al editar
+// colegaje → normal. Devuelve string de error o null.
+function normalizarColegaje_(datos, tipoNeg) {
+  var modalidad = String(datos.modalidad || '').trim().toUpperCase();
+  if (modalidad === '' || modalidad === 'NORMAL') {
+    datos.modalidad = ''; datos.tipo_colega = ''; datos.nombre_colega = ''; datos.pct_colega = '';
+    return null;
+  }
+  if (modalidad !== 'COLEGAJE') return 'Modalidad inválida: ' + datos.modalidad;
+  datos.modalidad = 'COLEGAJE';
+  datos.nombre_colega = String(datos.nombre_colega || '').trim();
+  if (tipoNeg === 'arriendo') {
+    datos.tipo_colega = '';
+  } else {
+    if (TIPOS_COLEGA.indexOf(datos.tipo_colega) === -1) {
+      return 'En una venta por colegaje debes indicar el tipo de colega (Inmobiliaria o Persona natural)';
+    }
+  }
+  datos.pct_colega = pctColegaDe(tipoNeg, datos.tipo_colega);
+  return null;
+}
+
+// Factor que queda para REDA3 (1 en modalidad normal o filas antiguas sin el campo).
+function factorColegaDe_(fila) {
+  if (!fila || String(fila.modalidad || '').toUpperCase() !== 'COLEGAJE') return 1;
+  return 1 - numVal(fila.pct_colega);
+}
+
+// Fija comision_bruta y comision_oficina (neta) en datos; devuelve la neta.
+// En colegaje se redondea a 2 decimales (1/3 produce dízimas); en normal no se toca
+// para que los negocios de siempre queden idénticos.
+function aplicarColegaje_(datos, comisionBruta) {
+  var factor = factorColegaDe_(datos);
+  datos.comision_bruta = comisionBruta;
+  datos.comision_oficina = factor === 1 ? comisionBruta : Math.round(comisionBruta * factor * 100) / 100;
+  return datos.comision_oficina;
+}
+
+// En edición, un cliente viejo (sin campo modalidad) no debe convertir un colegaje
+// en normal por omisión: se heredan los campos de la fila existente.
+function heredarColegajeSiFalta_(datos, filaExistente) {
+  if (datos.modalidad !== undefined) return;
+  datos.modalidad = filaExistente.modalidad || '';
+  datos.tipo_colega = filaExistente.tipo_colega || '';
+  datos.nombre_colega = filaExistente.nombre_colega || '';
 }
 
 // Actualiza una fila existente buscando por ID
@@ -827,6 +1006,30 @@ function actualizarFila(nombreHoja, colId, idBuscado, datos) {
     }
   }
   throw new Error(colId + ' "' + idBuscado + '" no encontrado');
+}
+
+// Barrera dura contra duplicados por edición: si un registro nuevo trae señales de
+// que el formulario venía de EDITAR un negocio existente (id del negocio en el body,
+// o `datos.origen_prefill` apuntando a una fila real), se rechaza sin opción de
+// confirmar. El cliente tiene sus propias guardas; ésta es la que no depende de él.
+function rechazarRegistroDesdeEdicion_(body, tipoNeg) {
+  var esArr = tipoNeg === 'arriendo';
+  var hoja = esArr ? HOJAS.arriendos : HOJAS.ventas;
+  var colId = esArr ? 'id_arriendo' : 'id_venta';
+  var idBody = body[colId];
+  var origen = body.datos && body.datos.origen_prefill;
+  var candidatos = [idBody, origen].filter(function(x){ return x && String(x).trim() !== ''; });
+  if (!candidatos.length) return null;
+  var filas = leerHoja(hoja);
+  for (var i = 0; i < candidatos.length; i++) {
+    var idC = String(candidatos[i]).trim();
+    var existe = filas.some(function(f){ return String(f[colId]) === idC; });
+    if (existe) {
+      return 'Este formulario venía de EDITAR ' + idC + '. No se registró nada para no duplicarlo: ' +
+        'vuelve a Mis Negocios, pulsa Editar sobre ' + idC + ' y guarda desde ahí.';
+    }
+  }
+  return null;
 }
 
 // Año de una acción comercial. La hoja Acciones no tiene columna 'año', así que se
@@ -1527,8 +1730,15 @@ function dispatchGet(params) {
       var misComisiones = comisiones.filter(function(c) { return c.id_asesor === idAsesor; });
       var misNegocioIds = misComisiones.map(function(c) { return c.id_negocio; });
 
-      var misArriendos = arriendos.filter(function(a) { return misNegocioIds.indexOf(a.id_arriendo) !== -1; });
-      var misVentas = ventas.filter(function(v) { return misNegocioIds.indexOf(v.id_venta) !== -1; });
+      // Los negocios cancelados no se devuelven: para el asesor "simplemente no aparecen".
+      var misArriendos = arriendos.filter(function(a) {
+        return misNegocioIds.indexOf(a.id_arriendo) !== -1
+          && String(a.estado_arriendo || '').toUpperCase() !== 'CANCELADO';
+      });
+      var misVentas = ventas.filter(function(v) {
+        return misNegocioIds.indexOf(v.id_venta) !== -1
+          && String(v.estado_venta || '').toUpperCase() !== 'CANCELADA';
+      });
       var misVentaIds = misVentas.map(function(v) { return v.id_venta; });
       var misPagos = pagos.filter(function(p) { return misVentaIds.indexOf(p.id_venta) !== -1; });
       var misPartes = partes.filter(function(p) { return misNegocioIds.indexOf(p.id_negocio) !== -1; });
@@ -1918,6 +2128,11 @@ function doPost(e) {
     // --- REGISTRAR ARRIENDO ---
     if (action === 'registrar_arriendo') {
       const datos = body.datos;
+      // Barrera dura anti-duplicados: un formulario que venía de EDITAR un negocio
+      // existente nunca puede registrarse como negocio nuevo (sin opción de confirmar).
+      var errPreA = rechazarRegistroDesdeEdicion_(body, 'arriendo');
+      if (errPreA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPreA }); }
+      delete datos.origen_prefill;
       // Año automático
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
@@ -1971,9 +2186,15 @@ function doPost(e) {
 
       // Generar ID
       datos.id_arriendo = siguienteId(HOJAS.arriendos, 'ARR');
-      // Calcular comisión sobre canon + administración (consistente con frontend)
+      // Colegaje: valida/normaliza y deriva pct_colega en servidor
+      var errColA = normalizarColegaje_(datos, 'arriendo');
+      if (errColA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errColA }); }
+      // Calcular comisión sobre canon + administración (consistente con frontend);
+      // comision_oficina = parte NETA de REDA3 (bruta × factor colegaje), comision_bruta = total
       var canonTotalArr = numVal(datos.valor_canon) + numVal(datos.administracion);
-      datos.comision_oficina = canonTotalArr * numVal(datos.pct_comision_oficina);
+      aplicarColegaje_(datos, canonTotalArr * numVal(datos.pct_comision_oficina));
+      // Bono de captación (+2 pp / +1 pp) derivado del inmueble, no del cliente
+      datos.bono_captacion_pct = bonoCaptacionDe_(inmArr, datos['año'], datos.mes);
       // Meses del contrato: obligatorio. El frontend lo valida; acá se rechaza
       // si falta para evitar registros sin duración (requerido por CobrosArriendo).
       var mesesContratoNum = parseInt(datos.meses_contrato, 10);
@@ -2007,6 +2228,7 @@ function doPost(e) {
       }
 
       // Guardar arriendo
+      asegurarColumnasColegaje_();
       agregarFila(HOJAS.arriendos, COLUMNAS.arriendos, datos);
 
       // Auto-generar cobros proyectados (uno por cada mes del contrato)
@@ -2034,6 +2256,11 @@ function doPost(e) {
     // --- REGISTRAR VENTA ---
     if (action === 'registrar_venta') {
       const datos = body.datos;
+      // Barrera dura anti-duplicados: un formulario que venía de EDITAR un negocio
+      // existente nunca puede registrarse como negocio nuevo (sin opción de confirmar).
+      var errPreV = rechazarRegistroDesdeEdicion_(body, 'venta');
+      if (errPreV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPreV }); }
+      delete datos.origen_prefill;
       if (!datos['año']) datos['año'] = new Date().getFullYear();
 
       // Validar valores no negativos
@@ -2089,7 +2316,10 @@ function doPost(e) {
       }
 
       datos.id_venta = siguienteId(HOJAS.ventas, 'VNT');
-      datos.comision_oficina = numVal(datos.valor_base_comision) * numVal(datos.pct_comision_oficina);
+      // Colegaje: valida/normaliza y deriva pct_colega; comision_oficina = parte NETA de REDA3
+      var errColV = normalizarColegaje_(datos, 'venta');
+      if (errColV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errColV }); }
+      aplicarColegaje_(datos, numVal(datos.valor_base_comision) * numVal(datos.pct_comision_oficina));
       datos.comision_por_punta = datos.comision_oficina / 2;
       datos.estado_venta = 'ACTIVA';
 
@@ -2116,6 +2346,7 @@ function doPost(e) {
         return jsonResponse({ ok:false, error: errRefVnt });
       }
 
+      asegurarColumnasColegaje_();
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
 
       if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
@@ -2385,6 +2616,13 @@ function doPost(e) {
         var rowsDatos = [['DATOS DEL NEGOCIO', '']];
         rowsDatos.push(['Inmueble', String(nombreInmueble || '—')]);
         rowsDatos.push(['Mercado', String(negocio.mercado || '—')]);
+        // Colegaje: mostrar bruta, parte del colega y neta REDA3
+        var factorColCC = factorColegaDe_(negocio);
+        var esColCC = factorColCC < 1;
+        var pctColCC = esColCC ? numVal(negocio.pct_colega) : 0;
+        var brutaCC = esColCC ? (numVal(negocio.comision_bruta) || numVal(negocio.comision_oficina) / factorColCC) : 0;
+        var etqColCC = 'Colegaje' + (negocio.tipo_colega ? ' — ' + negocio.tipo_colega : '') + (negocio.nombre_colega ? ' (' + negocio.nombre_colega + ')' : '');
+        var etqPctColCC = 'Parte colega (' + parseFloat((pctColCC * 100).toFixed(2)) + '%)';
         if (tipoNeg === 'arriendo') {
           var canonCC = numVal(negocio.valor_canon);
           var admonCC = numVal(negocio.administracion);
@@ -2394,13 +2632,29 @@ function doPost(e) {
           rowsDatos.push(['Administración', fmtCopCC(admonCC)]);
           rowsDatos.push(['Base mensual (canon + administración)', fmtCopCC(canonCC + admonCC)]);
           rowsDatos.push(['% comisión oficina', parseFloat((pctNeg * 100).toFixed(2)) + '%']);
-          rowsDatos.push(['Comisión oficina (mensual)', fmtCopCC(comOfMensual)]);
+          if (esColCC) {
+            rowsDatos.push(['Modalidad', etqColCC]);
+            rowsDatos.push(['Comisión bruta (mensual)', fmtCopCC(brutaCC)]);
+            rowsDatos.push([etqPctColCC + ' mensual', fmtCopCC(brutaCC - comOfMensual)]);
+            rowsDatos.push(['Comisión REDA3 neta (mensual)', fmtCopCC(comOfMensual)]);
+          } else {
+            rowsDatos.push(['Comisión oficina (mensual)', fmtCopCC(comOfMensual)]);
+          }
           rowsDatos.push(['Meses de contrato', String(mesesCC)]);
           rowsDatos.push(['Ingreso empresa total', fmtCopCC(comOfMensual * mesesCC)]);
+          var bonoCC = numVal(negocio.bono_captacion_pct);
+          if (bonoCC > 0) rowsDatos.push(['Bono captación', '+' + parseFloat((bonoCC * 100).toFixed(2)) + ' puntos al % de los asesores']);
         } else {
           rowsDatos.push(['Valor del negocio', fmtCopCC(numVal(negocio.valor_base_comision))]);
           rowsDatos.push(['% comisión oficina', parseFloat((pctNeg * 100).toFixed(2)) + '%']);
-          rowsDatos.push(['Comisión oficina', fmtCopCC(numVal(negocio.comision_oficina))]);
+          if (esColCC) {
+            rowsDatos.push(['Modalidad', etqColCC]);
+            rowsDatos.push(['Comisión bruta', fmtCopCC(brutaCC)]);
+            rowsDatos.push([etqPctColCC, fmtCopCC(brutaCC - numVal(negocio.comision_oficina))]);
+            rowsDatos.push(['Comisión REDA3 neta', fmtCopCC(numVal(negocio.comision_oficina))]);
+          } else {
+            rowsDatos.push(['Comisión oficina', fmtCopCC(numVal(negocio.comision_oficina))]);
+          }
         }
         rowsDatos.push(['Círculo de influencia',
           'Captación: ' + (ciCapCC ? 'Con' : 'Sin') + ' · Cierre: ' + (ciCieCC ? 'Con' : 'Sin')]);
@@ -2664,7 +2918,7 @@ function doPost(e) {
           if (comOfiPdf > 0 && ingresadoV > comOfiPdf) ingresadoV = comOfiPdf;
           var comGen = ingresadoV * partV;
           rowsVnt.push([
-            nomInmB(v.id_inmueble),
+            nomInmB(v.id_inmueble) + (factorColegaDe_(v) < 1 ? " [colegaje]" : ""),
             fmtCop(numVal(v.valor_base_comision)),
             (numVal(v.pct_comision_oficina)*100).toFixed(2) + '%',
             fmtCop(comOfiPdf),
@@ -2687,7 +2941,7 @@ function doPost(e) {
           var partA = sumPart(a.id_arriendo) * 0.5;
           var comGenA = comTotalA * partA;
           rowsArr.push([
-            nomInmB(a.id_inmueble),
+            nomInmB(a.id_inmueble) + (factorColegaDe_(a) < 1 ? " [colegaje]" : ""),
             fmtCop(numVal(a.valor_canon) + numVal(a.administracion)),
             (numVal(a.pct_comision_oficina)*100).toFixed(2) + '%',
             String(mesesA),
@@ -2802,11 +3056,37 @@ function doPost(e) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Falta fecha o mes de la acción' });
       }
+      // Captación: exige inmueble existente y observación; sella la fecha de captación
+      // del inmueble (base del bono +2 pp / +1 pp en arriendos).
+      var esCapAcc = esTipoCaptacion_(datos.tipo);
+      if (esCapAcc) {
+        if (!datos.id_inmueble) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Una captación debe indicar el inmueble captado' });
+        }
+        var inmCapAcc = leerHoja(HOJAS.inmuebles).find(function(i){ return String(i.id_inmueble) === String(datos.id_inmueble); });
+        if (!inmCapAcc) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Inmueble "' + datos.id_inmueble + '" no existe' });
+        }
+        if (!String(datos.descripcion || '').trim()) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Una captación debe llevar observación (qué se captó, condiciones, contacto…)' });
+        }
+        if (!datos.fecha) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'Una captación debe llevar fecha' });
+        }
+      } else {
+        datos.id_inmueble = datos.id_inmueble || '';
+      }
+      asegurarColumnasCaptacion_();
       datos.id_accion = siguienteId(HOJAS.acciones, 'ACC');
       agregarFila(HOJAS.acciones, COLUMNAS.acciones, datos);
       invalidarCacheHojas([HOJAS.acciones]);
+      if (esCapAcc) recalcularCaptacionInmueble_(datos.id_inmueble);
       lock.releaseLock();
-      return jsonResponse({ ok: true, id: datos.id_accion, mensaje: 'Acción registrada' });
+      return jsonResponse({ ok: true, id: datos.id_accion, mensaje: esCapAcc ? 'Captación registrada: el inmueble queda con fecha de captación ' + fechaTexto_(datos.fecha) : 'Acción registrada' });
     }
 
     // --- ACTUALIZAR COBRO DE ARRIENDO (sólo gerente) ---
@@ -3174,12 +3454,14 @@ function doPost(e) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'El inmueble "' + datosEA.id_inmueble + '" está inactivo. Reactívelo antes de editar el negocio.' });
       }
-      // Duplicado: mismo inmueble + mes + año, excluyendo este mismo arriendo
+      // Duplicado: mismo inmueble + mes + año, excluyendo este mismo arriendo y los
+      // cancelados (mismo criterio que registrar_arriendo).
       var dupEA = leerHoja(HOJAS.arriendos).find(function(a){
         return a.id_arriendo !== idArrE
           && String(a.id_inmueble) === String(datosEA.id_inmueble)
           && String(a.mes) === String(datosEA.mes)
-          && String(a['año']) === String(datosEA['año']);
+          && String(a['año']) === String(datosEA['año'])
+          && String(a.estado_arriendo || '').toUpperCase() !== 'CANCELADO';
       });
       if (dupEA) {
         lock.releaseLock();
@@ -3200,10 +3482,18 @@ function doPost(e) {
       var errPartesEA = validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, false);
       if (errPartesEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPartesEA }); }
 
+      // Colegaje (hereda de la fila si el cliente no envió el campo) y bono de captación
+      delete datosEA.origen_prefill;
+      heredarColegajeSiFalta_(datosEA, arrE);
+      var errColEA = normalizarColegaje_(datosEA, 'arriendo');
+      if (errColEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errColEA }); }
+
       // Aplicar cambios
       datosEA.id_arriendo = idArrE;
       var canonTotalEA = numVal(datosEA.valor_canon) + numVal(datosEA.administracion);
-      datosEA.comision_oficina = canonTotalEA * numVal(datosEA.pct_comision_oficina);
+      aplicarColegaje_(datosEA, canonTotalEA * numVal(datosEA.pct_comision_oficina));
+      datosEA.bono_captacion_pct = bonoCaptacionDe_(inmEA, datosEA['año'], datosEA.mes);
+      asegurarColumnasColegaje_();
       actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrE, datosEA);
 
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idArrE);
@@ -3221,11 +3511,13 @@ function doPost(e) {
 
       // Regenerar cobros proyectados con los nuevos valores (se pierden ediciones manuales de cobros)
       borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
-      try { generarCobrosProyectados(datosEA); } catch (eCobEA) { /* no bloquear */ }
+      var advCobEA = '';
+      try { generarCobrosProyectados(datosEA); }
+      catch (eCobEA) { advCobEA = 'Arriendo actualizado, pero los cobros mensuales NO se regeneraron: ' + eCobEA.message + '. Revisa la hoja CobrosArriendo.'; }
 
       invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
       lock.releaseLock();
-      return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado' });
+      return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado', advertencia: advCobEA || undefined });
     }
 
     // --- EDITAR VENTA (gestor o asesor que participa en el negocio) ---
@@ -3282,13 +3574,20 @@ function doPost(e) {
       if (errPartesEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPartesEV }); }
 
       var valorBaseEV = numVal(datosEV.valor_base_comision);
+      // Colegaje (hereda de la fila si el cliente no envió el campo). La comisión de
+      // oficina NETA se calcula una sola vez y alimenta el plan de pagos y la fila.
+      delete datosEV.origen_prefill;
+      heredarColegajeSiFalta_(datosEV, vntE);
+      var errColEV = normalizarColegaje_(datosEV, 'venta');
+      if (errColEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errColEV }); }
+      var comOfEV = aplicarColegaje_(datosEV, valorBaseEV * numVal(datosEV.pct_comision_oficina));
       // Pre-validar y construir el plan de pagos ANTES de escribir nada.
       // (construirPagosVenta_ maneja secundario por montos y primario por % de comisión.)
       var resPagosEV = null;
       if (body.pagos && body.pagos.length > 0) {
         resPagosEV = construirPagosVenta_(body.pagos, {
           valor_base_comision: valorBaseEV,
-          comision_oficina: valorBaseEV * numVal(datosEV.pct_comision_oficina)
+          comision_oficina: comOfEV
         });
         if (resPagosEV.error) {
           lock.releaseLock();
@@ -3298,8 +3597,8 @@ function doPost(e) {
 
       // Aplicar cambios
       datosEV.id_venta = idVntE;
-      datosEV.comision_oficina = valorBaseEV * numVal(datosEV.pct_comision_oficina);
       datosEV.comision_por_punta = datosEV.comision_oficina / 2;
+      asegurarColumnasColegaje_();
       actualizarFila(HOJAS.ventas, 'id_venta', idVntE, datosEV);
 
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
@@ -3388,6 +3687,8 @@ function doPost(e) {
       var accBorradas = borrarFilasPorColumna_(HOJAS.acciones, 'id_accion', idAccionEL);
       if (!accBorradas) { lock.releaseLock(); return jsonResponse({ ok:false, error:'No se pudo eliminar la acción' }); }
       invalidarCacheHojas([HOJAS.acciones]);
+      // Si era una captación, la fecha de captación del inmueble vuelve a la anterior (o se vacía)
+      if (esTipoCaptacion_(filaAccEL.tipo) && filaAccEL.id_inmueble) recalcularCaptacionInmueble_(filaAccEL.id_inmueble);
       lock.releaseLock();
       return jsonResponse({ ok:true, mensaje:'Acción eliminada' });
     }

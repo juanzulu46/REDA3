@@ -144,6 +144,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .neg-card .neg-tipo{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
 .neg-card .neg-tipo.arr{background:#fff3e0;color:#e65100}
 .neg-card .neg-tipo.vnt{background:#e8f5e9;color:#2e7d32}
+.neg-card .neg-tipo.colegaje{background:#fff8e1;color:#b45309;border:1px solid #f59e0b;margin-left:6px}
+.neg-card .neg-tipo.bono{background:#e0f2fe;color:#0369a1;border:1px solid #38bdf8;margin-left:6px}
 .neg-card .neg-detail{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--g600)}
 .neg-card .neg-detail strong{color:var(--g800)}
 .neg-card .neg-com{margin-top:8px;padding-top:8px;border-top:1px solid var(--g200);font-size:13px;font-weight:700;color:var(--verde)}
@@ -335,6 +337,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
         <div class="ff"><label>Valor administraci&oacute;n (COP) <span class="req">*</span></label><input type="text" id="ar_admon" inputmode="numeric" placeholder="Ej: 200.000" oninput="calcularComisionArr()"><div class="hint">Cuota de administraci&oacute;n mensual del inmueble (si no aplica, escriba 0)</div></div>
         <div class="ff"><label>% Comisi&oacute;n de la oficina <span class="req">*</span></label><select id="ar_pct" onchange="sugerirMesesContrato();calcularComisionArr()"><option value="">-- Porcentaje --</option><option value="0.05">5%</option><option value="0.07">7%</option><option value="0.075">7.5%</option><option value="0.08">8%</option><option value="0.09">9%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="1">100%</option></select></div>
         <div class="ff"><label>Meses del contrato <span class="req">*</span></label><input type="text" id="ar_meses" inputmode="numeric" placeholder="Ej: 12" oninput="calcularComisionArr()"><div class="hint">Cu&aacute;ntos meses durar&aacute; el contrato. Sugerencia autom&aacute;tica seg&uacute;n %: 12 si admin (&le;10%), 1 si colocaci&oacute;n (&gt;10%). Editable.</div></div>
+        <div class="ff"><label>Modalidad <span class="req">*</span></label><select id="ar_modalidad" onchange="cambioModalidad('arr')"><option value="">Normal (100% REDA3)</option><option value="COLEGAJE">Colegaje (compartido con otra inmobiliaria/agente)</option></select><div class="hint">En colegaje el colega recibe el 30% de la comisi&oacute;n; las comisiones de los asesores y la bonificaci&oacute;n se calculan sobre el 70% que queda a REDA3.</div></div>
+        <div class="ff" id="ar_colegaWrap" style="display:none"><label>Inmobiliaria / agente colega <span class="opt">(opcional)</span></label><input type="text" id="ar_nombre_colega" placeholder="Nombre de la inmobiliaria o del agente"></div>
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 4 &mdash; C&oacute;mo lleg&oacute; el negocio (captaci&oacute;n)</span><span class="fd-line"></span></div>
         <div class="ff"><label>Oficina que capt&oacute; el cliente <span class="req">*</span></label><select id="ar_ofcap"><option value="">-- Oficina --</option></select></div>
@@ -423,7 +427,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 
         <div class="form-div"><span class="fd-line"></span><span class="fd-text">Paso 2 &mdash; Cu&aacute;nto se vendi&oacute; y cu&aacute;nto cobra la oficina</span><span class="fd-line"></span></div>
         <div class="ff"><label>Valor base comisi&oacute;n (COP) <span class="req">*</span></label><input type="text" id="v_valorbase" inputmode="numeric" placeholder="Ej: 350.000.000" oninput="calcularComisionVnt()"><div class="hint">Valor sobre el que se calcula la comisi&oacute;n (solo n&uacute;meros)</div></div>
-        <div class="ff"><label>% Comisi&oacute;n oficina <span class="req">*</span></label><select id="v_pct" onchange="calcularComisionVnt()"><option value="">-- % --</option><option value="0.01">1%</option><option value="0.015">1.5%</option><option value="0.02">2%</option><option value="0.025">2.5%</option><option value="0.0252">2.52%</option><option value="0.03">3%</option></select></div>
+        <div class="ff"><label>% Comisi&oacute;n oficina <span class="req">*</span></label><select id="v_pct" onchange="calcularComisionVnt()"><option value="">-- % --</option><option value="0.01">1%</option><option value="0.015">1.5%</option><option value="0.02">2%</option><option value="0.025">2.5%</option><option value="0.0252">2.52%</option><option value="0.03">3%</option></select><div class="hint">En colegaje escoja el % TOTAL pactado con el cliente; el sistema reparte con el colega.</div></div>
+        <div class="ff"><label>Modalidad <span class="req">*</span></label><select id="v_modalidad" onchange="cambioModalidad('vnt')"><option value="">Normal (100% REDA3)</option><option value="COLEGAJE">Colegaje (compartido con otra inmobiliaria/agente)</option></select><div class="hint">Inmobiliaria (persona jur&iacute;dica): 50% / 50%. Persona natural: el colega recibe 1/3 del % total (3% &rarr; 1% colega, 2% REDA3). Las comisiones de los asesores se calculan sobre la parte de REDA3.</div></div>
+        <div class="ff" id="v_tipoColegaWrap" style="display:none"><label>Tipo de colega <span class="req">*</span></label><select id="v_tipo_colega" onchange="calcularComisionVnt()"><option value="">-- Escoja --</option><option value="Inmobiliaria">Inmobiliaria (persona jur&iacute;dica) &mdash; 50% / 50%</option><option value="Persona natural">Persona natural &mdash; 1/3 colega, 2/3 REDA3</option></select></div>
+        <div class="ff" id="v_colegaWrap" style="display:none"><label>Inmobiliaria / agente colega <span class="opt">(opcional)</span></label><input type="text" id="v_nombre_colega" placeholder="Nombre de la inmobiliaria o del agente"></div>
         <div class="form-div"><span class="fd-line"></span><span class="fd-text" id="pagosVntDivTxt">C&oacute;mo va a pagar el comprador (cuotas)</span><span class="fd-line"></span></div>
         <div id="pagosVntList"></div>
         <div class="com-add"><button type="button" onclick="addPagoRow()">+ Agregar cuota de pago</button></div>
@@ -665,7 +672,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
       <div class="ff"><label>Tipo de acci&oacute;n <span class="req">*</span></label><select id="ac_tipo">
         <option value="">-- Tipo --</option>
       </select></div>
-      <div class="ff full"><label>Descripci&oacute;n <span class="opt">(opcional)</span></label><textarea id="ac_desc" placeholder="Detalle de la acci&oacute;n"></textarea></div>
+      <div class="ff full" id="ac_inmuebleWrap" style="display:none"><label>Inmueble captado <span class="req">*</span></label><select id="ac_inmueble"><option value="">-- Escoja el inmueble --</option></select><div class="hint">La fecha de esta acci&oacute;n queda como <strong>fecha de captaci&oacute;n</strong> del inmueble. Si se arrienda ese mismo mes, los asesores del arriendo suman +2 puntos a su %; si es el mes siguiente, +1. Si el inmueble no aparece, cr&eacute;elo primero en "Buscar / Crear inmueble".</div></div>
+      <div class="ff full"><label id="ac_descLabel">Descripci&oacute;n <span class="opt">(opcional)</span></label><textarea id="ac_desc" placeholder="Detalle de la acci&oacute;n"></textarea></div>
     </div></div>
     <div class="fcard-ft">
       <button class="btn btn-limpiar" onclick="resetAccion()">Limpiar</button>
@@ -1316,10 +1324,12 @@ const CAT = {
 //
 // Comisión asesor = % × base × (participación/100)
 // Si tiene referido: -25% del 20% de su comisión bruta
-function calcComisionAsesor(base, vinculacion, conCirculo, tipoNeg, mercado, punta, participacion) {
+// bonoPP (solo arriendos): puntos extra por captación reciente del inmueble
+//   (+0.02 si se arrienda el mismo mes de la captación, +0.01 el mes siguiente).
+function calcComisionAsesor(base, vinculacion, conCirculo, tipoNeg, mercado, punta, participacion, bonoPP) {
   let pctFree;
   if (tipoNeg === 'arriendo') {
-    pctFree = conCirculo ? 0.175 : 0.15;
+    pctFree = (conCirculo ? 0.175 : 0.15) + (Number(bonoPP) || 0);
   } else {
     if (mercado === 'Secundario') {
       pctFree = conCirculo ? 0.225 : 0.20;
@@ -1336,6 +1346,101 @@ function calcComisionAsesor(base, vinculacion, conCirculo, tipoNeg, mercado, pun
   let valor = pctFree * base * part;
   if (vinculacion !== 'Freelance') valor = valor / 1.3;
   return valor;
+}
+
+// ===== COLEGAJE (espejo de apps_script.js) =====
+// Negocio compartido con otra inmobiliaria/agente. El colega se queda con pct_colega
+// de la comisión total y TODO lo de REDA3 se calcula sobre la parte neta.
+const COLEGAJE_PCT_ARRIENDO = 0.30;
+const COLEGAJE_PCT_VENTA = { 'Inmobiliaria': 0.5, 'Persona natural': 1/3 };
+function pctColegaDe(tipoNeg, tipoColega) {
+  return tipoNeg === 'arriendo' ? COLEGAJE_PCT_ARRIENDO : (COLEGAJE_PCT_VENTA[tipoColega] || 0);
+}
+function esColegajeNeg(neg){ return String(neg && neg.modalidad || '').toUpperCase() === 'COLEGAJE'; }
+function factorColegaNeg(neg){ return esColegajeNeg(neg) ? 1 - (Number(neg.pct_colega) || 0) : 1; }
+
+// ===== BONO DE CAPTACIÓN (espejo de apps_script.js) =====
+// {anio, mes} de una fecha que puede venir como 'yyyy-MM-dd', ISO o 'dd/MM/yyyy'.
+function anioMesDeFecha(valor){
+  if (valor === null || valor === undefined || valor === '') return null;
+  const s = String(valor).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return { anio: +m[1], mes: +m[2] };
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return { anio: +m[3], mes: +m[2] };
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : { anio: d.getFullYear(), mes: d.getMonth() + 1 };
+}
+const BONO_CAPTACION = { 0: 0.02, 1: 0.01 };
+// Bono para un arriendo de (anio, mes) sobre el inmueble idInmueble (catálogo `inmuebles`).
+function bonoCaptacionPP(idInmueble, anio, mes){
+  const inm = (inmuebles || []).find(i => i.id_inmueble === idInmueble);
+  const cap = inm ? anioMesDeFecha(inm.fecha_captacion) : null;
+  if (!cap || !anio || !mes) return { pp: 0, inm };
+  const diff = (Number(anio) * 12 + Number(mes)) - (cap.anio * 12 + cap.mes);
+  return { pp: BONO_CAPTACION[diff] || 0, inm, cap, diff };
+}
+function esTipoCaptacion(tipo){
+  return String(tipo||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim().indexOf('captacion') === 0;
+}
+
+// ===== BASE DEL NEGOCIO (única fuente de verdad del formulario) =====
+// Lee el formulario de arriendo ('arr') o venta ('vnt') y devuelve todas las
+// magnitudes base. Antes esta lógica estaba copiada 3 veces (recalcComisiones,
+// recolectarComisiones y calcRefPuntaParaGuardar) y se desincronizaba.
+function calcBaseNegocio(tipo){
+  const isArr = tipo === 'arr';
+  const prefix = isArr ? 'ar' : 'v';
+  const tipoNeg = isArr ? 'arriendo' : 'venta';
+  const g = id => document.getElementById(id);
+  const officePct = Number(g(prefix + '_pct').value) || 0;
+  const canon = isArr ? readMoney('ar_canon') : 0;
+  const admon = isArr ? readMoney('ar_admon') : 0;
+  const canonTotal = canon + admon;
+  const valorVenta = !isArr ? readMoney('v_valorbase') : 0;
+  const mercado = g(prefix + '_mercado').value;
+  // Colegaje
+  const modalidad = (g(prefix + '_modalidad') && g(prefix + '_modalidad').value === 'COLEGAJE') ? 'COLEGAJE' : '';
+  const tipoColega = (!isArr && modalidad && g('v_tipo_colega')) ? g('v_tipo_colega').value : '';
+  const nombreColega = g(prefix + '_nombre_colega') ? g(prefix + '_nombre_colega').value.trim() : '';
+  const pctColega = modalidad ? pctColegaDe(tipoNeg, tipoColega) : 0;
+  const factorColega = 1 - pctColega;
+  // Comisión de oficina: bruta (total pactado) y neta (lo que queda a REDA3 = lo que se guarda)
+  const comisionBruta = isArr ? canonTotal * officePct : valorVenta * officePct;
+  const comisionOficina = factorColega === 1 ? comisionBruta : Math.round(comisionBruta * factorColega * 100) / 100;
+  const colegaRecibe = comisionBruta - comisionOficina;
+  // Base para la comisión del asesor:
+  //   arriendo → (canon + admón) × factorArr × factorColega  (factorArr = % oficina × 10 si ≤ 20%)
+  //   venta    → comisión de oficina NETA
+  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
+  const baseAsesor = isArr ? canonTotal * factorArr * factorColega : comisionOficina;
+  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
+  // Arriendo administración (≤10%) → prorrateo meses/12; colocación (>10%) y venta → pago único
+  const factorAsesorMeses = (isArr && officePct > 0 && officePct <= 0.10) ? (mesesContratoArr / 12) : 1;
+  // Bono de captación (solo arriendos): mes/año del negocio vs fecha_captacion del inmueble
+  let bono = { pp: 0 };
+  if (isArr) {
+    const anioArr = (editandoNeg && editandoNeg.tipo === 'arriendo' && editandoNeg.anio) ? Number(editandoNeg.anio) : new Date().getFullYear();
+    bono = bonoCaptacionPP(g('ar_inmueble').value, anioArr, Number(g('ar_mes').value) || 0);
+  }
+  return { isArr, prefix, tipoNeg, mercado, officePct, canon, admon, canonTotal, valorVenta,
+    modalidad, tipoColega, nombreColega, pctColega, factorColega, comisionBruta, comisionOficina, colegaRecibe,
+    factorArr, baseAsesor, mesesContratoArr, factorAsesorMeses, bonoPP: bono.pp, bono };
+}
+
+// Muestra/oculta los campos de colegaje según la modalidad y recalcula.
+function cambioModalidad(tipo){
+  const isArr = tipo === 'arr';
+  const prefix = isArr ? 'ar' : 'v';
+  const sel = document.getElementById(prefix + '_modalidad');
+  const col = !!(sel && sel.value === 'COLEGAJE');
+  const wrapN = document.getElementById(prefix + '_colegaWrap');
+  if (wrapN) wrapN.style.display = col ? '' : 'none';
+  if (!isArr) {
+    const wrapT = document.getElementById('v_tipoColegaWrap');
+    if (wrapT) wrapT.style.display = col ? '' : 'none';
+  }
+  recalcComisiones(tipo);
 }
 
 // Determina si un origen tiene círculo de influencia (busca en tabla origenes)
@@ -1455,6 +1560,13 @@ function fillSelectZonas(id,ph){
   const s=document.getElementById(id);if(!s)return;
   s.innerHTML='<option value="">'+ph+'</option>'+zonas.map(d=>'<option value="'+d.id_zona+'">'+d.comuna+' \u2014 '+d.ciudad+'</option>').join('');
 }
+function nomAsesorCat(id){ const a=asesoresLista.find(x=>x.id_asesor===id); return a?a.nombre:(id||''); }
+// Colegaje: aviso (no bloqueo) si se diligencian asesores REDA3 en ambas puntas.
+function confirmarPuntasColegaje(comisiones){
+  const puntas=new Set((comisiones||[]).map(c=>c.punta));
+  if(puntas.size<2)return true;
+  return confirm('Negocio en COLEGAJE con asesores REDA3 en captación Y en cierre.\n\nNormalmente en colegaje solo se diligencia la punta que hizo REDA3 (la otra la hizo el colega).\n\n¿Confirmas que REDA3 hizo las dos puntas y quieres guardar así?');
+}
 function fillSelectAsesores(sel){
   sel.innerHTML='<option value="">-- Asesor --</option>'+asesoresLista.filter(a=>a.estado==='Activo').map(a=>'<option value="'+a.id_asesor+'" data-vinc="'+(a.vinculacion||'Freelance')+'">'+a.id_asesor+' \u2014 '+a.nombre+' ('+a.vinculacion+')</option>').join('');
 }
@@ -1511,9 +1623,10 @@ async function apiPost(body){
   try {
     return JSON.parse(text);
   } catch(e) {
-    // Si el response no es JSON pero el request fue OK, asumir éxito
-    // (caso típico: GAS redirige y devuelve HTML)
-    return { ok: true, id: 'guardado', mensaje: 'Guardado' };
+    // Respuesta no-JSON (GAS redirigió o devolvió una página de error): NUNCA
+    // asumir éxito. Un "guardado" falso hacía que el cliente saliera del modo
+    // edición y navegara como si la venta se hubiera actualizado.
+    return { ok: false, error: 'Respuesta inválida del servidor (no JSON). Verifica en Mis Negocios si el cambio se aplicó.' };
   }
 }
 
@@ -1628,7 +1741,7 @@ async function cargarCatalogos(){
     return false;
   }
 }
-// Banner fijo cuando los cat\u00e1logos no cargan: sin estos datos los formularios no sirven.
+// Banner fijo cuando los cat\álogos no cargan: sin estos datos los formularios no sirven.
 function mostrarBannerCatalogos(msg){
   let b=document.getElementById('catalogosBanner');
   if(!b){
@@ -1798,8 +1911,8 @@ function actualizarSumaPartes(tipo, rol){
     tag.className = 'partes-sum';
     list.parentElement.appendChild(tag);
   }
-  // Misma tolerancia que la validaci\u00f3n al guardar (\u00b10.5%) para que el aviso visual
-  // no marque "mal" un 99.99% que el sistema s\u00ed acepta.
+  // Misma tolerancia que la validaci\ón al guardar (\±0.5%) para que el aviso visual
+  // no marque "mal" un 99.99% que el sistema s\í acepta.
   const ok = Math.abs(suma - 100) <= 0.5;
   tag.className = 'partes-sum ' + (ok ? 'ok' : 'bad');
   tag.textContent = 'Suma: ' + suma.toFixed(2) + '%' + (ok ? ' \u2713' : ' (debe sumar 100)');
@@ -1835,7 +1948,7 @@ function recolectarPartes(tipo){
 
 // ===== CUOTAS / HITOS DE PAGO DE LA VENTA =====
 // Secundario: el comprador paga el inmueble en cuotas ($ del valor base).
-// Primario: la constructora paga la comisi\u00f3n de REDA3 por hitos (% de la comisi\u00f3n),
+// Primario: la constructora paga la comisi\ón de REDA3 por hitos (% de la comisi\ón),
 // ej. primera parte, punto de equilibrio, escritura.
 function esVentaPrimario() {
   return document.getElementById('v_mercado').value === 'Primario';
@@ -1867,8 +1980,8 @@ function addPagoRow() {
 }
 
 // Al cambiar el tipo de mercado, las filas de cuota cambian de modalidad
-// ($ del inmueble vs % de la comisi\u00f3n). Se conservan fecha y observaci\u00f3n;
-// el monto/% se limpia porque no son convertibles entre s\u00ed.
+// ($ del inmueble vs % de la comisi\ón). Se conservan fecha y observaci\ón;
+// el monto/% se limpia porque no son convertibles entre s\í.
 function cambioMercadoVenta() {
   const container = document.getElementById('pagosVntList');
   const divTxt = document.getElementById('pagosVntDivTxt');
@@ -2003,33 +2116,16 @@ function addAsesorRow(containerId, punta, tipo) {
 }
 
 function recalcComisiones(tipo) {
-  const isArr = tipo === 'arr';
-  const officePct = isArr
-    ? (Number(document.getElementById('ar_pct').value)||0)
-    : (Number(document.getElementById('v_pct').value)||0);
-  const canon = isArr ? (readMoney('ar_canon')) : 0;
-  const admon = isArr ? (readMoney('ar_admon')) : 0;
-  // En arriendo, la base completa es canon + administración
-  const canonTotal = canon + admon;
-  const valorVenta = !isArr ? (readMoney('v_valorbase')) : 0;
-  const comisionOficina = isArr ? canonTotal * officePct : valorVenta * officePct;
-  // Base para cálculo de comisión del asesor:
-  //   arriendo → (canon + admon) × factor (factor = officePct × 10 si ≤ 20%, sino 1)
-  //   venta    → comisión de la oficina
-  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
-  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
-  // Comisión del asesor en arriendo: si es administración (≤ 10%) se prorratea por meses/12;
-  // si es colocación (> 10%) es pago único (factor 1). En venta no aplica.
-  const factorAsesorMeses = (isArr && officePct > 0 && officePct <= 0.10) ? (mesesContratoArr / 12) : 1;
+  // Todas las magnitudes base salen de calcBaseNegocio (colegaje y bono incluidos)
+  const B = calcBaseNegocio(tipo);
+  const { isArr, tipoNeg, mercado, officePct, canonTotal, valorVenta, modalidad, tipoColega, pctColega,
+          comisionBruta, comisionOficina, colegaRecibe, factorArr, factorColega, baseAsesor,
+          mesesContratoArr, factorAsesorMeses, bonoPP, bono } = B;
 
   if (!comisionOficina && !baseAsesor) {
     document.getElementById(isArr?'resumenArr':'resumenVnt').classList.remove('show');
     return;
   }
-
-  const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
-  const tipoNeg = isArr ? 'arriendo' : 'venta';
 
   // Determinar círculo de influencia automáticamente desde origen
   const orgCapId = document.getElementById(isArr?'ar_orgcap':'v_orgcap').value;
@@ -2059,7 +2155,7 @@ function recalcComisiones(tipo) {
       if (!sel.value) { valSpan.textContent = '$0'; return; }
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(partInput.value) || 0;
-      const bruto = calcComisionAsesor(baseAsesor, vinc, conCirculo, tipoNeg, mercado, punta, participacion) * factorAsesorMeses;
+      const bruto = calcComisionAsesor(baseAsesor, vinc, conCirculo, tipoNeg, mercado, punta, participacion, bonoPP) * factorAsesorMeses;
       let neto = bruto;
       let refValor = 0;
       if (hayRefPunta) {
@@ -2093,19 +2189,36 @@ function recalcComisiones(tipo) {
   const resumen = document.getElementById(isArr?'resumenArr':'resumenVnt');
   resumen.classList.add('show');
   let gridHtml = '';
+  const esCol = modalidad === 'COLEGAJE';
+  const pctColTxt = (pctColega*100).toFixed(pctColega*100 % 1 ? 2 : 0) + '%';
+  if (esCol) {
+    // Colegaje: mostrar el reparto antes de la base
+    const sufMes = isArr ? ' (mensual)' : '';
+    gridHtml += `
+      <div class="com-r-item"><span class="crl">Comisi&oacute;n total (bruta)${sufMes}</span><span class="crv">${fmtP(comisionBruta)}</span></div>
+      <div class="com-r-item"><span class="crl">Colega ${tipoColega ? '&middot; ' + tipoColega + ' ' : ''}(${pctColTxt})</span><span class="crv" style="color:var(--rojo)">&minus; ${fmtP(colegaRecibe)}</span></div>
+      <div class="com-r-item"><span class="crl">REDA3 (neta)${sufMes}</span><span class="crv">${fmtP(comisionOficina)}</span></div>
+    `;
+  }
   if (isArr) {
-    const baseLabel = factorArr !== 1
-      ? `Base asesor (canon &times; ${(officePct*100).toFixed(0)}% &times; 10 = ${(factorArr*100).toFixed(0)}%)`
-      : `Base asesor (canon completo)`;
-    gridHtml = `
+    let baseLabel = factorArr !== 1
+      ? `Base asesor (canon &times; ${(officePct*100).toFixed(0)}% &times; 10 = ${(factorArr*100).toFixed(0)}%${esCol ? ' &times; 70% colegaje' : ''})`
+      : `Base asesor (${esCol ? 'canon &times; 70% colegaje' : 'canon completo'})`;
+    gridHtml += `
       <div class="com-r-item"><span class="crl">${baseLabel}</span><span class="crv">${fmtP(baseAsesor)}</span></div>
       <div class="com-r-item"><span class="crl">Asesores ${factorAsesorMeses !== 1 ? '(&times; ' + mesesContratoArr + '/12)' : '(pago &uacute;nico)'}</span><span class="crv">${fmtP(totalBruto)}</span></div>
     `;
-  } else {
-    gridHtml = `
+    if (bonoPP > 0) {
+      const capTxt = bono.cap ? ` (captado ${['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][bono.cap.mes]}-${bono.cap.anio}${bono.inm && bono.inm.id_asesor_captador ? ' por ' + nomAsesorCat(bono.inm.id_asesor_captador) : ''})` : '';
+      gridHtml += `<div class="com-r-item"><span class="crl">Bono captaci&oacute;n${capTxt}</span><span class="crv" style="color:var(--azul)">+${(bonoPP*100).toFixed(0)} pp a cada asesor</span></div>`;
+    }
+  } else if (!esCol) {
+    gridHtml += `
       <div class="com-r-item"><span class="crl">Comisi&oacute;n oficina</span><span class="crv">${fmtP(comisionOficina)}</span></div>
       <div class="com-r-item"><span class="crl">Asesores (bruto)</span><span class="crv">${fmtP(totalBruto)}</span></div>
     `;
+  } else {
+    gridHtml += `<div class="com-r-item"><span class="crl">Asesores (bruto, sobre la parte REDA3)</span><span class="crv">${fmtP(totalBruto)}</span></div>`;
   }
   if (hayRefCap || hayRefCer) {
     gridHtml += `<div class="com-r-item"><span class="crl">Asesores (neto)</span><span class="crv">${fmtP(totalNeto)}</span></div>`;
@@ -2127,7 +2240,7 @@ function recalcComisiones(tipo) {
   // Agregar detalle de cuotas de pago al resumen (solo ventas)
   // Ojo: en mercado Primario las filas son hitos con .pago-pct (no existe .pago-valor);
   // leer el selector equivocado aquí tumbaba todo el prefill de edición y el
-  // formulario quedaba lleno pero en modo registro (negocios duplicados).
+  // formulario qa lleno pero en modo registro (negocios duplicados).
   if (!isArr) {
     const pagosRows = document.querySelectorAll('#pagosVntList .com-row');
     if (pagosRows.length > 0) {
@@ -2184,24 +2297,8 @@ function sugerirMesesContrato(){
 
 // ===== RECOLECTAR COMISIONES ASESORES =====
 function recolectarComisiones(tipo) {
-  const isArr = tipo === 'arr';
-  const officePct = isArr
-    ? (Number(document.getElementById('ar_pct').value)||0)
-    : (Number(document.getElementById('v_pct').value)||0);
-  const canon = isArr ? (readMoney('ar_canon')) : 0;
-  const admon = isArr ? (readMoney('ar_admon')) : 0;
-  const canonTotal = canon + admon;
-  const valorVenta = !isArr ? (readMoney('v_valorbase')) : 0;
-  const comisionOficina = isArr ? canonTotal * officePct : valorVenta * officePct;
-  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canonTotal * factorArr : comisionOficina;
-  // Arriendo administración (≤ 10%): comisión del asesor prorrateada por meses/12.
-  // Arriendo colocación (> 10%) y venta: factor 1 (pago único).
-  const mesesContratoArr = isArr ? (readInt('ar_meses') || mesesContratoSugerido(officePct)) : 1;
-  const factorAsesorMeses = (isArr && officePct > 0 && officePct <= 0.10) ? (mesesContratoArr / 12) : 1;
-  const mercado = document.getElementById(isArr?'ar_mercado':'v_mercado').value;
-  const tipoNeg = isArr ? 'arriendo' : 'venta';
-  const prefix = isArr ? 'ar' : 'v';
+  // Misma base que el resumen en pantalla (colegaje y bono de captación incluidos)
+  const { isArr, prefix, tipoNeg, mercado, baseAsesor, factorAsesorMeses, bonoPP } = calcBaseNegocio(tipo);
 
   // Círculo automático desde origen
   const orgCapId = document.getElementById(prefix+'_orgcap').value;
@@ -2230,7 +2327,7 @@ function recolectarComisiones(tipo) {
       const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
       const participacion = Number(row.querySelector('.com-part').value) || 0;
       sumaPartPunta += participacion;
-      const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion) * factorAsesorMeses;
+      const bruto = calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, participacion, bonoPP) * factorAsesorMeses;
       let valor = bruto;
       if (hayRef) valor = bruto - (bruto * 0.20 * 0.25);
       result.push({
@@ -2284,15 +2381,27 @@ async function guardarArriendo() {
   if (comisiones && comisiones.error) { toast(comisiones.error, 'er'); return; }
   if (!comisiones || comisiones.length === 0) { toast('Agregue al menos un asesor captador o cerrador', 'er'); return; }
 
+  // Barrera anti-duplicados: el formulario viene de un prefill de edición pero el
+  // modo edición ya no coincide → no se envía nada (sería un registro nuevo).
+  if (!edicionCoherente('arr')) {
+    toast('Se perdió el modo edición de ' + formPrefillId.arr + '. Vuelve a Mis Negocios y pulsa Editar de nuevo.', 'er');
+    return;
+  }
+  // Colegaje: normalmente solo se diligencia la punta que hizo REDA3 (la otra la hizo el colega)
+  const _baseArr = calcBaseNegocio('arr');
+  if (_baseArr.modalidad === 'COLEGAJE' && !confirmarPuntasColegaje(comisiones)) return;
+
   const btn = document.getElementById('btnGuardarArr');
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
     const _editArr = editandoNeg && editandoNeg.tipo==='arriendo';
+    console.log('[guardarArriendo]', { modo: _editArr ? 'editar' : 'registrar', editandoNeg, prefill: formPrefillId.arr });
     const _payloadArr = {
       action: _editArr ? 'editar_arriendo' : 'registrar_arriendo',
       partes: resPartes.partes,
       datos: {
+        origen_prefill: formPrefillId.arr || '',
         ['año']: (_editArr && editandoNeg.anio) ? editandoNeg.anio : new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         valor_canon: canon,
@@ -2306,14 +2415,22 @@ async function guardarArriendo() {
         valor_ref_captador: calcRefPuntaParaGuardar('arr','Captador'),
         referido_cerrador: document.getElementById('ar_hayref_cer').checked ? (document.getElementById('ar_refnombre_cer').value || '') : '',
         numero_cerrador_r: document.getElementById('ar_hayref_cer').checked ? (document.getElementById('ar_refnumero_cer').value || '') : '',
-        valor_ref_cerrador: calcRefPuntaParaGuardar('arr','Cerrador')
+        valor_ref_cerrador: calcRefPuntaParaGuardar('arr','Cerrador'),
+        // Colegaje (pct_colega y comision_bruta los deriva el servidor)
+        modalidad: _baseArr.modalidad,
+        tipo_colega: '',
+        nombre_colega: _baseArr.modalidad ? _baseArr.nombreColega : ''
       },
       comisiones_asesores: comisiones
     };
     if (_editArr) _payloadArr.id_arriendo = editandoNeg.id;
     const r = await apiPost(_payloadArr);
     if (r && r.ok) {
-      if (_editArr) { toast('Arriendo actualizado: ' + r.id); finalizarEdicion('arr'); return; }
+      if (_editArr) {
+        toast('Arriendo actualizado: ' + r.id);
+        if (r.advertencia) toast(r.advertencia, 'er');
+        finalizarEdicion('arr'); return;
+      }
       document.getElementById('okArrMsg').textContent = r.id + ' \u2014 Canon: ' + fmtP(canon);
       document.getElementById('okArr').classList.add('show');
       document.getElementById('formArrWrap').style.display = 'none';
@@ -2321,7 +2438,10 @@ async function guardarArriendo() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else { toast(r?.error || 'Error al guardar', 'er'); }
   } catch (e) { toast('Error de conexi\u00f3n: ' + e.message, 'er'); }
-  btn.disabled = false; btn.textContent = '\u2713 Guardar Arriendo';
+  btn.disabled = false;
+  // Tras un error se conserva el r\ótulo de edici\ón: el formulario sigue en modo
+  // "Guardar cambios (ID)", no vuelve a parecer un registro nuevo.
+  btn.textContent = (editandoNeg && editandoNeg.tipo==='arriendo') ? '\u2713 Guardar cambios (' + editandoNeg.id + ')' : '\u2713 Guardar Arriendo';
 }
 
 // ===== GUARDAR VENTA =====
@@ -2335,6 +2455,11 @@ async function guardarVenta() {
   const valorbase=moneyToNum(valorbaseRaw);
   if(valorbase<=0){toast('El valor base debe ser mayor a 0','er');document.getElementById('v_valorbase').focus();return}
   const pct=val('v_pct','Escoja el porcentaje');if(!pct)return;
+  const _baseVnt = calcBaseNegocio('vnt');
+  if (_baseVnt.modalidad === 'COLEGAJE' && !_baseVnt.tipoColega) {
+    toast('En una venta por colegaje debes escoger el tipo de colega (Inmobiliaria o Persona natural)','er');
+    document.getElementById('v_tipo_colega').focus(); return;
+  }
   const ofcap=val('v_ofcap','Escoja oficina captaci\u00f3n');if(!ofcap)return;
   const orgcap=val('v_orgcap','Escoja origen captaci\u00f3n');if(!orgcap)return;
   const ofcie=val('v_ofcie','Escoja oficina cierre');if(!ofcie)return;
@@ -2367,15 +2492,25 @@ async function guardarVenta() {
     }
   }
 
+  // Barrera anti-duplicados: el formulario viene de un prefill de edición pero el
+  // modo edición ya no coincide → no se envía nada (sería un registro nuevo).
+  if (!edicionCoherente('vnt')) {
+    toast('Se perdió el modo edición de ' + formPrefillId.vnt + '. Vuelve a Mis Negocios y pulsa Editar de nuevo.', 'er');
+    return;
+  }
+  if (_baseVnt.modalidad === 'COLEGAJE' && !confirmarPuntasColegaje(comisiones)) return;
+
   const btn = document.getElementById('btnGuardarVnt');
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
     const _editVnt = editandoNeg && editandoNeg.tipo==='venta';
+    console.log('[guardarVenta]', { modo: _editVnt ? 'editar' : 'registrar', editandoNeg, prefill: formPrefillId.vnt });
     const _payloadVnt = {
       action: _editVnt ? 'editar_venta' : 'registrar_venta',
       partes: resPartesV.partes,
       datos: {
+        origen_prefill: formPrefillId.vnt || '',
         ['año']: (_editVnt && editandoNeg.anio) ? editandoNeg.anio : new Date().getFullYear(),
         mes: Number(mes), mercado, id_inmueble: inmueble,
         valor_base_comision: valorbase, pct_comision_oficina: Number(pct),
@@ -2386,25 +2521,33 @@ async function guardarVenta() {
         valor_ref_captador: calcRefPuntaParaGuardar('vnt','Captador'),
         referido_cerrador: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnombre_cer').value || '') : '',
         numero_cerrador_r: document.getElementById('v_hayref_cer').checked ? (document.getElementById('v_refnumero_cer').value || '') : '',
-        valor_ref_cerrador: calcRefPuntaParaGuardar('vnt','Cerrador')
+        valor_ref_cerrador: calcRefPuntaParaGuardar('vnt','Cerrador'),
+        // Colegaje (pct_colega y comision_bruta los deriva el servidor)
+        modalidad: _baseVnt.modalidad,
+        tipo_colega: _baseVnt.modalidad ? _baseVnt.tipoColega : '',
+        nombre_colega: _baseVnt.modalidad ? _baseVnt.nombreColega : ''
       },
       comisiones_asesores: comisiones,
       pagos: pagos
     };
     if (_editVnt) _payloadVnt.id_venta = editandoNeg.id;
+    // Comisión de oficina NETA para el mensaje de éxito, capturada antes del await
+    const comOficinaNeta = _baseVnt.comisionOficina;
     let r = await apiPost(_payloadVnt);
     // El servidor frena registros de venta que parecen duplicados (mismo inmueble,
     // mes y año). Solo se reintenta si el usuario confirma que es una venta distinta
     // (ej. otra unidad del mismo proyecto en mercado Primario).
     if (r && !r.ok && r.posible_duplicado) {
-      if (confirm((r.error || 'Posible venta duplicada.') + '\n\n¿Seguro que es una venta DISTINTA y quieres registrarla de todas formas?')) {
+      if (confirm((r.error || 'Posible venta duplicada.') +
+          '\n\nSi estabas EDITANDO una venta, pulsa Cancelar y vuelve a Mis Negocios → Editar.' +
+          '\n\n¿Seguro que es una venta DISTINTA (otra unidad) y quieres registrarla de todas formas?')) {
         _payloadVnt.confirmar_duplicado = true;
         r = await apiPost(_payloadVnt);
       }
     }
     if (r && r.ok) {
       if (_editVnt) { toast('Venta actualizada: ' + r.id); finalizarEdicion('vnt'); return; }
-      const comOficina = valorbase * Number(pct);
+      const comOficina = comOficinaNeta;
       const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       const primarioOk = esVentaPrimario();
       let pagosDetalle = '';
@@ -2420,7 +2563,7 @@ async function guardarVenta() {
         }
       });
       document.getElementById('okVntMsg').innerHTML = '<strong>' + r.id + '</strong> \u2014 Valor: ' + fmtP(valorbase) +
-        ' \u2014 Comisi\u00f3n oficina: ' + fmtP(comOficina) +
+        ' \u2014 Comisi\u00f3n oficina' + (_baseVnt.modalidad ? ' (neta REDA3, colegaje)' : '') + ': ' + fmtP(comOficina) +
         '<div style="margin-top:8px;font-size:12px;text-align:left;line-height:1.8">' +
         pagosDetalle.split('\n').filter(Boolean).join('<br>') + '</div>';
       document.getElementById('okVnt').classList.add('show');
@@ -2429,7 +2572,10 @@ async function guardarVenta() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else { toast(r?.error || 'Error al guardar', 'er'); }
   } catch (e) { toast('Error: ' + e.message, 'er'); }
-  btn.disabled = false; btn.textContent = '\u2713 Guardar Venta';
+  btn.disabled = false;
+  // Tras un error se conserva el r\ótulo de edici\ón: el formulario sigue en modo
+  // "Guardar cambios (ID)", no vuelve a parecer un registro nuevo.
+  btn.textContent = (editandoNeg && editandoNeg.tipo==='venta') ? '\u2713 Guardar cambios (' + editandoNeg.id + ')' : '\u2713 Guardar Venta';
 }
 
 // ===== GUARDAR INMUEBLE =====
@@ -2505,6 +2651,7 @@ async function guardarCliente() {
 
 // ===== RESET FORMS =====
 function resetArriendo(){
+  formPrefillId.arr = '';
   document.getElementById('okArr').classList.remove('show');
   document.getElementById('formArrWrap').style.display='';
   document.querySelectorAll('#frmArr input:not([readonly]),#frmArr select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
@@ -2516,8 +2663,10 @@ function resetArriendo(){
   });
   document.getElementById('resumenArr').classList.remove('show');
   document.getElementById('dupliArr').classList.remove('show');
+  cambioModalidad('arr'); // oculta los campos de colegaje
 }
 function resetVenta(){
+  formPrefillId.vnt = '';
   document.getElementById('okVnt').classList.remove('show');
   document.getElementById('formVntWrap').style.display='';
   document.querySelectorAll('#frmVnt input:not([readonly]),#frmVnt select').forEach(el=>{if(el.tagName==='SELECT'){el.selectedIndex=0;if(el._ssInput)el._ssInput.value=''}else if(el.type==='checkbox')el.checked=false;else el.value=''});
@@ -2531,6 +2680,7 @@ function resetVenta(){
   document.getElementById('pagosVntResumen').textContent='';
   document.getElementById('resumenVnt').classList.remove('show');
   document.getElementById('dupliVnt').classList.remove('show');
+  cambioModalidad('vnt'); // oculta los campos de colegaje
 }
 function resetInmueble(){
   document.getElementById('okInm').classList.remove('show');
@@ -2643,6 +2793,9 @@ function abrirFormClienteNuevo(){
 // ===== VERIFICAR DUPLICADOS =====
 document.getElementById('ar_inmueble').addEventListener('change', checkDupliArr);
 document.getElementById('ar_mes').addEventListener('change', checkDupliArr);
+// El bono de captación depende del inmueble y del mes → recalcular comisiones
+document.getElementById('ar_inmueble').addEventListener('change', calcularComisionArr);
+document.getElementById('ar_mes').addEventListener('change', calcularComisionArr);
 document.getElementById('v_inmueble').addEventListener('change', checkDupliVnt);
 document.getElementById('v_mes').addEventListener('change', checkDupliVnt);
 // Los compradores se checkean on-demand desde los selects dinámicos (no hay un único v_comprador)
@@ -2683,6 +2836,22 @@ function toggleNegExp(key){
   if(estabaAbierto){negExpandidos.delete(key);panel.classList.remove('open');}
   else{negExpandidos.add(key);panel.classList.add('open');}
   if(btn)btn.innerHTML=estabaAbierto?'&#9656; Ver detalle completo':'&#9662; Ocultar detalle';
+}
+// Badges de modalidad colegaje y bono de captación para las tarjetas de negocio.
+function negBadgesExtra(neg){
+  let h='';
+  if(esColegajeNeg(neg))h+='<span class="neg-tipo colegaje" title="Negocio compartido: comisiones sobre la parte de REDA3">COLEGAJE'+(neg.tipo_colega?' &middot; '+neg.tipo_colega:'')+'</span>';
+  const b=Number(neg&&neg.bono_captacion_pct)||0;
+  if(b>0)h+='<span class="neg-tipo bono" title="Inmueble captado y arrendado en el mismo mes o el siguiente">BONO CAPTACI&Oacute;N +'+Math.round(b*100)+'</span>';
+  return h;
+}
+// Línea de modalidad para el panel de referencia al editar.
+function colegajeRefHTML(neg){
+  if(!esColegajeNeg(neg))return '';
+  const fc=factorColegaNeg(neg), neta=Number(neg.comision_oficina)||0;
+  const bruta=Number(neg.comision_bruta)||(fc>0?neta/fc:neta);
+  return '<div style="margin-top:4px"><strong>Modalidad:</strong> Colegaje'+(neg.tipo_colega?' ('+neg.tipo_colega+')':'')+(neg.nombre_colega?' &middot; '+neg.nombre_colega:'')+
+    ' &middot; <strong>Bruta:</strong> '+fmtP(bruta)+' &middot; <strong>REDA3 neta:</strong> '+fmtP(neta)+'</div>';
 }
 function negBadgeCirc(d,idOrigen){
   const o=(d.origen||[]).find(x=>x.id_origen===idOrigen);
@@ -2743,6 +2912,22 @@ function negExpPanelHTML(d, neg, tipo, key, opts){
     }
   }
 
+  // Colegaje y bono de captación (solo si aplican)
+  if(esColegajeNeg(neg)){
+    const fc=factorColegaNeg(neg);
+    const neta=nv(neg.comision_oficina);
+    const bruta=nv(neg.comision_bruta)||(fc>0?neta/fc:neta);
+    const pctC=Math.round((1-fc)*10000)/100;
+    secs+='<div class="ne-sec"><div class="ne-tit">Colegaje</div>'+
+      '<div><strong>Colega:</strong> '+(neg.tipo_colega||'Inmobiliaria/agente')+(neg.nombre_colega?' &middot; '+neg.nombre_colega:'')+'</div>'+
+      '<div><strong>Comisi&oacute;n bruta'+(esArr?' (mensual)':'')+':</strong> '+fmtP(bruta)+'</div>'+
+      '<div><strong>Parte colega ('+pctC+'%):</strong> '+fmtP(bruta-neta)+'</div>'+
+      '<div><strong>REDA3 neta'+(esArr?' (mensual)':'')+':</strong> '+fmtP(neta)+' <small>(base de comisiones, bonificaci&oacute;n y cobros)</small></div></div>';
+  }
+  if(esArr&&nv(neg.bono_captacion_pct)>0){
+    secs+='<div class="ne-sec"><div class="ne-tit">Bono de captaci&oacute;n</div>+'+Math.round(nv(neg.bono_captacion_pct)*100)+' puntos al % de comisi&oacute;n de cada asesor (inmueble captado y arrendado en el mismo mes o el siguiente)</div>';
+  }
+
   // Captación y cierre (oficina · origen · círculo)
   secs+='<div class="ne-sec"><div class="ne-tit">Captaci&oacute;n y cierre</div>'+
     '<div><strong>Captaci&oacute;n:</strong> '+negNomOficina(d,neg.oficina_captacion)+' &middot; '+negNomOrigen(d,neg.origen_captacion)+negBadgeCirc(d,neg.origen_captacion)+'</div>'+
@@ -2773,6 +2958,32 @@ async function cargarMisNegocios(){
     misNegociosData = r;
     renderMisNegocios();
   }catch(e){cont.innerHTML='<div class="neg-empty">Error de conexi&oacute;n</div>'}
+}
+
+// ===== CANCELADOS =====
+// Regla de gerencia: un negocio cancelado "simplemente no aparece". Estas helpers son
+// la única definición de "cancelado" en el cliente; Mis Negocios y Dashboard los
+// eliminan siempre, Gestión solo los muestra con la casilla "Ver cancelados".
+function negCancelado(neg){
+  if(!neg) return false;
+  return String(neg.estado_arriendo||'').toUpperCase()==='CANCELADO'
+      || String(neg.estado_venta||'').toUpperCase()==='CANCELADA';
+}
+// Devuelve una copia del payload de negocios sin cancelados ni sus filas hijas
+// (pagos/cobros ANULADOS, comisiones ANULADAS). No muta el original.
+function depurarCancelados(d){
+  if(!d) return d;
+  const out=Object.assign({},d);
+  const arrOk=new Set(), vtaOk=new Set();
+  out.arriendos=(d.arriendos||[]).filter(a=>{ if(negCancelado(a))return false; arrOk.add(a.id_arriendo); return true; });
+  out.ventas=(d.ventas||[]).filter(v=>{ if(negCancelado(v))return false; vtaOk.add(v.id_venta); return true; });
+  const vivo=id=>arrOk.has(id)||vtaOk.has(id);
+  if(d.pagos)out.pagos=d.pagos.filter(p=>vtaOk.has(p.id_venta)&&String(p.estado||'').toUpperCase()!=='ANULADO');
+  if(d.cobros_arriendo)out.cobros_arriendo=d.cobros_arriendo.filter(c=>arrOk.has(c.id_arriendo)&&String(c.estado||'').toUpperCase()!=='ANULADO');
+  if(d.comisiones)out.comisiones=d.comisiones.filter(c=>vivo(c.id_negocio)&&String(c.estado||'').toUpperCase()!=='ANULADA');
+  if(d.comisiones_negocio)out.comisiones_negocio=d.comisiones_negocio.filter(c=>vivo(c.id_negocio));
+  if(d.partes)out.partes=d.partes.filter(p=>vivo(p.id_negocio));
+  return out;
 }
 
 // Extrae el número final de un ID incremental (ARR-007 -> 7). Sirve para ordenar
@@ -2822,9 +3033,10 @@ function renderMisNegocios(){
   if (fPunta) comisionesFiltradas = comisionesFiltradas.filter(c => c.punta === fPunta);
   const negocioIdsFiltrados = new Set(comisionesFiltradas.map(c=>c.id_negocio));
 
-  // Filtrar negocios
-  let arriendosFilt = r.arriendos.filter(a => negocioIdsFiltrados.has(a.id_arriendo));
-  let ventasFilt = r.ventas.filter(v => negocioIdsFiltrados.has(v.id_venta));
+  // Filtrar negocios (los cancelados nunca se muestran: el servidor ya los omite en
+  // mis_negocios y aquí se vuelve a filtrar por si llegara una respuesta vieja)
+  let arriendosFilt = r.arriendos.filter(a => negocioIdsFiltrados.has(a.id_arriendo) && !negCancelado(a));
+  let ventasFilt = r.ventas.filter(v => negocioIdsFiltrados.has(v.id_venta) && !negCancelado(v));
   if (fAnio) {
     arriendosFilt = arriendosFilt.filter(a => Number(a['año']) === fAnio);
   }
@@ -2913,7 +3125,7 @@ function renderMisNegocios(){
       const estadoArrHdr=canceladaArr?'<span style="margin-left:auto;font-weight:700;font-size:11px;color:#888">CANCELADO</span>':'';
       const cardStyleArr=canceladaArr?'opacity:0.55;background:#f5f5f5':'';
       html+=`<div class="neg-card arriendo" style="${cardStyleArr}">
-        <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${estadoArrHdr}</div>
+        <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}${estadoArrHdr}</div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
           <div><strong>Mercado:</strong> ${a.mercado||'&mdash;'}</div>
@@ -2996,7 +3208,7 @@ function renderMisNegocios(){
       const esSecM=String(v.mercado||'').toLowerCase()==='secundario';
       const tipoVentaM=v.mercado?(esSecM?'Venta Secundaria':'Venta Primaria'):'Venta';
       html+=`<div class="neg-card venta${esSecM?' sec':''}" style="${cardStyle}">
-        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt${esSecM?' sec':''}">${tipoVentaM} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span><span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
+        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt${esSecM?' sec':''}">${tipoVentaM} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}<span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
           <div><strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
@@ -3054,7 +3266,7 @@ function renderGestion(){
   const fAnio=Number(document.getElementById('gFiltroAnio')?.value||0);
   const fMes=Number(document.getElementById('gFiltroMes')?.value||0);
   const fAsesor=document.getElementById('gFiltroAsesor')?.value||'';
-  const fEstado=document.getElementById('gFiltroEstado')?.value||'';
+  const fVerCancelados=!!document.getElementById('gVerCancelados')?.checked;
   const fTipo=document.getElementById('gFiltroTipo')?.value||'';
   // Búsqueda por código o nombre del inmueble (no estricta: ignora acentos, mayúsculas y puntuación)
   const fBusquedaRaw=document.getElementById('gBusqueda')?.value||'';
@@ -3078,8 +3290,9 @@ function renderGestion(){
   let ventasFilt=r.ventas.slice();
   if(fAnio)ventasFilt=ventasFilt.filter(v=>Number(v['año'])===fAnio);
   if(fMes)ventasFilt=ventasFilt.filter(v=>Number(v.mes)===fMes);
-  if(fEstado==='CANCELADA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()==='CANCELADA');
-  else if(fEstado==='ACTIVA')ventasFilt=ventasFilt.filter(v=>String(v.estado_venta||'').toUpperCase()!=='CANCELADA');
+  // Cancelados ocultos por defecto (regla de gerencia); la casilla "Ver cancelados"
+  // los muestra para auditarlos o eliminarlos del todo.
+  if(!fVerCancelados)ventasFilt=ventasFilt.filter(v=>!negCancelado(v));
   if(fAsesor){
     const idsNeg=new Set(r.comisiones.filter(c=>c.id_asesor===fAsesor).map(c=>c.id_negocio));
     ventasFilt=ventasFilt.filter(v=>idsNeg.has(v.id_venta));
@@ -3090,6 +3303,7 @@ function renderGestion(){
 
   // Filtrar arriendos
   let arriendosFilt=(r.arriendos||[]).slice();
+  if(!fVerCancelados)arriendosFilt=arriendosFilt.filter(a=>!negCancelado(a));
   if(fAnio)arriendosFilt=arriendosFilt.filter(a=>Number(a['año'])===fAnio);
   if(fMes)arriendosFilt=arriendosFilt.filter(a=>Number(a.mes)===fMes);
   if(fAsesor){
@@ -3141,14 +3355,8 @@ function renderGestion(){
         ${r.asesores.map(a=>'<option value="'+a.id_asesor+'"'+(a.id_asesor===fAsesor?' selected':'')+'>'+a.nombre+'</option>').join('')}
       </select>
     </div>
-    <div class="neg-filtro-grupo"><label>Estado venta:</label>
-      <select id="gFiltroEstado" onchange="renderGestion()">
-        <option value="">Todos</option>
-        <option value="ACTIVA"${fEstado==='ACTIVA'?' selected':''}>Activas</option>
-        <option value="CANCELADA"${fEstado==='CANCELADA'?' selected':''}>Canceladas</option>
-      </select>
-    </div>
-    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroAnio').value=0;document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gFiltroEstado').value='';document.getElementById('gFiltroTipo').value='';document.getElementById('gBusqueda').value='';renderGestion()">Limpiar</button></div>
+    <div class="neg-filtro-grupo"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="gVerCancelados"${fVerCancelados?' checked':''} onchange="renderGestion()"> Ver cancelados</label></div>
+    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroAnio').value=0;document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gVerCancelados').checked=false;document.getElementById('gFiltroTipo').value='';document.getElementById('gBusqueda').value='';renderGestion()">Limpiar</button></div>
   </div>
   <div class="neg-resumen">
     <div class="neg-stat"><div class="ns-val">${arriendosFilt.length}</div><div class="ns-label">Arriendos</div></div>
@@ -3171,7 +3379,7 @@ function renderGestion(){
     html+=`<div class="neg-card arriendo" style="${cardStyleArrG}">
       <div class="neg-top">
         <span class="neg-id">${a.id_arriendo}</span>
-        <span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>
+        <span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}
         ${headerEstadoG}
       </div>
       <div class="neg-detail">
@@ -3193,7 +3401,9 @@ function renderGestion(){
         '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button>'+
         '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar</button>'+
         '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar</button>'+
-      '</div>':''}
+      '</div>':'<div class="neg-actions">'+
+        '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar del todo</button>'+
+      '</div>'}
     </div>`;
   });
 
@@ -3218,7 +3428,7 @@ function renderGestion(){
     html+=`<div class="neg-card venta${esSecG?' sec':''}" style="${cancelada?'opacity:0.5':''}">
       <div class="neg-top">
         <span class="neg-id">${v.id_venta}</span>
-        <span class="neg-tipo vnt${esSecG?' sec':''}">${tipoVentaG} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>
+        <span class="neg-tipo vnt${esSecG?' sec':''}">${tipoVentaG} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}
         <span style="margin-left:auto;font-weight:700;font-size:11px;color:${colores[estado]}">${estado}</span>
       </div>
       <div class="neg-detail">
@@ -3238,7 +3448,9 @@ function renderGestion(){
         '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'venta\',\''+v.id_venta+'\')">Editar</button>'+
         '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar</button>'+
         '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'venta\',\''+v.id_venta+'\',this)">Eliminar</button>'+
-      '</div>':''}
+      '</div>':'<div class="neg-actions">'+
+        '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'venta\',\''+v.id_venta+'\',this)">Eliminar del todo</button>'+
+      '</div>'}
     </div>`;
   });
 
@@ -3258,7 +3470,7 @@ function fechaISOValida(s){
   const dt = new Date(p[0], p[1]-1, p[2]);
   return dt.getFullYear()===p[0] && dt.getMonth()===p[1]-1 && dt.getDate()===p[2];
 }
-// Refresca la vista de negocios que el usuario est\u00e1 mirando (Gesti\u00f3n o Mis Negocios).
+// Refresca la vista de negocios que el usuario est\á mirando (Gesti\ón o Mis Negocios).
 function refrescarVistaNegocios(){
   const g = document.getElementById('sec-gestion');
   if (g && g.classList.contains('show')) cargarGestion(); else cargarMisNegocios();
@@ -3409,7 +3621,11 @@ function editarPago(idPago, idVenta, btn) {
   const pctActual = (p.pct_pago!==''&&p.pct_pago!=null)
     ? Math.round(Number(p.pct_pago)*10000)/100
     : (comOfi>0 ? Math.round(((Number(p.valor_cobrado)||0)/comOfi)*10000)/100 : 0);
-  const montoActual = pctOfi>0 ? Math.round((Number(p.valor_cobrado)||0)/pctOfi) : 0;
+  // Monto del inmueble de esta cuota = proporción de la comisión de oficina (NETA en
+  // colegaje) sobre el valor base. Dividir por el % de oficina daría un monto errado
+  // cuando la comisión guardada no es valor × %.
+  const valorBaseV = Number(v.valor_base_comision)||0;
+  const montoActual = comOfi>0 ? Math.round((Number(p.valor_cobrado)||0)/comOfi*valorBaseV) : (pctOfi>0 ? Math.round((Number(p.valor_cobrado)||0)/pctOfi) : 0);
 
   const cuotasRef = pagosV.map((q,i)=>{
     const mq=Number(q.mes_pago)||0, aq=Number(q['año_pago'])||Number(q['ano_pago'])||0;
@@ -3516,6 +3732,18 @@ async function cancelarArriendo(idArriendo, btn) {
 
 // ===== EDITAR / ELIMINAR NEGOCIO (gerencia desde Gestión; asesores desde Mis Negocios) =====
 let editandoNeg = null; // { tipo:'arriendo'|'venta', id, origen:'mis'|'gestion', anio } | null
+// Segunda red de seguridad, INDEPENDIENTE de editandoNeg: id del negocio con el que
+// se prefilló el formulario. La fijan prefillArriendo/prefillVenta y solo la limpian
+// resetArriendo/resetVenta. Si al guardar hay un prefill pero no hay modo edición
+// coherente, el guardado se aborta: un formulario lleno con datos de VNT-xxx jamás
+// debe convertirse en un registro nuevo (duplicado).
+let formPrefillId = { arr: '', vnt: '' };
+function edicionCoherente(tipo){
+  const pre = formPrefillId[tipo];
+  if (!pre) return true;
+  const tipoNeg = tipo === 'arr' ? 'arriendo' : 'venta';
+  return !!(editandoNeg && editandoNeg.tipo === tipoNeg && editandoNeg.id === pre);
+}
 
 // Fuente de datos donde vive el negocio (Mis Negocios del asesor o Gestión de gerencia).
 // Prioriza la vista visible, igual que refrescarVistaNegocios.
@@ -3608,13 +3836,13 @@ function mostrarRefNegocio(tipo,id,src){
     datosHTML='<div><strong>Canon:</strong> '+fmtP(neg.valor_canon)+' &middot; <strong>Adm&oacute;n:</strong> '+fmtP(neg.administracion||0)+
       ' &middot; <strong>% oficina:</strong> '+((Number(neg.pct_comision_oficina)||0)*100).toFixed(2)+'%'+
       ' &middot; <strong>Comisi&oacute;n mensual:</strong> '+fmtP(neg.comision_oficina)+
-      ' &middot; <strong>Meses:</strong> '+(neg.meses_contrato||'&mdash;')+'</div>';
+      ' &middot; <strong>Meses:</strong> '+(neg.meses_contrato||'&mdash;')+'</div>'+colegajeRefHTML(neg);
   } else {
     const comOfiR=Number(neg.comision_oficina)||0;
     datosHTML='<div><strong>Valor venta:</strong> '+fmtP(neg.valor_base_comision)+
       ' &middot; <strong>Mercado:</strong> '+(neg.mercado||'&mdash;')+
       ' &middot; <strong>% oficina:</strong> '+((Number(neg.pct_comision_oficina)||0)*100).toFixed(2)+'%'+
-      ' &middot; <strong>Comisi&oacute;n oficina:</strong> '+fmtP(comOfiR)+'</div>';
+      ' &middot; <strong>Comisi&oacute;n oficina:</strong> '+fmtP(comOfiR)+'</div>'+colegajeRefHTML(neg);
     const pagosNeg=(src.pagos||[]).filter(p=>p.id_venta===id);
     if(pagosNeg.length){
       cuotasHTML='<div style="margin-top:6px"><strong>Cuotas guardadas:</strong></div>'+pagosNeg.map((q,i)=>{
@@ -3666,6 +3894,7 @@ function editarNegocio(tipo,id){
   // El modo edición se activa ANTES de prefillar: si el prefill fallara, el
   // formulario jamás debe quedar lleno en modo registro (crearía un duplicado).
   editandoNeg={tipo,id,origen,anio:neg['año']};
+  console.log('[editarNegocio] modo edición activado', editandoNeg);
   marcarModoEdicion(esArr?'arr':'vnt',id);
   try{
     if(esArr)prefillArriendo(neg,src); else prefillVenta(neg,src);
@@ -3776,7 +4005,8 @@ function prefillPagosForm(v,src){
     }
   } else {
     // Reconstruir montos; ajustar el último para que la suma cuadre con el valor base.
-    montos=pagos.map(p=>pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0);
+    // Monto = proporción de la comisión de oficina (NETA en colegaje) × valor base.
+    montos=pagos.map(p=>comOficina>0?Math.round((Number(p.valor_cobrado)||0)/comOficina*valorBase):(pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0));
     if(valorBase>0&&montos.length){
       const sumOtros=montos.slice(0,-1).reduce((s,m)=>s+m,0);
       montos[montos.length-1]=Math.max(0,valorBase-sumOtros);
@@ -3801,6 +4031,7 @@ function prefillPagosForm(v,src){
 }
 
 function prefillArriendo(a,src){
+  formPrefillId.arr = a.id_arriendo;
   setSelVal(document.getElementById('ar_mes'),a.mes);
   setSelVal(document.getElementById('ar_mercado'),a.mercado);
   setSelVal(document.getElementById('ar_inmueble'),a.id_inmueble);
@@ -3813,12 +4044,17 @@ function prefillArriendo(a,src){
   setSelVal(document.getElementById('ar_ofcie'),a.oficina_cierre);
   setSelVal(document.getElementById('ar_orgcie'),a.origen_cierre);
   setReferidosForm('ar',a);
+  // Colegaje (negocios antiguos sin el campo → Normal; setSelVal es null-safe)
+  setSelVal(document.getElementById('ar_modalidad'), esColegajeNeg(a) ? 'COLEGAJE' : '');
+  const _nca=document.getElementById('ar_nombre_colega'); if(_nca)_nca.value=a.nombre_colega||'';
+  cambioModalidad('arr');
   prefillPartesForm('arr',a.id_arriendo,src);
   prefillComisionesForm('arr',a.id_arriendo,src);
   recalcComisiones('arr');
 }
 
 function prefillVenta(v,src){
+  formPrefillId.vnt = v.id_venta;
   setSelVal(document.getElementById('v_mes'),v.mes);
   setSelVal(document.getElementById('v_mercado'),v.mercado);
   setSelVal(document.getElementById('v_inmueble'),v.id_inmueble);
@@ -3829,6 +4065,11 @@ function prefillVenta(v,src){
   setSelVal(document.getElementById('v_ofcie'),v.oficina_cierre);
   setSelVal(document.getElementById('v_orgcie'),v.origen_cierre);
   setReferidosForm('v',v);
+  // Colegaje (negocios antiguos sin el campo → Normal; setSelVal es null-safe)
+  setSelVal(document.getElementById('v_modalidad'), esColegajeNeg(v) ? 'COLEGAJE' : '');
+  setSelVal(document.getElementById('v_tipo_colega'), esColegajeNeg(v) ? (v.tipo_colega||'') : '');
+  const _ncv=document.getElementById('v_nombre_colega'); if(_ncv)_ncv.value=v.nombre_colega||'';
+  cambioModalidad('vnt');
   prefillPartesForm('vnt',v.id_venta,src);
   prefillComisionesForm('vnt',v.id_venta,src);
   prefillPagosForm(v,src);
@@ -4009,19 +4250,50 @@ function prepararFormAccion() {
   const sel = document.getElementById('ac_tipo');
   sel.innerHTML = '<option value="">-- Tipo --</option>' +
     tiposAccion.map(t => '<option value="'+t.nombre+'">'+t.nombre+' ('+(parseFloat(String(t.puntaje).replace(',','.'))||1)+' pts)</option>').join('');
-  if (!sel._ssInit) makeSearchableById('ac_tipo');
+  if (!sel._ssInit) { makeSearchableById('ac_tipo'); sel.addEventListener('change', cambioTipoAccion); }
   else refreshSearchable('ac_tipo');
+  // Selector de inmueble para captaciones (mismo cat\álogo que los formularios de negocio)
+  const si = document.getElementById('ac_inmueble');
+  if (si) {
+    const prev = si.value;
+    fillSelectInmuebles('ac_inmueble', '-- Escoja el inmueble --');
+    if (prev) si.value = prev;
+    if (!si._ssInit) makeSearchableById('ac_inmueble'); else refreshSearchable('ac_inmueble');
+  }
+  cambioTipoAccion();
+}
+// Captaci\ón \→ inmueble y observaci\ón obligatorios (la fecha de captaci\ón del inmueble
+// se sella autom\áticamente en el servidor con la fecha de esta acci\ón).
+function cambioTipoAccion() {
+  const tipo = document.getElementById('ac_tipo').value;
+  const cap = esTipoCaptacion(tipo);
+  const w = document.getElementById('ac_inmuebleWrap'); if (w) w.style.display = cap ? '' : 'none';
+  const lbl = document.getElementById('ac_descLabel');
+  if (lbl) lbl.innerHTML = cap ? 'Observaci\u00f3n de la captaci\u00f3n <span class="req">*</span>' : 'Descripci\u00f3n <span class="opt">(opcional)</span>';
+  const ta = document.getElementById('ac_desc');
+  if (ta) ta.placeholder = cap ? 'Obligatorio: qu\u00e9 se capt\u00f3, condiciones, contacto del propietario\u2026' : 'Detalle de la acci\u00f3n';
 }
 async function guardarAccion() {
   const fecha = val('ac_fecha','Escoja la fecha'); if (!fecha) return;
   const tipo = val('ac_tipo','Escoja el tipo de acci\u00f3n'); if (!tipo) return;
   const desc = document.getElementById('ac_desc').value || '';
+  const cap = esTipoCaptacion(tipo);
+  let idInm = '';
+  if (cap) {
+    idInm = val('ac_inmueble','Escoja el inmueble captado'); if (!idInm) return;
+    if (!desc.trim()) { toast('Una captaci\u00f3n debe llevar observaci\u00f3n (qu\u00e9 se capt\u00f3, condiciones, contacto)','er'); document.getElementById('ac_desc').focus(); return; }
+  }
   const mes = (new Date(fecha)).getMonth() + 1;
   try {
     const r = await apiPost({
       action:'registrar_accion',
-      datos:{ id_asesor: asesorActual.id_asesor, fecha, mes, tipo, descripcion: desc }
+      datos:{ id_asesor: asesorActual.id_asesor, fecha, mes, tipo, descripcion: desc, id_inmueble: idInm }
     });
+    if (r && r.ok && cap) {
+      // Reflejar la nueva fecha de captaci\ón en el cat\álogo local (para el bono en arriendos)
+      const inmC = inmuebles.find(i => i.id_inmueble === idInm);
+      if (inmC) { inmC.fecha_captacion = fecha; inmC.id_asesor_captador = asesorActual.id_asesor; inmC.id_accion_captacion = r.id; }
+    }
     if (r && r.ok) {
       document.getElementById('okAccMsg').textContent = r.id + ' \u2014 ' + tipo;
       document.getElementById('okAcc').classList.add('show');
@@ -4038,6 +4310,8 @@ function resetAccion() {
   document.getElementById('ac_tipo').selectedIndex = 0;
   if (document.getElementById('ac_tipo')._ssInput) document.getElementById('ac_tipo')._ssInput.value = '';
   document.getElementById('ac_desc').value = '';
+  const si = document.getElementById('ac_inmueble');
+  if (si) { si.selectedIndex = 0; if (si._ssInput) si._ssInput.value = ''; }
   prepararFormAccion();
   cargarAcciones();
 }
@@ -4097,23 +4371,23 @@ function renderAcciones() {
   const th = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e5e7eb;font-size:11px;color:#6B7280">';
   const td = '<td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-size:12px;vertical-align:top">';
   const btnDel = a => td+'<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px;padding:4px 10px" onclick="eliminarAccion(\''+_escAcc(a.id_accion)+'\',this)">Eliminar</button></td>';
+  // Inmueble (solo captaciones): nombre desde el catálogo, id si no se encuentra
+  const inmAcc = a => { if (!a.id_inmueble) return '—'; const i = (inmuebles||[]).find(x => x.id_inmueble === a.id_inmueble); return _escAcc(i ? i.nombre : a.id_inmueble); };
+  const filaAcc = a => '<tr>'+td+_fechaAcc(a)+'</td>'+td+_escAcc(a.tipo)+'</td>'+td+inmAcc(a)+'</td>'+td+(_escAcc(a.descripcion)||'—')+'</td>'+btnDel(a)+'</tr>';
+  const cabecera = '<thead><tr>'+th+'Fecha</th>'+th+'Tipo</th>'+th+'Inmueble</th>'+th+'Descripción</th>'+th+'</th></tr></thead>';
   if (_accionesGestor) {
     // Agrupar por asesor
     const grupos = {};
     lista.forEach(a => { const k = a.asesor_nombre || a.id_asesor; (grupos[k] = grupos[k] || []).push(a); });
     const nombres = Object.keys(grupos).sort((x,y)=>String(x).localeCompare(String(y)));
     cont.innerHTML = nombres.map(n => {
-      const filas = grupos[n].map(a =>
-        '<tr>'+td+_fechaAcc(a)+'</td>'+td+_escAcc(a.tipo)+'</td>'+td+(_escAcc(a.descripcion)||'—')+'</td>'+btnDel(a)+'</tr>'
-      ).join('');
+      const filas = grupos[n].map(filaAcc).join('');
       return '<div style="margin-bottom:18px"><h4 style="margin:0 0 6px;font-size:14px">'+_escAcc(n)+' <span style="color:#888;font-weight:400;font-size:12px">('+grupos[n].length+')</span></h4>'+
-        '<table style="width:100%;border-collapse:collapse"><thead><tr>'+th+'Fecha</th>'+th+'Tipo</th>'+th+'Descripción</th>'+th+'</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+        '<table style="width:100%;border-collapse:collapse">'+cabecera+'<tbody>'+filas+'</tbody></table></div>';
     }).join('');
   } else {
-    const filas = lista.map(a =>
-      '<tr>'+td+_fechaAcc(a)+'</td>'+td+_escAcc(a.tipo)+'</td>'+td+(_escAcc(a.descripcion)||'—')+'</td>'+btnDel(a)+'</tr>'
-    ).join('');
-    cont.innerHTML = '<table style="width:100%;border-collapse:collapse"><thead><tr>'+th+'Fecha</th>'+th+'Tipo</th>'+th+'Descripción</th>'+th+'</th></tr></thead><tbody>'+filas+'</tbody></table>';
+    const filas = lista.map(filaAcc).join('');
+    cont.innerHTML = '<table style="width:100%;border-collapse:collapse">'+cabecera+'<tbody>'+filas+'</tbody></table>';
   }
 }
 
@@ -4125,17 +4399,12 @@ function calcRefPuntaParaGuardar(tipo, punta) {
   const sufx = punta === 'Captador' ? 'cap' : 'cer';
   if (!document.getElementById(prefix + '_hayref_' + sufx).checked) return 0;
 
-  const officePct = Number(document.getElementById(prefix + '_pct').value) || 0;
-  const canon = isArr ? (readMoney('ar_canon')) : 0;
-  const admon = isArr ? (readMoney('ar_admon')) : 0;
-  const canonTotal = canon + admon;
-  const valorVenta = !isArr ? (readMoney('v_valorbase')) : 0;
-  // Base: arriendo = (canon+admon) × factor, venta = comisión oficina
-  const factorArr = (officePct > 0 && officePct <= 0.20) ? officePct * 10 : 1;
-  const baseAsesor = isArr ? canonTotal * factorArr : (valorVenta * officePct);
+  // Misma base que el resumen y lo guardado (colegaje y bono incluidos).
+  // TODO preexistente: aquí no se aplica factorAsesorMeses (el referido guardado en
+  // arriendos administración es sobre el bruto anual); se conserva para no alterar
+  // los valor_ref_* históricos.
+  const { tipoNeg, mercado, baseAsesor, bonoPP } = calcBaseNegocio(tipo);
   if (!baseAsesor) return 0;
-  const mercado = document.getElementById(prefix + '_mercado').value;
-  const tipoNeg = isArr ? 'arriendo' : 'venta';
   // El campo de origen del cerrador se llama "_orgcie" (cierre), no "_orgcer"
   const orgSufx = punta === 'Captador' ? 'cap' : 'cie';
   const orgId = document.getElementById(prefix + '_org' + orgSufx).value;
@@ -4150,7 +4419,7 @@ function calcRefPuntaParaGuardar(tipo, punta) {
     if (!sel.value) return;
     const vinc = sel.options[sel.selectedIndex].dataset.vinc || 'Freelance';
     const part = Number(row.querySelector('.com-part').value) || 0;
-    bruto += calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, part);
+    bruto += calcComisionAsesor(baseAsesor, vinc, ci, tipoNeg, mercado, punta, part, bonoPP);
   });
   return bruto * 0.20; // 20% del bruto de esa punta
 }
@@ -4316,8 +4585,11 @@ async function _dashFetchData(force){
   }
   const r = await apiGet({action:'todos_negocios', id_asesor:asesorActual.id_asesor, password:asesorActual.password});
   if(!r || !r.ok){ throw new Error((r && r.error) || 'Error consultando GAS'); }
-  _dashCache = {data:r, ts:Date.now()};
-  return r;
+  // El Dashboard nunca ve negocios cancelados ni pagos/cobros/comisiones anulados:
+  // se depuran UNA vez aquí y todos los _dash* trabajan sobre datos limpios.
+  const limpio = depurarCancelados(r);
+  _dashCache = {data:limpio, ts:Date.now()};
+  return limpio;
 }
 
 function _dashFmtCop(v){ return '$' + Math.round(Number(v)||0).toLocaleString('es-CO'); }
@@ -4506,20 +4778,18 @@ function _dashRenderDetalle(data, año, mesesSel){
   (data.ventas||[]).filter(fV).forEach(function(v){
     const total = Number(v.comision_oficina)||0;
     const recibido = recVta[v.id_venta]||0;
-    const cancelada = String(v.estado_venta||'').toUpperCase()==='CANCELADA';
     filas.push({
       negocio:nomInm(v.id_inmueble), tipo:'Venta', mercado:String(v.mercado||'—'),
       valor:Number(v.valor_base_comision)||0, total:total, recibido:recibido,
-      pendiente:Math.max(0, total-recibido), estado: cancelada?'CANCELADA':_dashEstadoCobro(total, recibido)
+      pendiente:Math.max(0, total-recibido), estado: _dashEstadoCobro(total, recibido)
     });
   });
   (data.arriendos||[]).filter(fA).forEach(function(a){
-    const cancelado = String(a.estado_arriendo||'').toUpperCase()==='CANCELADO';
     const val = _dashValorArriendo(a);   // Canon + Administración (tabla Arriendos)
     filas.push({
       negocio:nomInm(a.id_inmueble), tipo:'Arriendo', mercado:String(a.mercado||'—'),
       valor:val, total:val, recibido:val,
-      pendiente:0, estado: cancelado?'CANCELADO':'REGISTRADO'
+      pendiente:0, estado: 'REGISTRADO'
     });
   });
   filas.sort(function(a,b){ return b.recibido - a.recibido; });
