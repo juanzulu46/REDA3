@@ -2845,6 +2845,27 @@ function negBadgesExtra(neg){
   if(b>0)h+='<span class="neg-tipo bono" title="Inmueble captado y arrendado en el mismo mes o el siguiente">BONO CAPTACI&Oacute;N +'+Math.round(b*100)+'</span>';
   return h;
 }
+// Parser numérico compartido por los helpers de tarjeta (acepta "1.234,56" y números).
+function negNum(v){if(typeof v==='string'){if(v.indexOf(',')>-1)v=v.replace(/\./g,'').replace(',','.');}return Number(v)||0;}
+// Fila(s) de comisión de oficina para la grilla de la tarjeta. En colegaje muestra el
+// desglose total (bruta) − colegaje = REDA3 neta; si no, la fila normal.
+function colegajeFilasHTML(neg, esArr){
+  const neta=negNum(neg.comision_oficina);
+  const suf=esArr?' mensual':'';
+  if(!esColegajeNeg(neg))return '<div><strong>Comisi&oacute;n'+suf+' oficina:</strong> '+fmtP(neta)+'</div>';
+  const fc=factorColegaNeg(neg);
+  const bruta=negNum(neg.comision_bruta)||(fc>0?neta/fc:neta);
+  const pctC=Math.round((1-fc)*10000)/100;
+  return '<div><strong>Comisi&oacute;n total'+suf+' (bruta):</strong> '+fmtP(bruta)+'</div>'+
+    '<div><strong>Colegaje '+pctC+'%'+(neg.tipo_colega?' &middot; '+neg.tipo_colega:'')+':</strong> <span style="color:var(--rojo);font-weight:600">&minus; '+fmtP(bruta-neta)+'</span></div>'+
+    '<div><strong>REDA3 neta'+suf+':</strong> '+fmtP(neta)+'</div>';
+}
+// Puntos del bono de captación (0, 1 o 2) y su fila para la grilla de arriendos.
+function bonoPPNeg(neg){return Math.round((Number(neg&&neg.bono_captacion_pct)||0)*100);}
+function bonoFilaHTML(neg){
+  const b=bonoPPNeg(neg);
+  return b>0?'<div><strong>Bono captaci&oacute;n:</strong> <span style="color:var(--azul);font-weight:600">+'+b+'%</span> al porcentaje de comisi&oacute;n de cada asesor</div>':'';
+}
 // Línea de modalidad para el panel de referencia al editar.
 function colegajeRefHTML(neg){
   if(!esColegajeNeg(neg))return '';
@@ -2900,15 +2921,18 @@ function negExpPanelHTML(d, neg, tipo, key, opts){
     }
   }
 
-  // Cobros registrados del arriendo
+  // Periodo de cobros del arriendo: solo el rango (primer → último mes), sin la lista mes a mes.
   if(esArr){
     const cobrosNeg=(d.cobros_arriendo||[]).filter(c=>c.id_arriendo===id);
     if(cobrosNeg.length){
-      const cobrosHTML=cobrosNeg.map(c=>{
-        const mc=Number(c.mes_cobro)||0, ac=Number(c['año_cobro'])||Number(c['ano_cobro'])||0;
-        return '<div style="padding:2px 0">'+((mc&&ac)?nMes(mc)+' '+ac:'Sin fecha')+': '+fmtP(c.valor_cobrado)+(c.estado?' <small>('+c.estado+')</small>':'')+(c.observacion?' &mdash; '+c.observacion:'')+'</div>';
-      }).join('');
-      secs+='<div class="ne-sec"><div class="ne-tit">Cobros registrados</div>'+cobrosHTML+'</div>';
+      const idx=c=>{const mc=Number(c.mes_cobro)||0, ac=Number(c['año_cobro'])||Number(c['ano_cobro'])||0;return (mc&&ac)?{i:ac*12+mc,txt:nMes(mc)+' '+ac}:null;};
+      const fechas=cobrosNeg.map(idx).filter(Boolean).sort((a,b)=>a.i-b.i);
+      let rango='Sin fecha';
+      if(fechas.length){
+        const ini=fechas[0].txt, fin=fechas[fechas.length-1].txt;
+        rango=ini===fin?ini:ini+' &rarr; '+fin;
+      }
+      secs+='<div class="ne-sec"><div class="ne-tit">Periodo de cobros</div>'+rango+'</div>';
     }
   }
 
@@ -2918,14 +2942,15 @@ function negExpPanelHTML(d, neg, tipo, key, opts){
     const neta=nv(neg.comision_oficina);
     const bruta=nv(neg.comision_bruta)||(fc>0?neta/fc:neta);
     const pctC=Math.round((1-fc)*10000)/100;
+    const sufM=esArr?' mensual':'';
     secs+='<div class="ne-sec"><div class="ne-tit">Colegaje</div>'+
       '<div><strong>Colega:</strong> '+(neg.tipo_colega||'Inmobiliaria/agente')+(neg.nombre_colega?' &middot; '+neg.nombre_colega:'')+'</div>'+
-      '<div><strong>Comisi&oacute;n bruta'+(esArr?' (mensual)':'')+':</strong> '+fmtP(bruta)+'</div>'+
-      '<div><strong>Parte colega ('+pctC+'%):</strong> '+fmtP(bruta-neta)+'</div>'+
-      '<div><strong>REDA3 neta'+(esArr?' (mensual)':'')+':</strong> '+fmtP(neta)+' <small>(base de comisiones, bonificaci&oacute;n y cobros)</small></div></div>';
+      '<div><strong>Comisi&oacute;n total'+sufM+' (bruta):</strong> '+fmtP(bruta)+'</div>'+
+      '<div><strong>Colegaje '+pctC+'%:</strong> <span style="color:var(--rojo);font-weight:600">&minus; '+fmtP(bruta-neta)+'</span></div>'+
+      '<div><strong>REDA3 neta'+sufM+':</strong> '+fmtP(neta)+' <small>(base de comisiones, bonificaci&oacute;n y cobros)</small></div></div>';
   }
-  if(esArr&&nv(neg.bono_captacion_pct)>0){
-    secs+='<div class="ne-sec"><div class="ne-tit">Bono de captaci&oacute;n</div>+'+Math.round(nv(neg.bono_captacion_pct)*100)+' puntos al % de comisi&oacute;n de cada asesor (inmueble captado y arrendado en el mismo mes o el siguiente)</div>';
+  if(esArr&&bonoPPNeg(neg)>0){
+    secs+='<div class="ne-sec"><div class="ne-tit">Bono de captaci&oacute;n</div><span style="color:var(--azul);font-weight:600">+'+bonoPPNeg(neg)+'%</span> adicional al porcentaje de comisi&oacute;n de cada asesor (inmueble captado y arrendado en el mismo mes o el siguiente)</div>';
   }
 
   // Captación y cierre (oficina · origen · círculo)
@@ -3132,15 +3157,16 @@ function renderMisNegocios(){
           <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
           <div><strong>Administraci&oacute;n:</strong> ${fmtP(a.administracion||0)}</div>
           <div><strong>% oficina:</strong> ${((Number(a.pct_comision_oficina)||0)*100).toFixed(2)}%</div>
-          <div><strong>Comisi&oacute;n mensual oficina:</strong> ${fmtP(a.comision_oficina)}</div>
+          ${bonoFilaHTML(a)}
+          ${colegajeFilasHTML(a,true)}
           <div><strong>Meses contrato:</strong> ${mesesC||'&mdash;'}</div>
-          <div><strong>Comisi&oacute;n total contrato:</strong> ${fmtP(nvM(a.comision_oficina)*(mesesC||1))}</div>
+          <div><strong>Comisi&oacute;n total contrato${esColegajeNeg(a)?' (neta)':''}:</strong> ${fmtP(nvM(a.comision_oficina)*(mesesC||1))}</div>
           <div><strong>Arrendador:</strong> ${arrendadores}</div>
           <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
           <div><strong>Mi punta:</strong> ${puntas}</div>
           <div><strong>C&iacute;rculo:</strong> Capt.${negBadgeCirc(r,a.origen_captacion)||' &mdash;'} &middot; Cierre${negBadgeCirc(r,a.origen_cierre)||' &mdash;'}</div>
         </div>
-        <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}</div>
+        <div class="neg-com">Mi comisi&oacute;n: ${fmtP(miCom)}${bonoPPNeg(a)>0?' <small style="font-weight:500;color:var(--azul)">(incluye bono captaci&oacute;n +'+bonoPPNeg(a)+'%)</small>':''}</div>
         ${negExpPanelHTML(r,a,'arriendo','m-arr-'+a.id_arriendo,{comisiones:r.comisiones_negocio})}
         ${!canceladaArr?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-cc" title="Generar PDF de cobro de la comisi&oacute;n por este arriendo" onclick="imprimirCuentaCobro(\'arriendo\',\''+a.id_arriendo+'\',this)">Cuenta de cobro del arriendo</button><button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button><button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar arriendo</button><button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar</button></div>':''}
       </div>`;
@@ -3214,7 +3240,7 @@ function renderMisNegocios(){
           <div><strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
           <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
           <div><strong>% oficina:</strong> ${((Number(v.pct_comision_oficina)||0)*100).toFixed(2)}%</div>
-          <div><strong>Comisi&oacute;n oficina:</strong> ${fmtP(comOficina)}</div>
+          ${colegajeFilasHTML(v,false)}
           <div><strong>Mi punta:</strong> ${puntas}</div>
           <div><strong>Vendedor:</strong> ${vendedores}</div>
           <div><strong>Comprador:</strong> ${compradores}</div>
@@ -3388,9 +3414,10 @@ function renderGestion(){
         <div><strong>Canon:</strong> ${fmtP(a.valor_canon)}</div>
         <div><strong>Administraci\u00f3n:</strong> ${fmtP(a.administracion||0)}</div>
         <div><strong>% oficina:</strong> ${((Number(a.pct_comision_oficina)||0)*100).toFixed(2)}%</div>
-        <div><strong>Comisi\u00f3n mensual:</strong> ${fmtP(a.comision_oficina)}</div>
+        ${bonoFilaHTML(a)}
+        ${colegajeFilasHTML(a,true)}
         <div><strong>Meses contrato:</strong> ${mesesA||'&mdash;'}</div>
-        <div><strong>Comisi\u00f3n total contrato:</strong> ${fmtP(numVal(a.comision_oficina)*(mesesA||1))}</div>
+        <div><strong>Comisi\u00f3n total contrato${esColegajeNeg(a)?' (neta)':''}:</strong> ${fmtP(numVal(a.comision_oficina)*(mesesA||1))}</div>
         <div><strong>Arrendador:</strong> ${arrendadores}</div>
         <div><strong>Arrendatario:</strong> ${arrendatarios}</div>
         <div><strong>Asesores:</strong> ${asesoresArr}</div>
@@ -3434,7 +3461,7 @@ function renderGestion(){
       <div class="neg-detail">
         <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
         <div><strong>Valor:</strong> ${fmtP(v.valor_base_comision)}</div>
-        <div><strong>Comisi\u00f3n oficina:</strong> ${fmtP(comOficina)}</div>
+        ${colegajeFilasHTML(v,false)}
         <div><strong>Vendedor:</strong> ${vendedoresG}</div>
         <div><strong>Comprador:</strong> ${compradoresG}</div>
         <div><strong>Asesores:</strong> ${asesoresVenta}</div>
