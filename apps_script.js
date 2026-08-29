@@ -94,7 +94,10 @@ const COLUMNAS = {
            // pagado: marca manual del GERENTE = "ya le pagué las comisiones de este negocio"
            'pagado', 'fecha_pagado', 'pagado_por',
            'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta'],
-  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado', 'pct_pago'],
+  // comision_pagada: marca del GERENTE por HITO ("ya le pagué a los asesores la comisión
+  // de esta cuota"). En ventas la comisión se paga hito por hito, no de una sola vez.
+  pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado', 'pct_pago',
+          'comision_pagada', 'fecha_comision_pagada', 'comision_pagada_por'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
   partes: ['id_parte', 'id_negocio', 'tipo_negocio', 'rol', 'id_cliente', 'participacion_pct'],
   oficina: ['id_oficina', 'nombre'],
@@ -980,6 +983,7 @@ function prepararColumnasNuevas() {
   var chequeo = [
     [HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta', 'pagado', 'fecha_pagado', 'pagado_por']],
     [HOJAS.ventas, ['modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta', 'pagado', 'fecha_pagado', 'pagado_por']],
+    [HOJAS.pagos, ['comision_pagada', 'fecha_comision_pagada', 'comision_pagada_por']],
     [HOJAS.inmuebles, ['fecha_captacion', 'id_asesor_captador', 'id_accion_captacion']],
     [HOJAS.acciones, ['id_inmueble']]
   ];
@@ -1105,6 +1109,44 @@ function asegurarColumnasCaptacion_() {
 function asegurarColumnasPagado_() {
   asegurarColumnas_(HOJAS.arriendos, ['pagado', 'fecha_pagado', 'pagado_por']);
   asegurarColumnas_(HOJAS.ventas, ['pagado', 'fecha_pagado', 'pagado_por']);
+  // En ventas la comisión se paga por hito: la marca fina vive en la hoja Pagos y la
+  // columna Ventas.pagado queda como resumen (SI solo cuando TODOS los hitos están pagados).
+  asegurarColumnas_(HOJAS.pagos, ['comision_pagada', 'fecha_comision_pagada', 'comision_pagada_por']);
+}
+
+// Fecha de hoy en formato ISO (zona Bogotá) para las marcas de pago.
+function hoyISO_() {
+  return Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
+}
+
+function comisionPagada_(pago) {
+  return String(pago && pago.comision_pagada || '').trim().toUpperCase() === 'SI';
+}
+
+// Marca/desmarca la comisión de UN hito (fila de la hoja Pagos).
+function marcarComisionPago_(idPago, marcar, idAsesor) {
+  actualizarFila(HOJAS.pagos, 'id_pago', idPago, {
+    comision_pagada: marcar ? 'SI' : '',
+    fecha_comision_pagada: marcar ? hoyISO_() : '',
+    comision_pagada_por: marcar ? idAsesor : ''
+  });
+}
+
+// Ventas.pagado es el RESUMEN de los hitos: 'SI' solo si todos los hitos vivos están
+// pagados. Se recalcula cada vez que cambia un hito.
+function recalcularPagadoVenta_(idVenta, idAsesor) {
+  var pagos = leerHoja(HOJAS.pagos).filter(function(p){
+    return String(p.id_venta || '').trim() === String(idVenta).trim()
+      && String(p.estado || '').toUpperCase() !== 'ANULADO';
+  });
+  var pagados = pagos.filter(comisionPagada_).length;
+  var todos = pagos.length > 0 && pagados === pagos.length;
+  actualizarFila(HOJAS.ventas, 'id_venta', idVenta, {
+    pagado: todos ? 'SI' : '',
+    fecha_pagado: todos ? hoyISO_() : '',
+    pagado_por: todos ? (idAsesor || '') : ''
+  });
+  return { total: pagos.length, pagados: pagados, todos: todos };
 }
 
 function asegurarColumnasColegaje_() {
@@ -3861,13 +3903,31 @@ function doPost(e) {
 
       // Regenerar plan de pagos con los nuevos valores (filas ya validadas arriba).
       // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
-      if (resPagosEV && resPagosEV.filas.length > 0) asegurarColumnaPctPago();
+      // Las marcas "comisión del hito ya pagada" se conservan emparejando por posición
+      // (hito 1 con hito 1, etc.); si cambia el número de cuotas se avisa al cliente.
+      var pagosPrevEV = leerHoja(HOJAS.pagos).filter(function(p){
+        return String(p.id_venta || '').trim() === String(idVntE).trim();
+      });
+      if (resPagosEV && resPagosEV.filas.length > 0) { asegurarColumnaPctPago(); asegurarColumnasPagado_(); }
       var verifPagEV = reemplazarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
         (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], COLUMNAS.pagos,
-        function(fila){
+        function(fila, i){
           fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
           fila.id_venta = idVntE;
+          var prev = pagosPrevEV[i];
+          if (prev && comisionPagada_(prev)) {
+            fila.comision_pagada = 'SI';
+            fila.fecha_comision_pagada = prev.fecha_comision_pagada || '';
+            fila.comision_pagada_por = prev.comision_pagada_por || '';
+          }
         });
+      var advPagEV = '';
+      var marcadosPrevEV = pagosPrevEV.filter(comisionPagada_).length;
+      if (marcadosPrevEV > 0 && pagosPrevEV.length !== verifPagEV.insertadas) {
+        advPagEV = 'Cambió el número de cuotas y esta venta tenía ' + marcadosPrevEV +
+          ' hito(s) con la comisión marcada como pagada. Revisa en Gestión cuáles quedaron marcados.';
+      }
+      recalcularPagadoVenta_(idVntE, body.id_asesor);
 
       invalidarCacheHojas([HOJAS.ventas, HOJAS.pagos, HOJAS.comisiones, HOJAS.partes]);
       Logger.log('[editar_venta] ' + idVntE + ' comisiones borradas=' + verifComEV.borradas +
@@ -3875,7 +3935,8 @@ function doPost(e) {
         ' partes=' + body.partes.length);
       lock.releaseLock();
       return jsonResponse({ ok:true, id: idVntE, mensaje:'Venta actualizada',
-        verificacion: { comisiones: verifComEV, pagos: verifPagEV, partes: body.partes.length } });
+        verificacion: { comisiones: verifComEV, pagos: verifPagEV, partes: body.partes.length },
+        advertencia: advPagEV || undefined });
     }
 
     // --- MARCAR NEGOCIO COMO PAGADO (SOLO GERENTE) ---
@@ -3904,21 +3965,72 @@ function doPost(e) {
 
       var marcarMP = body.pagado !== false;
       asegurarColumnasPagado_();
-      actualizarFila(hojaMP, colIdMP, idNegMP, {
-        pagado: marcarMP ? 'SI' : '',
-        fecha_pagado: marcarMP ? Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd') : '',
-        pagado_por: marcarMP ? body.id_asesor : ''
+
+      // --- ARRIENDO: la comisión se paga UNA vez → marca directa sobre el negocio ---
+      if (tipoMP === 'arriendo') {
+        actualizarFila(hojaMP, colIdMP, idNegMP, {
+          pagado: marcarMP ? 'SI' : '',
+          fecha_pagado: marcarMP ? hoyISO_() : '',
+          pagado_por: marcarMP ? body.id_asesor : ''
+        });
+        invalidarCacheHojas([hojaMP]);
+        Logger.log('[marcar_pagado] arriendo ' + idNegMP + ' -> ' + (marcarMP ? 'SI' : 'NO') + ' por ' + body.id_asesor);
+        lock.releaseLock();
+        return jsonResponse({
+          ok: true, id: idNegMP, tipo: 'arriendo',
+          pagado: marcarMP ? 'SI' : '',
+          fecha_pagado: marcarMP ? hoyISO_() : '',
+          pagado_por: marcarMP ? body.id_asesor : '',
+          mensaje: marcarMP ? 'Arriendo marcado como PAGADO' : 'Marca de pagado retirada'
+        });
+      }
+
+      // --- VENTA: la comisión se paga POR HITO ---
+      // body.id_pago presente → marca ese hito. Ausente → marca/desmarca TODOS los hitos.
+      var pagosMP = leerHoja(HOJAS.pagos).filter(function(p){
+        return String(p.id_venta || '').trim() === String(idNegMP).trim()
+          && String(p.estado || '').toUpperCase() !== 'ANULADO';
       });
-      invalidarCacheHojas([hojaMP]);
-      Logger.log('[marcar_pagado] ' + idNegMP + ' -> ' + (marcarMP ? 'SI' : 'NO') + ' por ' + body.id_asesor);
+      if (!pagosMP.length) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'La venta ' + idNegMP + ' no tiene cuotas/hitos que marcar' });
+      }
+
+      var afectadosMP = [];
+      if (body.id_pago) {
+        var hitoMP = pagosMP.find(function(p){ return String(p.id_pago).trim() === String(body.id_pago).trim(); });
+        if (!hitoMP) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'El hito "' + body.id_pago + '" no pertenece a ' + idNegMP });
+        }
+        marcarComisionPago_(hitoMP.id_pago, marcarMP, body.id_asesor);
+        afectadosMP.push(String(hitoMP.id_pago));
+      } else {
+        pagosMP.forEach(function(p){
+          marcarComisionPago_(p.id_pago, marcarMP, body.id_asesor);
+          afectadosMP.push(String(p.id_pago));
+        });
+      }
+
+      var resumenMP = recalcularPagadoVenta_(idNegMP, body.id_asesor);
+      invalidarCacheHojas([HOJAS.ventas, HOJAS.pagos]);
+      Logger.log('[marcar_pagado] venta ' + idNegMP + ' hitos=' + afectadosMP.join(',') +
+        ' -> ' + (marcarMP ? 'SI' : 'NO') + ' (' + resumenMP.pagados + '/' + resumenMP.total + ') por ' + body.id_asesor);
       lock.releaseLock();
       return jsonResponse({
-        ok: true,
-        id: idNegMP,
-        pagado: marcarMP ? 'SI' : '',
-        fecha_pagado: marcarMP ? Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd') : '',
-        pagado_por: marcarMP ? body.id_asesor : '',
-        mensaje: marcarMP ? 'Negocio marcado como PAGADO' : 'Marca de pagado retirada'
+        ok: true, id: idNegMP, tipo: 'venta',
+        pagado: resumenMP.todos ? 'SI' : '',
+        fecha_pagado: resumenMP.todos ? hoyISO_() : '',
+        pagado_por: resumenMP.todos ? body.id_asesor : '',
+        hitos: { total: resumenMP.total, pagados: resumenMP.pagados },
+        pagos_afectados: afectadosMP,
+        comision_pagada: marcarMP ? 'SI' : '',
+        fecha_comision_pagada: marcarMP ? hoyISO_() : '',
+        comision_pagada_por: marcarMP ? body.id_asesor : '',
+        mensaje: body.id_pago
+          ? (marcarMP ? 'Hito marcado como pagado (' + resumenMP.pagados + '/' + resumenMP.total + ')'
+                      : 'Marca del hito retirada (' + resumenMP.pagados + '/' + resumenMP.total + ')')
+          : (marcarMP ? 'Todos los hitos marcados como pagados' : 'Marca de pagado retirada de todos los hitos')
       });
     }
 

@@ -154,6 +154,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 /* Pagado: marca manual de gerencia (comisiones ya pagadas). Verde muy sutil. */
 .neg-card.pagado{background:#f4fbf6;border-left-color:#10b981}
 .neg-card .neg-tipo.pagado{background:#dcfce7;color:#15803d;border:1px solid #22c55e;margin-left:6px}
+/* Venta con algunos hitos pagados: verde apenas insinuado + badge ambar */
+.neg-card.pagado-parcial{background:#fbfdfb;border-left-color:#84cc16}
+.neg-card .neg-tipo.pagado-parcial{background:#fef9c3;color:#a16207;border:1px solid #eab308;margin-left:6px}
+.ne-hito-pagado{color:#15803d;font-weight:600}
 .neg-exp{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--g300);font-size:12px;color:var(--g600)}
 .neg-exp.open{display:block}
 .neg-exp strong{color:var(--g800)}
@@ -2852,16 +2856,42 @@ function negBadgesExtra(neg){
 // Solo el gerente marca/desmarca; la directora ve la marca y el filtro pero no el botón.
 function esGerenteRol(){ return String(asesorActual&&asesorActual.rol||'').toLowerCase()==='gerente'; }
 function negPagado(neg){ return String(neg&&neg.pagado||'').trim().toUpperCase()==='SI'; }
-function badgePagadoHTML(neg){
-  if(!negPagado(neg))return '';
+function comisionPagadaHito(p){ return String(p&&p.comision_pagada||'').trim().toUpperCase()==='SI'; }
+// Hitos vivos de una venta (los ANULADOS de una cancelación no cuentan).
+function hitosDeVenta(d,idVenta){
+  return (d&&d.pagos||[]).filter(p=>p.id_venta===idVenta&&String(p.estado||'').toUpperCase()!=='ANULADO');
+}
+// Estado de pago de comisiones de un negocio.
+//   Arriendo: la comisión se paga UNA vez  -> marca única del negocio.
+//   Venta:    se paga hito por hito        -> 'ninguno' | 'parcial' | 'todos'.
+function estadoPagoNeg(d,neg,esArr){
+  if(esArr){const s=negPagado(neg);return{total:1,pagados:s?1:0,estado:s?'todos':'ninguno'};}
+  const hitos=hitosDeVenta(d,neg.id_venta);
+  if(!hitos.length){const s=negPagado(neg);return{total:0,pagados:0,estado:s?'todos':'ninguno'};}
+  const n=hitos.filter(comisionPagadaHito).length;
+  return{total:hitos.length,pagados:n,estado:n===0?'ninguno':(n===hitos.length?'todos':'parcial')};
+}
+function badgePagadoHTML(neg,ep){
+  if(!ep||ep.estado==='ninguno')return '';
+  if(ep.estado==='parcial')
+    return '<span class="neg-tipo pagado-parcial" title="Comisiones pagadas por hito">PAGADO '+ep.pagados+'/'+ep.total+'</span>';
   const f=String(neg.fecha_pagado||'').slice(0,10);
   return '<span class="neg-tipo pagado" title="Comisiones pagadas'+(f?' el '+f:'')+'">PAGADO</span>';
 }
-function btnPagadoHTML(tipo,id,pagado){
+// Botón de la tarjeta. En ventas actúa sobre TODOS los hitos de una vez.
+function btnPagadoHTML(tipo,id,ep){
   if(!esGerenteRol())return '';
-  return pagado
-    ? '<button class="btn btn-cc" style="background:#64748b;font-size:11px" onclick="marcarPagado(\''+tipo+'\',\''+id+'\',false,this)">&#8617; Quitar pagado</button>'
-    : '<button class="btn btn-cc" style="background:#10b981;font-size:11px" onclick="marcarPagado(\''+tipo+'\',\''+id+'\',true,this)">&#10003; Marcar pagado</button>';
+  const todos=ep&&ep.estado==='todos';
+  const txt=tipo==='arriendo'
+    ? (todos?'&#8617; Quitar pagado':'&#10003; Marcar pagado')
+    : (todos?'&#8617; Quitar pagado (todos)':'&#10003; Marcar todos los hitos');
+  return '<button class="btn btn-cc" style="background:'+(todos?'#64748b':'#10b981')+';font-size:11px" onclick="marcarPagado(\''+tipo+'\',\''+id+'\','+(!todos)+',this)">'+txt+'</button>';
+}
+// Botón de UN hito, dentro del detalle de cuotas de la venta.
+function btnPagadoHitoHTML(idVenta,p){
+  if(!esGerenteRol())return '';
+  const pag=comisionPagadaHito(p);
+  return ' <button class="btn btn-cc" style="font-size:10px;padding:2px 7px;background:'+(pag?'#64748b':'#10b981')+'" onclick="marcarPagado(\'venta\',\''+idVenta+'\','+(!pag)+',this,\''+p.id_pago+'\')">'+(pag?'&#8617; Quitar':'&#10003; Pagado')+'</button>';
 }
 
 // Parser numérico compartido por los helpers de tarjeta (acepta "1.234,56" y números).
@@ -2930,12 +2960,16 @@ function negExpPanelHTML(d, neg, tipo, key, opts){
     if(pagosNeg.length){
       const comOfi=nv(neg.comision_oficina);
       const totalPag=pagosNeg.reduce((s,q)=>s+nv(q.valor_cobrado),0);
+      const nPagHitos=pagosNeg.filter(comisionPagadaHito).length;
       const cuotasHTML=pagosNeg.map((q,i)=>{
         const mq=Number(q.mes_pago)||0, aq=Number(q['año_pago'])||Number(q['ano_pago'])||0;
         const pctQ=(q.pct_pago!==''&&q.pct_pago!=null)?' &middot; '+(Math.round(Number(q.pct_pago)*1000)/10)+'% comisi&oacute;n':'';
-        return '<div style="padding:2px 0">Cuota '+(i+1)+': '+fmtP(q.valor_cobrado)+pctQ+' <small>('+((mq&&aq)?nMes(mq)+' '+aq:'sin fecha')+')</small>'+(q.observacion?' &mdash; '+q.observacion:'')+'</div>';
+        const pagQ=comisionPagadaHito(q)
+          ? ' <span class="ne-hito-pagado">&#10003; comisi&oacute;n pagada'+(q.fecha_comision_pagada?' '+String(q.fecha_comision_pagada).slice(0,10):'')+'</span>'
+          : '';
+        return '<div style="padding:3px 0">Cuota '+(i+1)+': '+fmtP(q.valor_cobrado)+pctQ+' <small>('+((mq&&aq)?nMes(mq)+' '+aq:'sin fecha')+')</small>'+(q.observacion?' &mdash; '+q.observacion:'')+pagQ+btnPagadoHitoHTML(id,q)+'</div>';
       }).join('');
-      secs+='<div class="ne-sec"><div class="ne-tit">Cuotas / hitos</div>'+cuotasHTML+
+      secs+='<div class="ne-sec"><div class="ne-tit">Cuotas / hitos &mdash; comisi&oacute;n pagada en '+nPagHitos+' de '+pagosNeg.length+'</div>'+cuotasHTML+
         '<div style="margin-top:3px"><strong>Total cuotas:</strong> '+fmtP(totalPag)+(comOfi>0?' &middot; <strong>Pendiente:</strong> '+fmtP(Math.max(comOfi-totalPag,0)):'')+'</div></div>';
     }
   }
@@ -3313,6 +3347,22 @@ function renderGestion(){
   const fAsesor=document.getElementById('gFiltroAsesor')?.value||'';
   const fVerCancelados=!!document.getElementById('gVerCancelados')?.checked;
   const fPagado=document.getElementById('gFiltroPagado')?.value||'';
+  // 'pago' (por defecto): el mes/año se compara contra las CUOTAS de la venta, no contra
+  // el mes en que se creó el negocio. 'negocio': comportamiento anterior.
+  const fCriterio=document.getElementById('gFiltroCriterio')?.value||'pago';
+  const hitosVivos=v=>(r.pagos||[]).filter(p=>p.id_venta===v.id_venta&&String(p.estado||'').toUpperCase()!=='ANULADO');
+  const enPeriodoPago=v=>{
+    const hitos=hitosVivos(v);
+    if(!hitos.length)return (!fAnio||Number(v['año'])===fAnio)&&(!fMes||Number(v.mes)===fMes);
+    return hitos.some(p=>{
+      const ap=Number(p['año_pago'])||Number(p['ano_pago'])||0, mp=Number(p.mes_pago)||0;
+      return (!fAnio||ap===fAnio)&&(!fMes||mp===fMes);
+    });
+  };
+  const hitosDelPeriodo=v=>hitosVivos(v).filter(p=>{
+    const ap=Number(p['año_pago'])||Number(p['ano_pago'])||0, mp=Number(p.mes_pago)||0;
+    return (!fAnio||ap===fAnio)&&(!fMes||mp===fMes);
+  });
   const fTipo=document.getElementById('gFiltroTipo')?.value||'';
   // Búsqueda por código o nombre del inmueble (no estricta: ignora acentos, mayúsculas y puntuación)
   const fBusquedaRaw=document.getElementById('gBusqueda')?.value||'';
@@ -3332,10 +3382,15 @@ function renderGestion(){
   (r.ventas||[]).forEach(v=>{const y=Number(v['año']);if(y)aniosSet.add(y)});
   const aniosDisp=completarAniosFiltro(aniosSet);
 
-  // Filtrar ventas
+  // Filtrar ventas. Con criterio "mes de pago" basta con que UNA cuota caiga en el
+  // periodo: una venta de junio con cuota en agosto aparece al filtrar agosto.
   let ventasFilt=r.ventas.slice();
-  if(fAnio)ventasFilt=ventasFilt.filter(v=>Number(v['año'])===fAnio);
-  if(fMes)ventasFilt=ventasFilt.filter(v=>Number(v.mes)===fMes);
+  if(fCriterio==='pago'){
+    if(fAnio||fMes)ventasFilt=ventasFilt.filter(enPeriodoPago);
+  }else{
+    if(fAnio)ventasFilt=ventasFilt.filter(v=>Number(v['año'])===fAnio);
+    if(fMes)ventasFilt=ventasFilt.filter(v=>Number(v.mes)===fMes);
+  }
   // Cancelados ocultos por defecto (regla de gerencia); la casilla "Ver cancelados"
   // los muestra para auditarlos o eliminarlos del todo.
   if(!fVerCancelados)ventasFilt=ventasFilt.filter(v=>!negCancelado(v));
@@ -3358,13 +3413,12 @@ function renderGestion(){
   }
   if(fTipo==='venta'||fTipo==='venta_pri'||fTipo==='venta_sec')arriendosFilt=[];
 
-  // Pagados / No pagados (marca manual de gerencia)
-  if(fPagado==='si'){
-    ventasFilt=ventasFilt.filter(negPagado);
-    arriendosFilt=arriendosFilt.filter(negPagado);
-  }else if(fPagado==='no'){
-    ventasFilt=ventasFilt.filter(v=>!negPagado(v));
-    arriendosFilt=arriendosFilt.filter(a=>!negPagado(a));
+  // Estado del pago de comisiones (en ventas se mide por hitos)
+  if(fPagado){
+    const est=(neg,esArr)=>estadoPagoNeg(r,neg,esArr).estado;
+    const quiere=fPagado==='si'?'todos':(fPagado==='parcial'?'parcial':'ninguno');
+    ventasFilt=ventasFilt.filter(v=>est(v,false)===quiere);
+    arriendosFilt=arriendosFilt.filter(a=>est(a,true)===quiere);
   }
 
   // Búsqueda por inmueble (código o nombre)
@@ -3410,22 +3464,46 @@ function renderGestion(){
         ${r.asesores.map(a=>'<option value="'+a.id_asesor+'"'+(a.id_asesor===fAsesor?' selected':'')+'>'+a.nombre+'</option>').join('')}
       </select>
     </div>
+    <div class="neg-filtro-grupo"><label>Filtrar por:</label>
+      <select id="gFiltroCriterio" onchange="renderGestion()" title="El a\u00f1o y el mes se comparan contra las cuotas de la venta o contra el mes en que se cre\u00f3 el negocio">
+        <option value="pago"${fCriterio==='pago'?' selected':''}>Mes de pago (cuotas)</option>
+        <option value="negocio"${fCriterio==='negocio'?' selected':''}>Mes del negocio</option>
+      </select>
+    </div>
     <div class="neg-filtro-grupo"><label>Pago comisiones:</label>
       <select id="gFiltroPagado" onchange="renderGestion()">
         <option value="">Todos</option>
         <option value="si"${fPagado==='si'?' selected':''}>Pagados</option>
-        <option value="no"${fPagado==='no'?' selected':''}>No pagados</option>
+        <option value="parcial"${fPagado==='parcial'?' selected':''}>Parciales</option>
+        <option value="no"${fPagado==='no'?' selected':''}>Sin pagar</option>
       </select>
     </div>
     <div class="neg-filtro-grupo"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="gVerCancelados"${fVerCancelados?' checked':''} onchange="renderGestion()"> Ver cancelados</label></div>
-    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroAnio').value=0;document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gVerCancelados').checked=false;document.getElementById('gFiltroTipo').value='';document.getElementById('gFiltroPagado').value='';document.getElementById('gBusqueda').value='';renderGestion()">Limpiar</button></div>
+    <div class="neg-filtro-grupo"><button class="btn btn-limpiar" onclick="document.getElementById('gFiltroAnio').value=0;document.getElementById('gFiltroMes').value=0;document.getElementById('gFiltroAsesor').value='';document.getElementById('gVerCancelados').checked=false;document.getElementById('gFiltroTipo').value='';document.getElementById('gFiltroPagado').value='';document.getElementById('gFiltroCriterio').value='pago';document.getElementById('gBusqueda').value='';renderGestion()">Limpiar</button></div>
   </div>
   <div class="neg-resumen">
     <div class="neg-stat"><div class="ns-val">${arriendosFilt.length}</div><div class="ns-label">Arriendos</div></div>
     <div class="neg-stat"><div class="ns-val">${ventasFilt.length}</div><div class="ns-label">Ventas</div></div>
     <div class="neg-stat v"><div class="ns-val">${fmtP(ventasFilt.reduce((s,v)=>s+numVal(v.comision_oficina),0)+arriendosFilt.reduce((s,a)=>s+numVal(a.comision_oficina)*(parseInt(a.meses_contrato,10)||1),0))}</div><div class="ns-label">Comisi\u00f3n total</div></div>
-    <div class="neg-stat"><div class="ns-val">${arriendosFilt.filter(negPagado).length+ventasFilt.filter(negPagado).length} / ${arriendosFilt.length+ventasFilt.length}</div><div class="ns-label">Comisiones pagadas</div></div>
+    <div class="neg-stat"><div class="ns-val">${arriendosFilt.filter(a=>estadoPagoNeg(r,a,true).estado==='todos').length+ventasFilt.filter(v=>estadoPagoNeg(r,v,false).estado==='todos').length} / ${arriendosFilt.length+ventasFilt.length}</div><div class="ns-label">Comisiones pagadas</div></div>
+    ${(fCriterio==='pago'&&(fAnio||fMes))?'<div class="neg-stat v"><div class="ns-val">'+fmtP(ventasFilt.reduce((s,v)=>s+hitosDelPeriodo(v).reduce((t,p)=>t+numVal(p.valor_cobrado),0),0))+'</div><div class="ns-label">Cuotas del periodo</div></div>':''}
   </div>`;
+
+  // Cuando se filtra por mes de pago, mostrar en la tarjeta QUÉ cuota cae en ese periodo
+  // (era justo lo que no se veía: el negocio es de junio pero la cuota es de agosto).
+  const nomPeriodo=()=>(fMes?meses[fMes]+' ':'')+(fAnio||'');
+  const filaPeriodoVentaHTML=v=>{
+    if(fCriterio!=='pago'||(!fAnio&&!fMes))return '';
+    const todos=hitosVivos(v);
+    const delPer=hitosDelPeriodo(v);
+    if(!delPer.length)return '';
+    const txt=delPer.map(p=>{
+      const i=todos.indexOf(p)+1;
+      const pag=comisionPagadaHito(p)?'<span class="ne-hito-pagado">&#10003; comisi&oacute;n pagada</span>':'pendiente de pago';
+      return 'Cuota '+i+' de '+todos.length+': '+fmtP(p.valor_cobrado)+' &middot; '+pag;
+    }).join('<br>');
+    return '<div style="grid-column:1/-1;background:#eff6ff;border-left:3px solid #2563eb;padding:5px 8px;border-radius:4px"><strong>En '+nomPeriodo()+':</strong> '+txt+'</div>';
+  };
 
   // Renderizar arriendos primero
   arriendosFilt.forEach(a=>{
@@ -3435,15 +3513,15 @@ function renderGestion(){
     const arrendadores=partesA.filter(p=>p.rol==='arrendador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
     const arrendatarios=partesA.filter(p=>p.rol==='arrendatario').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
     const canceladaArrG=String(a.estado_arriendo||'').toUpperCase()==='CANCELADO';
-    const pagadoArrG=negPagado(a);
+    const epArrG=estadoPagoNeg(r,a,true);
     const cardStyleArrG=canceladaArrG?'opacity:0.55;background:#f5f5f5':'';
     const headerEstadoG=canceladaArrG
       ? '<span style="margin-left:auto;font-weight:700;font-size:11px;color:#888">CANCELADO</span>'
       : '';
-    html+=`<div class="neg-card arriendo${pagadoArrG&&!canceladaArrG?' pagado':''}" style="${cardStyleArrG}">
+    html+=`<div class="neg-card arriendo${!canceladaArrG&&epArrG.estado==='todos'?' pagado':''}" style="${cardStyleArrG}">
       <div class="neg-top">
         <span class="neg-id">${a.id_arriendo}</span>
-        <span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}${badgePagadoHTML(a)}
+        <span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}${badgePagadoHTML(a,epArrG)}
         ${headerEstadoG}
       </div>
       <div class="neg-detail">
@@ -3463,7 +3541,7 @@ function renderGestion(){
       </div>
       ${negExpPanelHTML(r,a,'arriendo','g-arr-'+a.id_arriendo)}
       ${!canceladaArrG?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">'+
-        btnPagadoHTML('arriendo',a.id_arriendo,pagadoArrG)+
+        btnPagadoHTML('arriendo',a.id_arriendo,epArrG)+
         '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'arriendo\',\''+a.id_arriendo+'\')">Editar</button>'+
         '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarArriendo(\''+a.id_arriendo+'\',this)">Cancelar</button>'+
         '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'arriendo\',\''+a.id_arriendo+'\',this)">Eliminar</button>'+
@@ -3475,7 +3553,7 @@ function renderGestion(){
 
   ventasFilt.forEach(v=>{
     const cancelada=String(v.estado_venta||'').toUpperCase()==='CANCELADA';
-    const pagadoVntG=negPagado(v);
+    const epVntG=estadoPagoNeg(r,v,false);
     const pagosV=(r.pagos||[]).filter(p=>p.id_venta===v.id_venta);
     const comOficina=numVal(v.comision_oficina);
     const asesoresVenta=r.comisiones.filter(c=>c.id_negocio===v.id_venta).map(c=>nomAse(c.id_asesor)+' ('+c.punta+')').join(', ');
@@ -3492,10 +3570,10 @@ function renderGestion(){
     const compradoresG = partesV.filter(p=>p.rol==='comprador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
     const esSecG=String(v.mercado||'').toLowerCase()==='secundario';
     const tipoVentaG=v.mercado?(esSecG?'Venta Secundaria':'Venta Primaria'):'Venta';
-    html+=`<div class="neg-card venta${esSecG?' sec':''}${pagadoVntG&&!cancelada?' pagado':''}" style="${cancelada?'opacity:0.5':''}">
+    html+=`<div class="neg-card venta${esSecG?' sec':''}${cancelada?'':(epVntG.estado==='todos'?' pagado':(epVntG.estado==='parcial'?' pagado-parcial':''))}" style="${cancelada?'opacity:0.5':''}">
       <div class="neg-top">
         <span class="neg-id">${v.id_venta}</span>
-        <span class="neg-tipo vnt${esSecG?' sec':''}">${tipoVentaG} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}${badgePagadoHTML(v)}
+        <span class="neg-tipo vnt${esSecG?' sec':''}">${tipoVentaG} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}${badgePagadoHTML(v,epVntG)}
         <span style="margin-left:auto;font-weight:700;font-size:11px;color:${colores[estado]}">${estado}</span>
       </div>
       <div class="neg-detail">
@@ -3505,14 +3583,15 @@ function renderGestion(){
         <div><strong>Vendedor:</strong> ${vendedoresG}</div>
         <div><strong>Comprador:</strong> ${compradoresG}</div>
         <div><strong>Asesores:</strong> ${asesoresVenta}</div>
-        <div><strong>Cuotas:</strong> ${pagosV.length}</div>
+        <div><strong>Cuotas:</strong> ${pagosV.length}${epVntG.total?' &middot; comisi&oacute;n pagada en '+epVntG.pagados+' de '+epVntG.total:''}</div>
+        ${filaPeriodoVentaHTML(v)}
         <div><strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
         <div><strong>% oficina:</strong> ${((Number(v.pct_comision_oficina)||0)*100).toFixed(2)}%</div>
         <div><strong>Círculo:</strong> Capt.${negBadgeCirc(r,v.origen_captacion)||' &mdash;'} &middot; Cierre${negBadgeCirc(r,v.origen_cierre)||' &mdash;'}</div>
       </div>
       ${negExpPanelHTML(r,v,'venta','g-vnt-'+v.id_venta,{cuotas:true})}
       ${!cancelada?'<div class="neg-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">'+
-        btnPagadoHTML('venta',v.id_venta,pagadoVntG)+
+        btnPagadoHTML('venta',v.id_venta,epVntG)+
         '<button class="btn btn-cc" style="background:#2563eb;font-size:11px" onclick="editarNegocio(\'venta\',\''+v.id_venta+'\')">Editar</button>'+
         '<button class="btn btn-cc" style="background:#ef4444;font-size:11px" onclick="cancelarVenta(\''+v.id_venta+'\',this)">Cancelar</button>'+
         '<button class="btn btn-cc" style="background:#7f1d1d;font-size:11px" onclick="eliminarNegocio(\'venta\',\''+v.id_venta+'\',this)">Eliminar</button>'+
@@ -3533,25 +3612,34 @@ function renderGestion(){
 
 // Marca / desmarca un negocio como "comisiones pagadas" (solo gerente). Actualiza la
 // fila en memoria y re-renderiza, sin recargar toda la sección.
-async function marcarPagado(tipo,id,pagado,btn){
+// idPago presente -> marca solo ese hito de la venta. Ausente -> el negocio completo
+// (en ventas, todos sus hitos de una vez).
+async function marcarPagado(tipo,id,pagado,btn,idPago){
+  const que=idPago?('el hito '+idPago+' de '+id):(tipo==='venta'?('TODOS los hitos de '+id):id);
   if(!confirm(pagado
-    ? '¿Confirmas que ya pagaste las comisiones de '+id+'?'
-    : '¿Quitar la marca de pagado de '+id+'?'))return;
-  const orig=btn.textContent;
-  btn.disabled=true; btn.textContent='Guardando...';
+    ? '\u00bfConfirmas que ya pagaste la comisi\u00f3n de '+que+'?'
+    : '\u00bfQuitar la marca de pagado de '+que+'?'))return;
+  const orig=btn.innerHTML;
+  btn.disabled=true; btn.textContent='...';
   try{
-    const r=await apiPost({action:'marcar_pagado',id_negocio:id,tipo:tipo,pagado:pagado,id_asesor:asesorActual.id_asesor});
+    const body={action:'marcar_pagado',id_negocio:id,tipo:tipo,pagado:pagado,id_asesor:asesorActual.id_asesor};
+    if(idPago)body.id_pago=idPago;
+    const r=await apiPost(body);
     if(r&&r.ok){
       const lista=tipo==='arriendo'?(gestionData.arriendos||[]):(gestionData.ventas||[]);
       const neg=lista.find(x=>(tipo==='arriendo'?x.id_arriendo:x.id_venta)===id);
       if(neg){neg.pagado=r.pagado;neg.fecha_pagado=r.fecha_pagado;neg.pagado_por=r.pagado_por;}
+      (r.pagos_afectados||[]).forEach(idp=>{
+        const p=(gestionData.pagos||[]).find(x=>String(x.id_pago)===String(idp));
+        if(p){p.comision_pagada=r.comision_pagada;p.fecha_comision_pagada=r.fecha_comision_pagada;p.comision_pagada_por=r.comision_pagada_por;}
+      });
       toast(r.mensaje||'Actualizado');
       renderGestion();
       return;
     }
     toast((r&&r.error)||'No se pudo actualizar','er');
   }catch(e){toast('Error de conexi\u00f3n: '+e.message,'er');}
-  btn.disabled=false; btn.textContent=orig;
+  btn.disabled=false; btn.innerHTML=orig;
 }
 
 // Valida que una cadena sea una fecha real en formato YYYY-MM-DD.
