@@ -1098,6 +1098,183 @@ function repararDuplicados(aplicar) {
   return msg;
 }
 
+// ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
+// Escribe varias filas de una hoja de un solo golpe (una llamada setValues por columna
+// en vez de una por fila): para 200 arriendos la diferencia es de minutos a segundos.
+// `predicado(fila)` decide si esa fila se marca; las demás conservan su valor actual.
+function escribirColumnasSiCumple_(nombreHoja, columnas, valores, predicado) {
+  var sheet = getSheet(nombreHoja);
+  if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  var headers = data[0].map(function(h){ return String(h == null ? '' : h).trim(); });
+  var idx = columnas.map(function(c){ return indiceColumna_(headers, c); });
+  idx.forEach(function(i, k){
+    if (i === -1) throw new Error('La hoja "' + nombreHoja + '" no tiene la columna "' + columnas[k] +
+      '". Ejecuta prepararColumnasNuevas primero.');
+  });
+  var cols = columnas.map(function(){ return []; });
+  var n = 0;
+  for (var r = 1; r < data.length; r++) {
+    var fila = {};
+    headers.forEach(function(h, i){ fila[h] = data[r][i]; });
+    var marcar = !!predicado(fila);
+    if (marcar) n++;
+    for (var c = 0; c < columnas.length; c++) {
+      cols[c].push([ marcar ? valores[c] : data[r][idx[c]] ]);
+    }
+  }
+  if (n > 0) {
+    for (var c2 = 0; c2 < columnas.length; c2++) {
+      sheet.getRange(2, idx[c2] + 1, data.length - 1, 1).setValues(cols[c2]);
+    }
+    SpreadsheetApp.flush();
+  }
+  return n;
+}
+
+// Recalcula Ventas.pagado para TODAS las ventas a partir de sus hitos (masivo).
+function recalcularPagadoTodasLasVentas_(idAsesor) {
+  var resumen = {};
+  leerHoja(HOJAS.pagos).forEach(function(p){
+    if (String(p.estado || '').toUpperCase() === 'ANULADO') return;
+    var id = String(p.id_venta || '').trim();
+    if (!id) return;
+    if (!resumen[id]) resumen[id] = { total: 0, pagados: 0 };
+    resumen[id].total++;
+    if (comisionPagada_(p)) resumen[id].pagados++;
+  });
+  var completas = 0;
+  escribirColumnasSiCumple_(HOJAS.ventas, ['pagado', 'fecha_pagado', 'pagado_por'],
+    ['SI', hoyISO_(), idAsesor || ''],
+    function(v){
+      var r = resumen[String(v.id_venta || '').trim()];
+      var todos = !!r && r.total > 0 && r.pagados === r.total;
+      if (todos) completas++;
+      return todos;
+    });
+  // Las que NO quedaron completas deben quedar sin marca (por si venían marcadas).
+  escribirColumnasSiCumple_(HOJAS.ventas, ['pagado', 'fecha_pagado', 'pagado_por'], ['', '', ''],
+    function(v){
+      var r = resumen[String(v.id_venta || '').trim()];
+      return !(r && r.total > 0 && r.pagados === r.total);
+    });
+  return completas;
+}
+
+// Marca como PAGADAS las comisiones de todo lo ANTERIOR a un corte (año, mes):
+//   - Arriendos cuyo (año, mes) es anterior al corte  -> Arriendos.pagado = 'SI'
+//     (la comisión del arriendo se paga una sola vez, en su mes).
+//   - Hitos de venta cuyo (año_pago, mes_pago) es anterior al corte -> comision_pagada = 'SI'.
+//     Los hitos del corte en adelante quedan SIN marcar; por eso una venta con 3 hitos,
+//     dos antes del corte y uno futuro, queda como PAGADO 2/3 y no en verde completo.
+// Ignora cancelados/anulados, lo que ya estaba marcado y los hitos sin fecha.
+//
+//   marcarPagadosHasta()               -> SOLO INFORMA, con corte julio 2026
+//   marcarPagadosHasta(true)           -> aplica ese corte
+//   marcarPagadosHasta(true, 2026, 7)  -> aplica el corte que le indiques
+function marcarPagadosHasta(aplicar, anioCorte, mesCorte) {
+  var soloInforme = aplicar !== true;
+  var ac = parseInt(anioCorte, 10) || 2026;
+  var mc = parseInt(mesCorte, 10) || 7;
+  var corte = ac * 12 + mc;   // se marca TODO lo estrictamente anterior a este mes
+  var meses = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var lineas = ['=== MARCAR PAGADO TODO LO ANTERIOR A ' + (meses[mc] || mc).toUpperCase() + ' ' + ac + ' ===',
+                'modo: ' + (soloInforme ? 'INFORME (no se escribe nada)' : 'APLICAR')];
+
+  var gerente = leerHoja(HOJAS.asesores).find(esGerente_);
+  var idGerente = gerente ? gerente.id_asesor : '';
+
+  var periodo = function(a, m) {
+    var an = parseInt(a, 10) || 0, me = parseInt(m, 10) || 0;
+    return (an > 0 && me > 0) ? an * 12 + me : 0;
+  };
+
+  // --- Arriendos ---
+  var arriendos = leerHoja(HOJAS.arriendos);
+  var arrMarcar = arriendos.filter(function(a){
+    return String(a.estado_arriendo || '').toUpperCase() !== 'CANCELADO'
+      && String(a.pagado || '').trim().toUpperCase() !== 'SI'
+      && periodo(a['año'], a.mes) > 0
+      && periodo(a['año'], a.mes) < corte;
+  });
+  var arrYa = arriendos.filter(function(a){ return String(a.pagado || '').trim().toUpperCase() === 'SI'; }).length;
+  var arrSinFecha = arriendos.filter(function(a){ return periodo(a['año'], a.mes) === 0; }).length;
+  lineas.push('Arriendos a marcar: ' + arrMarcar.length + ' (ya marcados: ' + arrYa +
+    (arrSinFecha ? ' · sin año/mes válido: ' + arrSinFecha : '') + ')');
+  lineas.push('   ejemplos: ' + arrMarcar.slice(0, 8).map(function(a){ return a.id_arriendo + ' (' + a.mes + '/' + a['año'] + ')'; }).join(', '));
+
+  // --- Hitos de venta ---
+  var ventasCanceladas = {};
+  leerHoja(HOJAS.ventas).forEach(function(v){
+    if (String(v.estado_venta || '').toUpperCase() === 'CANCELADA') ventasCanceladas[String(v.id_venta).trim()] = true;
+  });
+  var pagos = leerHoja(HOJAS.pagos);
+  var vivo = function(p){
+    return String(p.estado || '').toUpperCase() !== 'ANULADO'
+      && !ventasCanceladas[String(p.id_venta || '').trim()];
+  };
+  var hitoPeriodo = function(p){ return periodo(p['año_pago'] || p['ano_pago'], p.mes_pago); };
+  var hitosMarcar = pagos.filter(function(p){
+    return vivo(p) && !comisionPagada_(p) && hitoPeriodo(p) > 0 && hitoPeriodo(p) < corte;
+  });
+  var hitosFuturos = pagos.filter(function(p){ return vivo(p) && hitoPeriodo(p) >= corte; });
+  var hitosSinFecha = pagos.filter(function(p){ return vivo(p) && hitoPeriodo(p) === 0; });
+  lineas.push('Hitos de venta a marcar: ' + hitosMarcar.length);
+  lineas.push('   quedan SIN marcar por ser del corte en adelante: ' + hitosFuturos.length +
+    (hitosSinFecha.length ? ' · sin fecha de pago: ' + hitosSinFecha.length : ''));
+  lineas.push('   ejemplos a marcar: ' + hitosMarcar.slice(0, 8).map(function(p){ return p.id_pago + ' ' + p.id_venta + ' (' + p.mes_pago + '/' + (p['año_pago'] || p['ano_pago']) + ')'; }).join(', '));
+  lineas.push('   ejemplos que NO se marcan: ' + hitosFuturos.slice(0, 8).map(function(p){ return p.id_pago + ' ' + p.id_venta + ' (' + p.mes_pago + '/' + (p['año_pago'] || p['ano_pago']) + ')'; }).join(', '));
+
+  // Ventas que quedarán completas vs parciales
+  var porVenta = {};
+  pagos.forEach(function(p){
+    if (!vivo(p)) return;
+    var id = String(p.id_venta || '').trim();
+    if (!porVenta[id]) porVenta[id] = { total: 0, quedan: 0 };
+    porVenta[id].total++;
+    var quedaPagado = comisionPagada_(p) || (hitoPeriodo(p) > 0 && hitoPeriodo(p) < corte);
+    if (quedaPagado) porVenta[id].quedan++;
+  });
+  var completas = 0, parciales = 0, sinNada = 0;
+  Object.keys(porVenta).forEach(function(id){
+    var v = porVenta[id];
+    if (v.quedan === 0) sinNada++;
+    else if (v.quedan === v.total) completas++;
+    else parciales++;
+  });
+  lineas.push('Ventas que quedarán: ' + completas + ' completas · ' + parciales + ' parciales · ' + sinNada + ' sin marcar');
+
+  if (soloInforme) {
+    lineas.push('Nada se modificó. Ejecuta marcarPagadosHasta(true) para aplicar.');
+  } else {
+    asegurarColumnasPagado_();
+    var nArr = escribirColumnasSiCumple_(HOJAS.arriendos, ['pagado', 'fecha_pagado', 'pagado_por'],
+      ['SI', hoyISO_(), idGerente],
+      function(a){
+        return String(a.estado_arriendo || '').toUpperCase() !== 'CANCELADO'
+          && String(a.pagado || '').trim().toUpperCase() !== 'SI'
+          && periodo(a['año'], a.mes) > 0 && periodo(a['año'], a.mes) < corte;
+      });
+    var nHit = escribirColumnasSiCumple_(HOJAS.pagos, ['comision_pagada', 'fecha_comision_pagada', 'comision_pagada_por'],
+      ['SI', hoyISO_(), idGerente],
+      function(p){
+        return String(p.estado || '').toUpperCase() !== 'ANULADO'
+          && !ventasCanceladas[String(p.id_venta || '').trim()]
+          && String(p.comision_pagada || '').trim().toUpperCase() !== 'SI'
+          && hitoPeriodo(p) > 0 && hitoPeriodo(p) < corte;
+      });
+    var nVen = recalcularPagadoTodasLasVentas_(idGerente);
+    invalidarCacheHojas([HOJAS.arriendos, HOJAS.ventas, HOJAS.pagos]);
+    lineas.push('APLICADO → arriendos marcados: ' + nArr + ' · hitos marcados: ' + nHit +
+      ' · ventas que quedaron completas: ' + nVen);
+  }
+
+  var msg = lineas.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 // Se invocan solas desde las acciones que escriben (y desde prepararColumnasNuevas).
 function asegurarColumnasCaptacion_() {
   asegurarColumnas_(HOJAS.acciones, ['id_inmueble']);
