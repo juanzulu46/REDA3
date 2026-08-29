@@ -1098,6 +1098,32 @@ function repararDuplicados(aplicar) {
   return msg;
 }
 
+// ===== ATAJOS PARA EL MENÚ "Ejecutar" DEL EDITOR =====
+// El desplegable de Ejecutar no permite pasar argumentos, así que aquí quedan las
+// cuatro acciones listas para elegir y darle ▶. El resultado sale en "Registro de
+// ejecución" (Ver → Registro, o el panel de abajo).
+//
+//   1) verReparacionDuplicados            -> informe, NO toca nada
+//   2) aplicarReparacionDuplicados        -> borra duplicados y filas huérfanas
+//   3) verMarcaPagadosHastaJulio2026      -> informe, NO toca nada
+//   4) aplicarMarcaPagadosHastaJulio2026  -> marca pagado todo lo anterior a julio 2026
+
+function verReparacionDuplicados() {
+  return repararDuplicados();
+}
+
+function aplicarReparacionDuplicados() {
+  return repararDuplicados(true);
+}
+
+function verMarcaPagadosHastaJulio2026() {
+  return marcarPagadosHasta(false, 2026, 7);
+}
+
+function aplicarMarcaPagadosHastaJulio2026() {
+  return marcarPagadosHasta(true, 2026, 7);
+}
+
 // ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
 // Escribe varias filas de una hoja de un solo golpe (una llamada setValues por columna
 // en vez de una por fila): para 200 arriendos la diferencia es de minutos a segundos.
