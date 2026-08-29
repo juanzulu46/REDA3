@@ -78,6 +78,8 @@ const COLUMNAS = {
               'referido_captador', 'numero_captador_r', 'valor_ref_captador',
               'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
               'meses_contrato', 'estado_arriendo',
+              // pagado: marca manual del GERENTE = "ya le pagué las comisiones de este negocio"
+              'pagado', 'fecha_pagado', 'pagado_por',
               // bono_captacion_pct: +0.02 / +0.01 / 0 según meses entre captación e inicio (derivado en servidor)
               'bono_captacion_pct',
               // Colegaje: comision_oficina guarda la parte NETA de REDA3; comision_bruta el total pactado
@@ -89,6 +91,8 @@ const COLUMNAS = {
            'referido_captador', 'numero_captador_r', 'valor_ref_captador',
            'referido_cerrador', 'numero_cerrador_r', 'valor_ref_cerrador',
            'estado_venta',
+           // pagado: marca manual del GERENTE = "ya le pagué las comisiones de este negocio"
+           'pagado', 'fecha_pagado', 'pagado_por',
            'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta'],
   pagos: ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'valor_cobrado', 'observacion', 'estado', 'pct_pago'],
   comisiones: ['id_asesor', 'id_negocio', 'valor_comision', 'punta', 'participacion', 'estado'],
@@ -753,20 +757,140 @@ function borrarPartesDeNegocio(idNegocio) {
   return borradas;
 }
 
+// Índice de una columna por nombre comparando encabezados NORMALIZADOS (trim).
+// data[0].indexOf() fallaba en silencio si el encabezado traía espacios sobrantes.
+function indiceColumna_(headers, colNombre) {
+  var objetivo = String(colNombre == null ? '' : colNombre).trim();
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i] == null ? '' : headers[i]).trim() === objetivo) return i;
+  }
+  return -1;
+}
+
+// Números de fila (1-based, la 1 es el encabezado) cuyo valor en colNombre coincide.
+// Lanza excepción si la columna no existe: nunca "no encontré nada" en silencio.
+function filasConValor_(sheet, colNombre, valor) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var idx = indiceColumna_(data[0], colNombre);
+  if (idx === -1) {
+    throw new Error('La hoja "' + sheet.getName() + '" no tiene la columna "' + colNombre +
+      '". No se modificó nada para no duplicar filas.');
+  }
+  var objetivo = String(valor == null ? '' : valor).trim();
+  var filas = [];
+  for (var r = 1; r < data.length; r++) {
+    var celda = data[r][idx];
+    if (String(celda == null ? '' : celda).trim() === objetivo) filas.push(r + 1);
+  }
+  return filas;
+}
+
 // Borra todas las filas de una hoja cuyo valor en colNombre coincide con valor.
 // Genérico (usado para editar/eliminar negocios: comisiones, partes, pagos, cobros).
+//
+// A PRUEBA DE DUPLICADOS (29-ago-2026): antes devolvía 0 en silencio si la columna no
+// existía o si deleteRow no surtía efecto, y quien llamaba seguía insertando las filas
+// nuevas → el negocio quedaba con los asesores repetidos. Ahora borra por bloques
+// contiguos, hace flush, RE-LEE para verificar que no quedó ninguna, reintenta una vez
+// y, si aún quedan, LANZA EXCEPCIÓN (la edición completa falla con mensaje claro).
 function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
   var sheet = getSheet(nombreHoja);
-  if (!sheet) return 0;
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return 0;
-  var idx = data[0].indexOf(colNombre);
-  if (idx === -1) return 0;
-  var n = 0;
-  for (var r = data.length - 1; r >= 1; r--) {
-    if (String(data[r][idx]) === String(valor)) { sheet.deleteRow(r + 1); n++; }
+  if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
+  var borradas = 0;
+  for (var intento = 0; intento < 2; intento++) {
+    var filas = filasConValor_(sheet, colNombre, valor);
+    if (!filas.length) break;
+    // De abajo hacia arriba y por bloques contiguos: no desfasa índices y es más rápido.
+    filas.sort(function(a, b){ return b - a; });
+    var i = 0;
+    while (i < filas.length) {
+      var fin = filas[i], n = 1;
+      while (i + n < filas.length && filas[i + n] === fin - n) n++;
+      sheet.deleteRows(fin - n + 1, n);
+      borradas += n;
+      i += n;
+    }
+    SpreadsheetApp.flush();
   }
-  return n;
+  var quedan = filasConValor_(sheet, colNombre, valor);
+  if (quedan.length) {
+    throw new Error('No se pudieron borrar todas las filas de "' + nombreHoja + '" con ' +
+      colNombre + '="' + valor + '": quedan ' + quedan.length + ' (filas ' + quedan.join(', ') +
+      '). No se insertó nada nuevo para no duplicar. Reintenta el guardado.');
+  }
+  return borradas;
+}
+
+// Borra una lista de números de fila (1-based) de una hoja, de abajo hacia arriba y por
+// bloques contiguos. Devuelve cuántas borró.
+function borrarFilasNumeradas_(sheet, filas) {
+  if (!filas || !filas.length) return 0;
+  var orden = filas.slice().sort(function(a, b){ return b - a; });
+  var borradas = 0, i = 0;
+  while (i < orden.length) {
+    var fin = orden[i], n = 1;
+    while (i + n < orden.length && orden[i + n] === fin - n) n++;
+    sheet.deleteRows(fin - n + 1, n);
+    borradas += n;
+    i += n;
+  }
+  SpreadsheetApp.flush();
+  return borradas;
+}
+
+// Reemplaza TODAS las filas de un negocio en una hoja: borra (verificando) y vuelve a
+// insertar. Al terminar comprueba que queden EXACTAMENTE las filas nuevas; si no, lanza
+// excepción. Es el único camino permitido para la regla "editar = sobreescribe".
+// preparar(fila, i) es opcional: se llama justo antes de insertar cada fila (para
+// asignar ids secuenciales, que deben calcularse fila por fila).
+function reemplazarFilasDeNegocio_(nombreHoja, colNombre, valor, filas, columnas, preparar) {
+  var borradas = borrarFilasPorColumna_(nombreHoja, colNombre, valor);
+  var nuevas = filas || [];
+  nuevas.forEach(function(fila, i){
+    if (preparar) preparar(fila, i);
+    agregarFila(nombreHoja, columnas, fila);
+  });
+  if (nuevas.length) SpreadsheetApp.flush();
+  var quedan = filasConValor_(getSheet(nombreHoja), colNombre, valor).length;
+  if (quedan !== nuevas.length) {
+    throw new Error('Verificación fallida en "' + nombreHoja + '" para ' + colNombre + '="' +
+      valor + '": se esperaban ' + nuevas.length + ' fila(s) y quedaron ' + quedan + '.');
+  }
+  Logger.log('[reemplazarFilas] ' + nombreHoja + ' ' + colNombre + '=' + valor +
+    ' borradas=' + borradas + ' insertadas=' + nuevas.length);
+  return { borradas: borradas, insertadas: nuevas.length };
+}
+
+// Comprueba cuántas filas tiene un negocio en una hoja y lanza excepción si no son las
+// esperadas (se usa tras escribir partes, que se insertan dentro de validarYGuardarPartes).
+function verificarFilasDeNegocio_(nombreHoja, colNombre, valor, esperadas) {
+  var quedan = filasConValor_(getSheet(nombreHoja), colNombre, valor).length;
+  if (quedan !== esperadas) {
+    throw new Error('Verificación fallida en "' + nombreHoja + '" para ' + colNombre + '="' +
+      valor + '": se esperaban ' + esperadas + ' fila(s) y quedaron ' + quedan + '.');
+  }
+  return quedan;
+}
+
+// Filas de la hoja Comisiones a partir del payload del formulario, SIN duplicados por
+// (id_asesor, punta): si el cliente manda dos veces la misma punta, gana la última.
+function filasComisiones_(idNegocio, comisiones) {
+  var filas = [], indice = {};
+  (comisiones || []).forEach(function(com){
+    var clave = String(com.id_asesor) + '|' + String(com.punta);
+    var fila = {
+      id_asesor: com.id_asesor,
+      id_negocio: idNegocio,
+      valor_comision: com.valor_comision,
+      punta: com.punta,
+      participacion: (numVal(com.participacion) || 100) / 100,
+      estado: 'ACTIVA'
+    };
+    if (indice[clave] !== undefined) filas[indice[clave]] = fila;
+    else { indice[clave] = filas.length; filas.push(fila); }
+  });
+  return filas;
 }
 
 // Periodos {ano, mes} en que la comisión de un negocio impacta una bonificación:
@@ -851,10 +975,11 @@ function asegurarColumnas_(nombreHoja, columnas) {
 function prepararColumnasNuevas() {
   asegurarColumnasColegaje_();
   asegurarColumnasCaptacion_();
+  asegurarColumnasPagado_();
   limpiarCacheCatalogos();
   var chequeo = [
-    [HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']],
-    [HOJAS.ventas, ['modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']],
+    [HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta', 'pagado', 'fecha_pagado', 'pagado_por']],
+    [HOJAS.ventas, ['modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta', 'pagado', 'fecha_pagado', 'pagado_por']],
     [HOJAS.inmuebles, ['fecha_captacion', 'id_asesor_captador', 'id_accion_captacion']],
     [HOJAS.acciones, ['id_inmueble']]
   ];
@@ -869,6 +994,106 @@ function prepararColumnasNuevas() {
   return msg;
 }
 
+// ===== REPARAR DUPLICADOS Y HUÉRFANAS (ejecutar a mano desde el editor de GAS) =====
+// Limpia el destrozo que dejó el borrado silencioso de borrarFilasPorColumna_ antes del
+// 29-ago-2026: comisiones/pagos repetidos por ediciones que no borraron las filas viejas,
+// y filas hijas de negocios que ya no existen.
+//
+//   repararDuplicados()      → SOLO INFORMA (no toca nada). Mira el Registro de ejecución.
+//   repararDuplicados(true)  → aplica los borrados.
+//
+// En duplicados se conserva SIEMPRE la ÚLTIMA fila (la de la edición más reciente).
+function repararDuplicados(aplicar) {
+  var soloInforme = aplicar !== true;
+  var lineas = ['=== REPARAR DUPLICADOS === modo: ' + (soloInforme ? 'INFORME (no se borra nada)' : 'APLICAR')];
+
+  var negocios = {};
+  leerHoja(HOJAS.arriendos).forEach(function(a){ negocios[String(a.id_arriendo).trim()] = true; });
+  leerHoja(HOJAS.ventas).forEach(function(v){ negocios[String(v.id_venta).trim()] = true; });
+  var ventas = {};
+  leerHoja(HOJAS.ventas).forEach(function(v){ ventas[String(v.id_venta).trim()] = true; });
+  var arriendos = {};
+  leerHoja(HOJAS.arriendos).forEach(function(a){ arriendos[String(a.id_arriendo).trim()] = true; });
+
+  // Recorre una hoja devolviendo {fila, obj} por cada fila con datos.
+  function filasDe_(nombreHoja) {
+    var sheet = getSheet(nombreHoja);
+    if (!sheet) return { sheet: null, filas: [] };
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { sheet: sheet, filas: [] };
+    var headers = data[0].map(function(h){ return String(h == null ? '' : h).trim(); });
+    var filas = [];
+    for (var r = 1; r < data.length; r++) {
+      var vacia = data[r].every(function(c){ return c === '' || c === null || c === undefined; });
+      if (vacia) continue;
+      var obj = {};
+      headers.forEach(function(h, i){ obj[h] = data[r][i]; });
+      filas.push({ fila: r + 1, obj: obj });
+    }
+    return { sheet: sheet, filas: filas };
+  }
+  var val_ = function(v){ return String(v == null ? '' : v).trim(); };
+
+  // 1) Comisiones duplicadas por (id_negocio, id_asesor, punta) — se deja la última
+  var com = filasDe_(HOJAS.comisiones);
+  var vistasCom = {}, dupCom = [];
+  for (var i = com.filas.length - 1; i >= 0; i--) {
+    var o = com.filas[i].obj;
+    var k = val_(o.id_negocio) + '|' + val_(o.id_asesor) + '|' + val_(o.punta);
+    if (vistasCom[k]) dupCom.push(com.filas[i]);
+    else vistasCom[k] = true;
+  }
+  lineas.push('Comisiones duplicadas: ' + dupCom.length);
+  dupCom.slice(0, 60).forEach(function(f){
+    lineas.push('   fila ' + f.fila + ': ' + val_(f.obj.id_negocio) + ' / ' + val_(f.obj.id_asesor) +
+      ' / ' + val_(f.obj.punta) + ' / ' + val_(f.obj.valor_comision));
+  });
+
+  // 2) Comisiones huérfanas (el negocio ya no existe)
+  var huerCom = com.filas.filter(function(f){ return val_(f.obj.id_negocio) && !negocios[val_(f.obj.id_negocio)]; });
+  lineas.push('Comisiones huérfanas: ' + huerCom.length +
+    (huerCom.length ? ' (' + huerCom.slice(0, 20).map(function(f){ return val_(f.obj.id_negocio); }).join(', ') + ')' : ''));
+
+  // 3) Pagos duplicados por (id_venta, mes_pago, año_pago, valor_cobrado) y huérfanos
+  var pag = filasDe_(HOJAS.pagos);
+  var vistasPag = {}, dupPag = [];
+  for (var j = pag.filas.length - 1; j >= 0; j--) {
+    var p = pag.filas[j].obj;
+    var kp = val_(p.id_venta) + '|' + val_(p.mes_pago) + '|' + val_(p['año_pago']) + '|' + val_(p.valor_cobrado);
+    if (vistasPag[kp]) dupPag.push(pag.filas[j]);
+    else vistasPag[kp] = true;
+  }
+  var huerPag = pag.filas.filter(function(f){ return val_(f.obj.id_venta) && !ventas[val_(f.obj.id_venta)]; });
+  lineas.push('Pagos duplicados: ' + dupPag.length + ' · huérfanos: ' + huerPag.length +
+    (huerPag.length ? ' (' + huerPag.slice(0, 20).map(function(f){ return val_(f.obj.id_pago); }).join(', ') + ')' : ''));
+
+  // 4) Partes y cobros huérfanos
+  var par = filasDe_(HOJAS.partes);
+  var huerPar = par.filas.filter(function(f){ return val_(f.obj.id_negocio) && !negocios[val_(f.obj.id_negocio)]; });
+  var cob = filasDe_(HOJAS.cobros_arriendo);
+  var huerCob = cob.filas.filter(function(f){ return val_(f.obj.id_arriendo) && !arriendos[val_(f.obj.id_arriendo)]; });
+  lineas.push('Partes huérfanas: ' + huerPar.length + ' · Cobros huérfanos: ' + huerCob.length);
+
+  var total = dupCom.length + huerCom.length + dupPag.length + huerPag.length + huerPar.length + huerCob.length;
+  if (soloInforme) {
+    lineas.push('TOTAL a borrar: ' + total + '. Nada se modificó. Ejecuta repararDuplicados(true) para aplicar.');
+  } else if (total === 0) {
+    lineas.push('Nada que reparar.');
+  } else {
+    var nums = function(arr){ return arr.map(function(f){ return f.fila; }); };
+    var bc = borrarFilasNumeradas_(com.sheet, nums(dupCom).concat(nums(huerCom)));
+    var bp = borrarFilasNumeradas_(pag.sheet, nums(dupPag).concat(nums(huerPag)));
+    var bpa = borrarFilasNumeradas_(par.sheet, nums(huerPar));
+    var bco = borrarFilasNumeradas_(cob.sheet, nums(huerCob));
+    invalidarCacheHojas([HOJAS.comisiones, HOJAS.pagos, HOJAS.partes, HOJAS.cobros_arriendo]);
+    lineas.push('APLICADO → Comisiones: ' + bc + ' · Pagos: ' + bp + ' · Partes: ' + bpa + ' · Cobros: ' + bco);
+  }
+
+  var msg = lineas.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 // Se invocan solas desde las acciones que escriben (y desde prepararColumnasNuevas).
 function asegurarColumnasCaptacion_() {
   asegurarColumnas_(HOJAS.acciones, ['id_inmueble']);
@@ -876,6 +1101,12 @@ function asegurarColumnasCaptacion_() {
   asegurarColumnaEstadoArriendo();
   asegurarColumnas_(HOJAS.arriendos, ['bono_captacion_pct']);
 }
+// Columnas de la marca "Pagado" (comisiones del negocio ya pagadas por gerencia).
+function asegurarColumnasPagado_() {
+  asegurarColumnas_(HOJAS.arriendos, ['pagado', 'fecha_pagado', 'pagado_por']);
+  asegurarColumnas_(HOJAS.ventas, ['pagado', 'fecha_pagado', 'pagado_por']);
+}
+
 function asegurarColumnasColegaje_() {
   asegurarColumnaEstadoArriendo();
   asegurarColumnas_(HOJAS.arriendos, ['bono_captacion_pct', 'modalidad', 'tipo_colega', 'nombre_colega', 'pct_colega', 'comision_bruta']);
@@ -1020,12 +1251,14 @@ function actualizarFila(nombreHoja, colId, idBuscado, datos) {
   if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
-  var colIdx = headers.indexOf(colId);
-  if (colIdx === -1) throw new Error('Columna "' + colId + '" no encontrada');
+  var colIdx = indiceColumna_(headers, colId);
+  if (colIdx === -1) throw new Error('Columna "' + colId + '" no encontrada en "' + nombreHoja + '"');
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][colIdx]) === String(idBuscado)) {
+    if (String(data[i][colIdx]).trim() === String(idBuscado).trim()) {
       Object.keys(datos).forEach(function(key) {
-        var ci = headers.indexOf(key);
+        // indiceColumna_ normaliza (trim): un encabezado con espacios ya no hace que el
+        // campo se pierda en silencio.
+        var ci = indiceColumna_(headers, key);
         if (ci !== -1) sheet.getRange(i + 1, ci + 1).setValue(datos[key]);
       });
       return true;
@@ -1623,6 +1856,13 @@ function esGestor_(asesor) {
   if (!asesor) return false;
   var rol = String(asesor.rol || '').toLowerCase();
   return rol === 'gerente' || rol === 'directora';
+}
+
+// SOLO el gerente (Germán Zuluaga). Más estricto que esGestor_: la directora comercial
+// comparte los permisos de gestión pero NO puede marcar un negocio como pagado.
+function esGerente_(asesor) {
+  if (!asesor) return false;
+  return String(asesor.rol || '').toLowerCase() === 'gerente';
 }
 
 // Gestor (gerente/directora) O asesor que figura en las Comisiones del negocio.
@@ -2260,19 +2500,11 @@ function doPost(e) {
       // Auto-generar cobros proyectados (uno por cada mes del contrato)
       try { generarCobrosProyectados(datos); } catch(eCob) { /* no bloquear el registro si falla */ }
 
-      // Guardar comisiones de los asesores
-      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
-        body.comisiones_asesores.forEach(com => {
-          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
-            id_asesor: com.id_asesor,
-            id_negocio: datos.id_arriendo,
-            valor_comision: com.valor_comision,
-            punta: com.punta,
-            participacion: (numVal(com.participacion) || 100) / 100,
-            estado: 'ACTIVA'
-          });
-        });
-      }
+      // Guardar comisiones de los asesores (filasComisiones_ colapsa repetidos por
+      // id_asesor+punta: un mismo asesor nunca queda dos veces en la misma punta)
+      filasComisiones_(datos.id_arriendo, body.comisiones_asesores).forEach(function(fila){
+        agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, fila);
+      });
 
       invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
       lock.releaseLock();
@@ -2375,18 +2607,9 @@ function doPost(e) {
       asegurarColumnasColegaje_();
       agregarFila(HOJAS.ventas, COLUMNAS.ventas, datos);
 
-      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
-        body.comisiones_asesores.forEach(com => {
-          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
-            id_asesor: com.id_asesor,
-            id_negocio: datos.id_venta,
-            valor_comision: com.valor_comision,
-            punta: com.punta,
-            participacion: (numVal(com.participacion) || 100) / 100,
-            estado: 'ACTIVA'
-          });
-        });
-      }
+      filasComisiones_(datos.id_venta, body.comisiones_asesores).forEach(function(fila){
+        agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, fila);
+      });
 
       // Registrar pagos/cuotas.
       // Secundario: valor_pago (monto del inmueble) → comisión proporcional.
@@ -3524,16 +3747,12 @@ function doPost(e) {
 
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idArrE);
       validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, true);
+      verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idArrE, body.partes.length);
 
-      borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idArrE);
-      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
-        body.comisiones_asesores.forEach(function(com){
-          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
-            id_asesor: com.id_asesor, id_negocio: idArrE, valor_comision: com.valor_comision,
-            punta: com.punta, participacion: (numVal(com.participacion) || 100) / 100, estado: 'ACTIVA'
-          });
-        });
-      }
+      // Editar = sobreescribe: borra verificando, inserta y vuelve a verificar. Si algo
+      // no cuadra lanza excepción en vez de dejar los asesores duplicados.
+      var verifComEA = reemplazarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idArrE,
+        filasComisiones_(idArrE, body.comisiones_asesores), COLUMNAS.comisiones);
 
       // Regenerar cobros proyectados con los nuevos valores (se pierden ediciones manuales de cobros)
       borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
@@ -3542,8 +3761,12 @@ function doPost(e) {
       catch (eCobEA) { advCobEA = 'Arriendo actualizado, pero los cobros mensuales NO se regeneraron: ' + eCobEA.message + '. Revisa la hoja CobrosArriendo.'; }
 
       invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
+      Logger.log('[editar_arriendo] ' + idArrE + ' comisiones borradas=' + verifComEA.borradas +
+        ' insertadas=' + verifComEA.insertadas + ' partes=' + body.partes.length);
       lock.releaseLock();
-      return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado', advertencia: advCobEA || undefined });
+      return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado',
+        verificacion: { comisiones: verifComEA, partes: body.partes.length },
+        advertencia: advCobEA || undefined });
     }
 
     // --- EDITAR VENTA (gestor o asesor que participa en el negocio) ---
@@ -3629,31 +3852,74 @@ function doPost(e) {
 
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
       validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, true);
+      verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idVntE, body.partes.length);
 
-      borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idVntE);
-      if (body.comisiones_asesores && body.comisiones_asesores.length > 0) {
-        body.comisiones_asesores.forEach(function(com){
-          agregarFila(HOJAS.comisiones, COLUMNAS.comisiones, {
-            id_asesor: com.id_asesor, id_negocio: idVntE, valor_comision: com.valor_comision,
-            punta: com.punta, participacion: (numVal(com.participacion) || 100) / 100, estado: 'ACTIVA'
-          });
-        });
-      }
+      // Editar = sobreescribe: borra verificando, inserta y vuelve a verificar. Si algo
+      // no cuadra lanza excepción en vez de dejar los asesores duplicados.
+      var verifComEV = reemplazarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idVntE,
+        filasComisiones_(idVntE, body.comisiones_asesores), COLUMNAS.comisiones);
 
-      // Regenerar plan de pagos con los nuevos valores (filas ya validadas arriba)
-      borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
-      if (resPagosEV && resPagosEV.filas.length > 0) {
-        asegurarColumnaPctPago();
-        resPagosEV.filas.forEach(function(fila){
+      // Regenerar plan de pagos con los nuevos valores (filas ya validadas arriba).
+      // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
+      if (resPagosEV && resPagosEV.filas.length > 0) asegurarColumnaPctPago();
+      var verifPagEV = reemplazarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
+        (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], COLUMNAS.pagos,
+        function(fila){
           fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
           fila.id_venta = idVntE;
-          agregarFila(HOJAS.pagos, COLUMNAS.pagos, fila);
         });
-      }
 
       invalidarCacheHojas([HOJAS.ventas, HOJAS.pagos, HOJAS.comisiones, HOJAS.partes]);
+      Logger.log('[editar_venta] ' + idVntE + ' comisiones borradas=' + verifComEV.borradas +
+        ' insertadas=' + verifComEV.insertadas + ' pagos=' + verifPagEV.insertadas +
+        ' partes=' + body.partes.length);
       lock.releaseLock();
-      return jsonResponse({ ok:true, id: idVntE, mensaje:'Venta actualizada' });
+      return jsonResponse({ ok:true, id: idVntE, mensaje:'Venta actualizada',
+        verificacion: { comisiones: verifComEV, pagos: verifPagEV, partes: body.partes.length } });
+    }
+
+    // --- MARCAR NEGOCIO COMO PAGADO (SOLO GERENTE) ---
+    // Marca manual de gerencia: "ya le pagué a los asesores las comisiones de este negocio".
+    // Es independiente del estado COBRADO/PARCIAL (que mira las cuotas que entran a la oficina).
+    // body: { id_asesor, password, id_negocio, tipo: 'arriendo' | 'venta', pagado: true|false }
+    if (action === 'marcar_pagado') {
+      var asesorMP = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === body.id_asesor; });
+      if (!esGerente_(asesorMP)) {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Solo la gerencia puede marcar un negocio como pagado' });
+      }
+      var idNegMP = body.id_negocio, tipoMP = body.tipo;
+      if (!idNegMP || !tipoMP) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Faltan parámetros (id_negocio, tipo)' }); }
+      if (tipoMP !== 'arriendo' && tipoMP !== 'venta') { lock.releaseLock(); return jsonResponse({ ok:false, error:'Tipo inválido (use arriendo o venta)' }); }
+
+      var hojaMP = tipoMP === 'arriendo' ? HOJAS.arriendos : HOJAS.ventas;
+      var colIdMP = tipoMP === 'arriendo' ? 'id_arriendo' : 'id_venta';
+      var negMP = leerHoja(hojaMP).find(function(x){ return String(x[colIdMP]) === String(idNegMP); });
+      if (!negMP) { lock.releaseLock(); return jsonResponse({ ok:false, error:'Negocio "' + idNegMP + '" no encontrado' }); }
+      var estadoMP = String(negMP.estado_arriendo || negMP.estado_venta || '').toUpperCase();
+      if (estadoMP === 'CANCELADO' || estadoMP === 'CANCELADA') {
+        lock.releaseLock();
+        return jsonResponse({ ok:false, error:'Un negocio cancelado no se puede marcar como pagado' });
+      }
+
+      var marcarMP = body.pagado !== false;
+      asegurarColumnasPagado_();
+      actualizarFila(hojaMP, colIdMP, idNegMP, {
+        pagado: marcarMP ? 'SI' : '',
+        fecha_pagado: marcarMP ? Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd') : '',
+        pagado_por: marcarMP ? body.id_asesor : ''
+      });
+      invalidarCacheHojas([hojaMP]);
+      Logger.log('[marcar_pagado] ' + idNegMP + ' -> ' + (marcarMP ? 'SI' : 'NO') + ' por ' + body.id_asesor);
+      lock.releaseLock();
+      return jsonResponse({
+        ok: true,
+        id: idNegMP,
+        pagado: marcarMP ? 'SI' : '',
+        fecha_pagado: marcarMP ? Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd') : '',
+        pagado_por: marcarMP ? body.id_asesor : '',
+        mensaje: marcarMP ? 'Negocio marcado como PAGADO' : 'Marca de pagado retirada'
+      });
     }
 
     // --- ELIMINAR NEGOCIO (gestor: gerente o directora) ---
