@@ -1,8 +1,20 @@
 # Conversación de trabajo — 31 agosto 2026
 
-Registro de la sesión con Claude Code. Cambio pequeño de permisos, con una revisión de
-coherencia del modelo de roles completo (el usuario pidió "revisa que todo lo que tengamos
-tenga lógica, que sea coherente").
+Registro de la sesión con Claude Code: pedidos, diagnóstico, decisiones, cambios y verificación.
+Empezó como un cambio pequeño de permisos y acabó destapando por qué fallaba la edición de
+negocios. Commits en `master` (respaldo en GitHub; el canal oficial sigue siendo pegar en
+Apps Script):
+
+| Commit | Qué |
+|---|---|
+| `f5e0564` | Liquidar bonificaciones: exclusivo del gerente (no la directora) |
+| `fa70a03` | Diagnóstico del borrado de Comisiones que falla al editar |
+| `01bf7df` | Editar negocio: borrar todo primero, escribir después (arregla CobrosArriendo) |
+
+**Hilo conductor:** el usuario pidió quitarle a Elisa el botón de liquidar y, de paso, *"revisa
+que todo lo que tengamos tenga lógica, que sea coherente"*. Esa revisión sacó a la luz una
+cadena: comentarios que mentían → el error de borrado que veía al guardar → y por qué
+CobrosArriendo se quedaba con los valores viejos. Las tres cosas resultaron estar conectadas.
 
 ---
 
@@ -300,4 +312,52 @@ Arnés en Node con hojas simuladas, **7 de 7 pasan**:
 - Fallo pasajero del borrado → el reintento completa todo, cobros incluidos.
 - `id_cobro` únicos y correlativos; no se tocan los cobros de otros arriendos; contrato de 24
   meses cruza de año bien; `filasCobrosProyectados_` no escribe por sí sola.
+
+---
+
+# Cierre — qué queda por hacer
+
+## 18. Despliegue (nada de esto está aún en producción)
+
+Producción corre la **Versión 85 del 29-ago**. Los tres commits de hoy están en el repo pero no
+en Apps Script. Pasos, en orden:
+
+1. En el proyecto **"App Asesores" del 28-ago** (el de producción, hoja `data_set_final`):
+   pegar `apps_script.js` en `Code.gs` y `asesor.html` en el archivo HTML `asesor`. Guardar.
+2. **Implementar → Administrar implementaciones → ✏️ → Versión: Nueva versión → Implementar.**
+   Nunca "Nueva implementación": cambiaría la URL y los asesores se quedarían en la vieja.
+
+## 19. Después del despliegue
+
+| # | Qué | Dónde |
+|---|---|---|
+| 1 | **Editar ARR-243 y guardar.** Regenera CobrosArriendo junto con todo lo demás y le quita los cobros con el canon viejo que quedaron de los intentos fallidos | portal |
+| 2 | Verificar que las 12 filas de ARR-243 en `CobrosArriendo` tengan el valor correcto | Sheet |
+| 3 | **Ejecutar `diagnosticarBorradoARR243`** y leer el informe → dice si el filtro de Comisiones es la causa | editor de GAS |
+| 4 | `verReparacionDuplicados` (informe) para confirmar que no hay comisiones duplicadas ni huérfanas | editor de GAS |
+| 5 | Entrar como **Elisa**: la tarjeta "Calcular bonificaciones del mes" no debe aparecer; el resto de Gestión, igual | portal |
+| 6 | **Quitar el filtro de la hoja Comisiones** (Datos → Quitar filtro). Pendiente desde el 29-ago | Sheet |
+
+## 20. Lo que sigue abierto
+
+- **La causa raíz de `deleteRows` sigue sin confirmar.** El arreglo de hoy hace que un fallo ya
+  no deje datos inconsistentes, pero el borrado sigue fallando de forma intermitente. El paso 3
+  de arriba es lo que lo resuelve.
+- **`AJUSTE_CONTINUIDAD_2026_07`** (`apps_script.js:1799`) sigue pendiente de eliminar tras
+  liquidar julio 2026.
+- Comisiones y pagos **huérfanos** de negocios inexistentes que reportó el 29-ago: revisar con
+  `verReparacionDuplicados`.
+
+## 21. Lecciones de la sesión
+
+1. **Un mensaje de error puede ser una buena noticia.** El "No se pudieron borrar…" era el
+   blindaje protegiendo los datos, no un daño. Pero decía menos de lo que pasaba: la edición ya
+   había escrito la cabecera y las partes.
+2. **Hacer ruidoso un fallo no es arreglarlo.** El commit del 29-ago convirtió un borrado
+   silencioso en una excepción; dos días después el fallo seguía ahí, solo que visible.
+3. **Los comentarios que mienten cuestan caro.** `esGestor_` decía "la directora tiene los
+   mismos permisos que el gerente" y tres endpoints decían "sólo gerente" sin serlo. Revisarlos
+   fue lo que destapó que Elisa sí podía liquidar.
+4. **Leer los datos, no solo el código.** Abrir el `.xlsx` por dentro dio la pista del filtro
+   sobre `id_negocio`, que ninguna lectura del código habría revelado.
 
