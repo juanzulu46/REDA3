@@ -797,26 +797,63 @@ function filasConValor_(sheet, colNombre, valor) {
 // nuevas → el negocio quedaba con los asesores repetidos. Ahora borra por bloques
 // contiguos, hace flush, RE-LEE para verificar que no quedó ninguna, reintenta una vez
 // y, si aún quedan, LANZA EXCEPCIÓN (la edición completa falla con mensaje claro).
+// Relee un bloque de n filas justo antes de borrarlo y confirma que TODAS pertenecen al
+// negocio objetivo. Sin esta guarda se borra por POSICIÓN a partir de un snapshot: si una
+// re-lectura llegara desfasada, el reintento borraría las filas que ahora ocupan esos
+// números — comisiones de OTRO negocio, perdidas en silencio.
+function confirmarBloqueBorrable_(sheet, colNombre, objetivo, inicio, n) {
+  var ultimaCol = sheet.getLastColumn();
+  if (ultimaCol < 1) throw new Error('La hoja "' + sheet.getName() + '" está vacía');
+  var idx = indiceColumna_(sheet.getRange(1, 1, 1, ultimaCol).getValues()[0], colNombre);
+  if (idx === -1) {
+    throw new Error('La hoja "' + sheet.getName() + '" no tiene la columna "' + colNombre +
+      '". No se modificó nada para no duplicar filas.');
+  }
+  var bloque = sheet.getRange(inicio, idx + 1, n, 1).getValues();
+  for (var k = 0; k < n; k++) {
+    var v = String(bloque[k][0] == null ? '' : bloque[k][0]).trim();
+    if (v !== objetivo) {
+      throw new Error('Borrado abortado en "' + sheet.getName() + '": la fila ' + (inicio + k) +
+        ' se iba a borrar por ' + colNombre + '="' + objetivo + '" pero contiene "' + v +
+        '". No se borró nada, para no perder datos de otro negocio.');
+    }
+  }
+}
+
 function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
-  var sheet = getSheet(nombreHoja);
-  if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
+  var objetivo = String(valor == null ? '' : valor).trim();
   var borradas = 0;
-  for (var intento = 0; intento < 2; intento++) {
+  var traza = [];
+  // Handle FRESCO de la hoja en cada pasada (antes se reutilizaba el capturado al entrar,
+  // a diferencia de reemplazarFilasDeNegocio_ / verificarFilasDeNegocio_, que lo re-obtienen).
+  for (var intento = 0; intento < 3; intento++) {
+    var sheet = getSheet(nombreHoja);
+    if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
     var filas = filasConValor_(sheet, colNombre, valor);
-    if (!filas.length) break;
+    if (!filas.length) { traza.push('#' + intento + ' sin filas'); break; }
+    var antes = sheet.getLastRow();
     // De abajo hacia arriba y por bloques contiguos: no desfasa índices y es más rápido.
     filas.sort(function(a, b){ return b - a; });
     var i = 0;
     while (i < filas.length) {
       var fin = filas[i], n = 1;
       while (i + n < filas.length && filas[i + n] === fin - n) n++;
-      sheet.deleteRows(fin - n + 1, n);
+      var inicio = fin - n + 1;
+      confirmarBloqueBorrable_(sheet, colNombre, objetivo, inicio, n);
+      sheet.deleteRows(inicio, n);
       borradas += n;
       i += n;
     }
     SpreadsheetApp.flush();
+    var despues = getSheet(nombreHoja).getLastRow();
+    traza.push('#' + intento + ' filas=[' + filas.join(',') + '] lastRow ' + antes + '->' + despues);
+    // Si la hoja no encogió, el deleteRows no surtió efecto (el fallo intermitente que
+    // perseguimos desde el 29-ago). Dar aire antes de reintentar.
+    if (despues === antes) Utilities.sleep(400);
   }
-  var quedan = filasConValor_(sheet, colNombre, valor);
+  var quedan = filasConValor_(getSheet(nombreHoja), colNombre, valor);
+  Logger.log('[borrarFilas] ' + nombreHoja + ' ' + colNombre + '="' + objetivo + '" borradas=' +
+    borradas + ' quedan=' + quedan.length + ' | ' + traza.join(' | '));
   if (quedan.length) {
     throw new Error('No se pudieron borrar todas las filas de "' + nombreHoja + '" con ' +
       colNombre + '="' + valor + '": quedan ' + quedan.length + ' (filas ' + quedan.join(', ') +
@@ -1098,6 +1135,112 @@ function repararDuplicados(aplicar) {
   return msg;
 }
 
+// ===== DIAGNÓSTICO: ¿por qué deleteRows no surte efecto? =====
+// Solo LECTURA: no borra ni escribe nada. Responde a la pregunta abierta desde el 29-ago,
+// cuando se documentó que borrarFilasPorColumna_ fallaba "en silencio e intermitente" sobre
+// la hoja Comisiones. El sospechoso principal es el filtro básico que sigue activo sobre esa
+// hoja (aplicado justo sobre id_negocio, con la mayoría de filas ocultas y un rango congelado
+// que ya no cubre las filas nuevas). Esta función lo confirma o lo descarta con datos.
+function diagnosticarBorrado(idNegocio, nombreHoja, colNombre) {
+  var hoja = nombreHoja || HOJAS.comisiones;
+  var col  = colNombre || 'id_negocio';
+  var objetivo = String(idNegocio == null ? '' : idNegocio).trim();
+  var L = ['=== DIAGNÓSTICO DE BORRADO ===',
+           'hoja: ' + hoja + ' · columna: ' + col + ' · valor: "' + objetivo + '"'];
+
+  var sheet = getSheet(hoja);
+  if (!sheet) { var m0 = L.concat('!! La hoja no existe').join('\n'); Logger.log(m0); return m0; }
+
+  // --- 1. Dimensiones: si getDataRange y getLastRow discrepan, ahí hay algo raro ---
+  var rango = sheet.getDataRange();
+  L.push('');
+  L.push('--- DIMENSIONES ---');
+  L.push('getMaxRows=' + sheet.getMaxRows() + '  getLastRow=' + sheet.getLastRow() +
+         '  getMaxColumns=' + sheet.getMaxColumns() + '  getLastColumn=' + sheet.getLastColumn());
+  L.push('getDataRange=' + rango.getA1Notation() +
+         ' (' + rango.getNumRows() + ' filas x ' + rango.getNumColumns() + ' cols)');
+
+  // --- 2. EL FILTRO: aquí se confirma o se cae la hipótesis principal ---
+  L.push('');
+  L.push('--- FILTRO ---');
+  var filtro = null;
+  try { filtro = sheet.getFilter(); } catch (eF) { L.push('getFilter() lanzó: ' + eF.message); }
+  if (!filtro) {
+    L.push('SIN filtro en la hoja. (Descarta la hipótesis del filtro.)');
+  } else {
+    var rf = filtro.getRange();
+    L.push('!! HAY FILTRO. Rango = ' + rf.getA1Notation() +
+           ' (hasta la fila ' + rf.getLastRow() + ')');
+    if (rf.getLastRow() < sheet.getLastRow()) {
+      L.push('!! RANGO DESFASADO: el filtro llega a la fila ' + rf.getLastRow() +
+             ' pero la hoja tiene ' + sheet.getLastRow() +
+             '. Las filas nuevas quedan FUERA del filtro.');
+    }
+    for (var c = 1; c <= sheet.getLastColumn(); c++) {
+      var crit = null;
+      try { crit = filtro.getColumnFilterCriteria(c); } catch (eC) {}
+      if (!crit) continue;
+      var nombreCol = String(sheet.getRange(1, c, 1, 1).getValue() || '').trim();
+      var ocultos = [];
+      try { ocultos = crit.getHiddenValues() || []; } catch (eH) {}
+      var visibles = [];
+      try { visibles = crit.getVisibleValues() || []; } catch (eV) {}
+      L.push('  criterio en col ' + c + ' ("' + nombreCol + '"): ' +
+             ocultos.length + ' valores ocultos, ' + visibles.length + ' visibles');
+      if (nombreCol === col) {
+        L.push('  !! EL FILTRO ACTÚA SOBRE LA MISMA COLUMNA QUE EL BORRADO (' + col + ')');
+      }
+    }
+  }
+
+  // --- 3. Rangos protegidos ---
+  L.push('');
+  L.push('--- PROTECCIONES ---');
+  try {
+    var prot = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE) || [];
+    L.push(prot.length + ' rango(s) protegido(s)');
+    prot.forEach(function(p){ L.push('  ' + p.getRange().getA1Notation() + ' — ' + p.getDescription()); });
+  } catch (eP) { L.push('no se pudieron leer: ' + eP.message); }
+
+  // --- 4. Las filas que casan, con los bytes a la vista ---
+  L.push('');
+  L.push('--- FILAS QUE CASAN CON "' + objetivo + '" ---');
+  var filas = filasConValor_(sheet, col, objetivo);
+  if (!filas.length) {
+    L.push('ninguna (el negocio no tiene filas en esta hoja)');
+  } else {
+    var datos = rango.getValues();
+    filas.forEach(function(f){
+      var oculta = '';
+      try { oculta = sheet.isRowHiddenByFilter(f) ? '  [OCULTA POR EL FILTRO]' : ''; } catch (eO) {}
+      L.push('  fila ' + f + ': ' + JSON.stringify(datos[f - 1]) + oculta);
+    });
+    // Bloques contiguos que borrarFilasPorColumna_ calcularía — SIN borrarlos.
+    var orden = filas.slice().sort(function(a, b){ return b - a; });
+    var bloques = [], i = 0;
+    while (i < orden.length) {
+      var fin = orden[i], n = 1;
+      while (i + n < orden.length && orden[i + n] === fin - n) n++;
+      bloques.push('deleteRows(' + (fin - n + 1) + ', ' + n + ')');
+      i += n;
+    }
+    L.push('  bloques que se borrarían: ' + bloques.join('  '));
+  }
+
+  // --- 5. Cuántas filas de la hoja están ocultas ahora mismo ---
+  L.push('');
+  L.push('--- FILAS OCULTAS ---');
+  try {
+    var ocultasN = 0, ultima = sheet.getLastRow();
+    for (var r = 1; r <= ultima; r++) if (sheet.isRowHiddenByFilter(r)) ocultasN++;
+    L.push(ocultasN + ' de ' + ultima + ' filas ocultas por el filtro');
+  } catch (eR) { L.push('no se pudo calcular: ' + eR.message); }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 // ===== ATAJOS PARA EL MENÚ "Ejecutar" DEL EDITOR =====
 // El desplegable de Ejecutar no permite pasar argumentos, así que aquí quedan las
 // cuatro acciones listas para elegir y darle ▶. El resultado sale en "Registro de
@@ -1107,6 +1250,7 @@ function repararDuplicados(aplicar) {
 //   2) aplicarReparacionDuplicados        -> borra duplicados y filas huérfanas
 //   3) verMarcaPagadosHastaJulio2026      -> informe, NO toca nada
 //   4) aplicarMarcaPagadosHastaJulio2026  -> marca pagado todo lo anterior a julio 2026
+//   5) diagnosticarBorradoARR243          -> informe, NO toca nada (por qué falla el borrado)
 
 function verReparacionDuplicados() {
   return repararDuplicados();
@@ -1122,6 +1266,10 @@ function verMarcaPagadosHastaJulio2026() {
 
 function aplicarMarcaPagadosHastaJulio2026() {
   return marcarPagadosHasta(true, 2026, 7);
+}
+
+function diagnosticarBorradoARR243() {
+  return diagnosticarBorrado('ARR-243');
 }
 
 // ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
