@@ -2096,15 +2096,20 @@ function validarSesion(idAsesor, password) {
 }
 
 // Roles con poderes de gestión: gerencia y dirección comercial.
-// La directora comercial (rol "directora") tiene los mismos permisos que el gerente.
+// La directora comercial (rol "directora") VE y GESTIONA todo lo del gerente (todos los
+// negocios, bonificaciones por asesor, acciones, editar/cancelar/eliminar, pagos y cobros),
+// pero NO puede: marcar pagado, liquidar el mes ni correr los setup. Para eso está esGerente_.
 function esGestor_(asesor) {
   if (!asesor) return false;
   var rol = String(asesor.rol || '').toLowerCase();
   return rol === 'gerente' || rol === 'directora';
 }
 
-// SOLO el gerente (Germán Zuluaga). Más estricto que esGestor_: la directora comercial
-// comparte los permisos de gestión pero NO puede marcar un negocio como pagado.
+// SOLO el gerente (Germán Zuluaga, ASE-055). Más estricto que esGestor_: la directora
+// comercial comparte los permisos de gestión, pero estas acciones son exclusivas del gerente:
+//   - marcar_pagado            (marcar/quitar comisiones pagadas de un negocio o hito)
+//   - liquidar_bonificaciones  (recalcula y sobrescribe el mes de TODOS los asesores)
+//   - setup_cobros_arriendo / setup_puntajes_accion (one-shot que reescriben catálogos)
 function esGerente_(asesor) {
   if (!asesor) return false;
   return String(asesor.rol || '').toLowerCase() === 'gerente';
@@ -2487,10 +2492,10 @@ function dispatchGet(params) {
       return jsonResponse({ ok: true, acciones: filt, es_gestor: !!gestorA });
     }
 
-    // --- TODOS LOS NEGOCIOS (solo gerente) ---
+    // --- TODOS LOS NEGOCIOS (gerencia o dirección comercial) ---
     if (action === 'todos_negocios') {
       var idAsesorG = params.id_asesor || '';
-      // Verificar que sea gerente
+      // Verificar que tenga rol de gestión (gerente o directora)
       var asesoresG = leerHojaCache(HOJAS.asesores);
       var asesorG = asesoresG.find(function(a) { return a.id_asesor === idAsesorG; });
       if (!esGestor_(asesorG)) {
@@ -3633,9 +3638,9 @@ function doPost(e) {
     if (action === 'setup_cobros_arriendo') {
       var idAsesorS = body.id_asesor;
       var asesorS = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorS; });
-      if (!esGestor_(asesorS)) {
+      if (!esGerente_(asesorS)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden ejecutar el setup' });
+        return jsonResponse({ ok:false, error:'Solo la gerencia puede ejecutar el setup' });
       }
       var res = setupCobrosArriendo();
       lock.releaseLock();
@@ -3646,9 +3651,9 @@ function doPost(e) {
     if (action === 'setup_puntajes_accion') {
       var idAsesorPA = body.id_asesor;
       var asesorPA = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorPA; });
-      if (!esGestor_(asesorPA)) {
+      if (!esGerente_(asesorPA)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden ejecutar el setup' });
+        return jsonResponse({ ok:false, error:'Solo la gerencia puede ejecutar el setup' });
       }
       var resPA = setupPuntajesAccion();
       lock.releaseLock();
@@ -3659,9 +3664,9 @@ function doPost(e) {
     if (action === 'liquidar_bonificaciones') {
       var idAsesorL = body.id_asesor;
       var asesorL = leerHoja(HOJAS.asesores).find(function(a){ return a.id_asesor === idAsesorL; });
-      if (!esGestor_(asesorL)) {
+      if (!esGerente_(asesorL)) {
         lock.releaseLock();
-        return jsonResponse({ ok:false, error:'Sólo gerencia o dirección comercial pueden liquidar bonificaciones' });
+        return jsonResponse({ ok:false, error:'Solo la gerencia puede liquidar las bonificaciones del mes' });
       }
       var anioL = parseInt(body['año'] || body.anio || body.year, 10);
       var mesL = parseInt(body.mes, 10);
@@ -4302,7 +4307,8 @@ function doPost(e) {
 
     // --- CREAR ASESOR (alta desde CasIA / CRM) ---
     // body: { action, id_asesor, password, nombre, vinculacion?, estado?, email?, rol? }
-    // CasIA entra como el gerente (ASE-055), así que esGestor_ pasa. Solo llena las
+    // Permiso de gestión (esGestor_): lo pueden hacer tanto el gerente como la dirección
+    // comercial. CasIA entra como el gerente (ASE-055), así que pasa. Solo llena las
     // columnas que aporta el CRM; cédula/banco/cuenta/password se completan luego
     // desde esta misma página de asesores. Devuelve el ASE-### que el CRM guarda
     // como id_asesor_gas para enlazar ambas bases.

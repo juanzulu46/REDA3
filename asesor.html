@@ -711,9 +711,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
   <div id="bonContent"><div class="loading"><span class="spinner"></span> Cargando bonificaciones...</div></div>
 </div>
 
-<!-- ============ GESTIÓN (solo gerente) ============ -->
+<!-- ============ GESTIÓN (gerencia y dirección comercial) ============ -->
 <div class="section" id="sec-gestion">
-  <div class="fcard">
+  <!-- Liquidar el mes es EXCLUSIVO del gerente. Oculta por defecto: solo se muestra al
+       entrar con rol "gerente" (asesor.html, bloque de login). La dirección comercial ve
+       todo lo demás de Gestión, pero no esta tarjeta. -->
+  <div class="fcard" id="cardLiquidar" style="display:none">
     <div class="fcard-hd">
       <h3>Calcular bonificaciones del mes</h3>
       <p>Esta acci&oacute;n calcula la <strong>categor&iacute;a</strong> de cada asesor (Bronce, Plata, Oro, Diamante&hellip;) seg&uacute;n lo que vendi&oacute; o arrend&oacute; en el mes seleccionado, y guarda cu&aacute;nto se le debe pagar de bonificaci&oacute;n. Si ya hab&iacute;a liquidaci&oacute;n para ese mes, se sobrescribe (solo se permite si nadie ha cobrado el mes).</p>
@@ -763,7 +766,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
   </div>
 </div>
 
-<!-- ============ DASHBOARD EJECUTIVO (solo gerente) ============ -->
+<!-- ============ DASHBOARD EJECUTIVO (gerencia y dirección comercial) ============ -->
 <div class="section" id="sec-dashboard">
   <style>
     /* CSS del Dashboard Ejecutivo — replicado del DAX Visual_CumplimientoMetas */
@@ -1697,6 +1700,11 @@ async function hacerLogin(){
       const inMesBA = document.getElementById('bonAseMes');
       if (inAnioBA) inAnioBA.value = anioDef;
       if (inMesBA) inMesBA.value = mesDef;
+      // Liquidar el mes: SOLO el gerente. La directora ve el resto de Gestión igual.
+      if (esGerenteRol()) {
+        const cardLiq = document.getElementById('cardLiquidar');
+        if (cardLiq) cardLiq.style.display = '';
+      }
     }
     btn.textContent='Cargando datos...';
     await cargarCatalogos();
@@ -1716,6 +1724,12 @@ async function hacerLogin(){
 
 function cerrarSesion(){
   asesorActual=null;
+  // Re-ocultar la UI restringida: si luego entra un asesor sin rol de gestión, no debe
+  // heredar la navegación ni la tarjeta de liquidar de la sesión anterior.
+  ['navGestion','navDashboard','cardLiquidar'].forEach(function(id){
+    const el=document.getElementById(id);
+    if(el) el.style.display='none';
+  });
   document.getElementById('loginWrap').style.display='';
   document.getElementById('appWrap').classList.remove('show');
 }
@@ -3314,7 +3328,7 @@ function renderMisNegocios(){
   }
 }
 
-// ===== GESTIÓN (solo gerente) =====
+// ===== GESTIÓN (gerencia y dirección comercial) =====
 let gestionData=null;
 async function cargarGestion(){
   const cont=document.getElementById('gestionContent');
@@ -3656,6 +3670,7 @@ function refrescarVistaNegocios(){
 }
 
 async function liquidarBonificaciones() {
+  if (!esGerenteRol()) { toast('Solo la gerencia puede liquidar el mes','er'); return; }
   const btn = document.getElementById('btnLiquidar');
   const status = document.getElementById('liqStatus');
   const anio = readInt('liqAnio');
