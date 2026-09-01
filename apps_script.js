@@ -305,17 +305,21 @@ function puntajeDeTipo(tipo, mapa) {
 // Genera N filas en CobrosArriendo desde el mes de firma del arriendo hacia adelante
 // (N = meses_contrato). Cada fila nace COBRADO con fecha_pago = día 1 del mes_cobro.
 // Gerencia puede inhabilitar (NO_COBRADO) o cancelar desde su perfil si algún mes no se cobra.
-function generarCobrosProyectados(arriendo) {
+// Calcula las filas de cobros proyectados SIN escribir nada. Separar el cálculo de la
+// escritura permite tenerlas listas antes de borrar los cobros viejos: si el cálculo
+// fallara, CobrosArriendo no se habría tocado.
+function filasCobrosProyectados_(arriendo) {
   var meses = mesesContratoDe(arriendo);
   var comMensual = numVal(arriendo.comision_oficina);
   var anoBase = parseInt(arriendo['año'], 10) || new Date().getFullYear();
   var mesBase = parseInt(arriendo.mes, 10) || (new Date().getMonth() + 1); // 1..12
+  var filas = [];
   for (var i = 0; i < meses; i++) {
     var mTotal = mesBase + i;
     var anoCobro = anoBase + Math.floor((mTotal - 1) / 12);
     var mesCobro = ((mTotal - 1) % 12) + 1;
-    agregarFila(HOJAS.cobros_arriendo, COLUMNAS.cobros_arriendo, {
-      id_cobro: siguienteId(HOJAS.cobros_arriendo, 'COB'),
+    filas.push({
+      id_cobro: '',                       // se numera al escribir
       id_arriendo: arriendo.id_arriendo,
       'año_cobro': anoCobro,
       mes_cobro: mesCobro,
@@ -325,6 +329,24 @@ function generarCobrosProyectados(arriendo) {
       observacion: ''
     });
   }
+  return filas;
+}
+
+// Escribe las filas numerando los id_cobro de corrido. siguienteId lee la hoja ENTERA,
+// así que llamarlo dentro del bucle costaba una lectura completa por mes de contrato.
+function escribirCobrosProyectados_(filas) {
+  if (!filas || !filas.length) return 0;
+  var base = siguienteId(HOJAS.cobros_arriendo, 'COB');
+  var n = parseInt(String(base).split('-')[1], 10) || 1;
+  filas.forEach(function(f, i){
+    f.id_cobro = 'COB-' + String(n + i).padStart(3, '0');
+    agregarFila(HOJAS.cobros_arriendo, COLUMNAS.cobros_arriendo, f);
+  });
+  return filas.length;
+}
+
+function generarCobrosProyectados(arriendo) {
+  return escribirCobrosProyectados_(filasCobrosProyectados_(arriendo));
 }
 
 // Crea hoja CobrosArriendo si no existe, agrega columna meses_contrato a Arriendos
@@ -825,7 +847,7 @@ function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
   var borradas = 0;
   var traza = [];
   // Handle FRESCO de la hoja en cada pasada (antes se reutilizaba el capturado al entrar,
-  // a diferencia de reemplazarFilasDeNegocio_ / verificarFilasDeNegocio_, que lo re-obtienen).
+  // a diferencia de insertarFilasDeNegocio_ / verificarFilasDeNegocio_, que lo re-obtienen).
   for (var intento = 0; intento < 3; intento++) {
     var sheet = getSheet(nombreHoja);
     if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
@@ -884,8 +906,14 @@ function borrarFilasNumeradas_(sheet, filas) {
 // excepción. Es el único camino permitido para la regla "editar = sobreescribe".
 // preparar(fila, i) es opcional: se llama justo antes de insertar cada fila (para
 // asignar ids secuenciales, que deben calcularse fila por fila).
-function reemplazarFilasDeNegocio_(nombreHoja, colNombre, valor, filas, columnas, preparar) {
-  var borradas = borrarFilasPorColumna_(nombreHoja, colNombre, valor);
+// Inserta las filas nuevas de un negocio y verifica que queden exactamente esas.
+//
+// Es SOLO la inserción a propósito: editar_arriendo / editar_venta hacen TODOS los borrados
+// primero y todas las escrituras después (ver la nota de fases allí). La versión anterior
+// juntaba borrar+insertar en un solo paso, y como el borrado de Comisiones falla de forma
+// intermitente, la edición abortaba a mitad dejando el negocio con la cabecera y las partes
+// nuevas pero las comisiones y los cobros viejos. No volver a juntar las dos mitades.
+function insertarFilasDeNegocio_(nombreHoja, colNombre, valor, filas, columnas, preparar) {
   var nuevas = filas || [];
   nuevas.forEach(function(fila, i){
     if (preparar) preparar(fila, i);
@@ -897,9 +925,9 @@ function reemplazarFilasDeNegocio_(nombreHoja, colNombre, valor, filas, columnas
     throw new Error('Verificación fallida en "' + nombreHoja + '" para ' + colNombre + '="' +
       valor + '": se esperaban ' + nuevas.length + ' fila(s) y quedaron ' + quedan + '.');
   }
-  Logger.log('[reemplazarFilas] ' + nombreHoja + ' ' + colNombre + '=' + valor +
-    ' borradas=' + borradas + ' insertadas=' + nuevas.length);
-  return { borradas: borradas, insertadas: nuevas.length };
+  Logger.log('[insertarFilas] ' + nombreHoja + ' ' + colNombre + '=' + valor +
+    ' insertadas=' + nuevas.length);
+  return { borradas: 0, insertadas: nuevas.length };
 }
 
 // Comprueba cuántas filas tiene un negocio en una hoja y lanza excepción si no son las
@@ -4135,35 +4163,53 @@ function doPost(e) {
       var errColEA = normalizarColegaje_(datosEA, 'arriendo');
       if (errColEA) { lock.releaseLock(); return jsonResponse({ ok:false, error: errColEA }); }
 
-      // Aplicar cambios
+      // Calcular TODO antes de tocar la hoja: comisiones nuevas y cobros proyectados con
+      // los valores nuevos. Si algún cálculo fallara, el negocio queda intacto.
       datosEA.id_arriendo = idArrE;
       var canonTotalEA = numVal(datosEA.valor_canon) + numVal(datosEA.administracion);
       aplicarColegaje_(datosEA, canonTotalEA * numVal(datosEA.pct_comision_oficina));
       datosEA.bono_captacion_pct = bonoCaptacionDe_(inmEA, datosEA['año'], datosEA.mes);
+      var filasComEA = filasComisiones_(idArrE, body.comisiones_asesores);
+      var filasCobEA = filasCobrosProyectados_(datosEA);
       asegurarColumnasColegaje_();
-      actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrE, datosEA);
 
+      // --- FASE 1: BORRAR (lo único que falla de verdad) ---
+      // deleteRows sobre Comisiones falla de forma intermitente, así que TODOS los borrados
+      // van primero y juntos: si uno no pega se lanza excepción y el arriendo queda
+      // EXACTAMENTE como estaba. Antes la cabecera y las partes ya se habían escrito y el
+      // borrado de comisiones abortaba la edición, dejando CobrosArriendo con los valores
+      // VIEJOS y el negocio a medio actualizar.
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idArrE);
+      var borrComEA = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idArrE);
+      var borrCobEA = borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
+
+      // --- FASE 2: ESCRIBIR ---
+      actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrE, datosEA);
       validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, true);
       verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idArrE, body.partes.length);
+      var verifComEA = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idArrE,
+        filasComEA, COLUMNAS.comisiones);
+      verifComEA.borradas = borrComEA;
 
-      // Editar = sobreescribe: borra verificando, inserta y vuelve a verificar. Si algo
-      // no cuadra lanza excepción en vez de dejar los asesores duplicados.
-      var verifComEA = reemplazarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idArrE,
-        filasComisiones_(idArrE, body.comisiones_asesores), COLUMNAS.comisiones);
-
-      // Regenerar cobros proyectados con los nuevos valores (se pierden ediciones manuales de cobros)
-      borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
+      // Cobros proyectados con los valores nuevos (se pierden ediciones manuales de cobros).
       var advCobEA = '';
-      try { generarCobrosProyectados(datosEA); }
-      catch (eCobEA) { advCobEA = 'Arriendo actualizado, pero los cobros mensuales NO se regeneraron: ' + eCobEA.message + '. Revisa la hoja CobrosArriendo.'; }
+      var cobrosEA = 0;
+      try {
+        cobrosEA = escribirCobrosProyectados_(filasCobEA);
+        verificarFilasDeNegocio_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE, filasCobEA.length);
+      } catch (eCobEA) {
+        advCobEA = 'Arriendo actualizado, pero los cobros mensuales NO quedaron bien: ' +
+          eCobEA.message + '. Se borraron ' + borrCobEA + ' cobro(s) viejo(s); revisa la hoja CobrosArriendo.';
+      }
 
       invalidarCacheHojas([HOJAS.arriendos, HOJAS.comisiones, HOJAS.partes, HOJAS.cobros_arriendo]);
       Logger.log('[editar_arriendo] ' + idArrE + ' comisiones borradas=' + verifComEA.borradas +
-        ' insertadas=' + verifComEA.insertadas + ' partes=' + body.partes.length);
+        ' insertadas=' + verifComEA.insertadas + ' partes=' + body.partes.length +
+        ' cobros borrados=' + borrCobEA + ' regenerados=' + cobrosEA);
       lock.releaseLock();
       return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado',
-        verificacion: { comisiones: verifComEA, partes: body.partes.length },
+        verificacion: { comisiones: verifComEA, partes: body.partes.length,
+                        cobros: { borrados: borrCobEA, regenerados: cobrosEA } },
         advertencia: advCobEA || undefined });
     }
 
@@ -4243,29 +4289,36 @@ function doPost(e) {
       }
 
       // Aplicar cambios
+      // Calcular y leer TODO antes de tocar la hoja (mismas fases que editar_arriendo).
       datosEV.id_venta = idVntE;
       datosEV.comision_por_punta = datosEV.comision_oficina / 2;
-      asegurarColumnasColegaje_();
-      actualizarFila(HOJAS.ventas, 'id_venta', idVntE, datosEV);
-
-      borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
-      validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, true);
-      verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idVntE, body.partes.length);
-
-      // Editar = sobreescribe: borra verificando, inserta y vuelve a verificar. Si algo
-      // no cuadra lanza excepción en vez de dejar los asesores duplicados.
-      var verifComEV = reemplazarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idVntE,
-        filasComisiones_(idVntE, body.comisiones_asesores), COLUMNAS.comisiones);
-
-      // Regenerar plan de pagos con los nuevos valores (filas ya validadas arriba).
-      // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
-      // Las marcas "comisión del hito ya pagada" se conservan emparejando por posición
-      // (hito 1 con hito 1, etc.); si cambia el número de cuotas se avisa al cliente.
+      var filasComEV = filasComisiones_(idVntE, body.comisiones_asesores);
+      // Los pagos actuales se leen ANTES de borrarlos: de ahí salen las marcas de
+      // "comisión del hito ya pagada" que se conservan emparejando por posición.
       var pagosPrevEV = leerHoja(HOJAS.pagos).filter(function(p){
         return String(p.id_venta || '').trim() === String(idVntE).trim();
       });
+      asegurarColumnasColegaje_();
       if (resPagosEV && resPagosEV.filas.length > 0) { asegurarColumnaPctPago(); asegurarColumnasPagado_(); }
-      var verifPagEV = reemplazarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
+
+      // --- FASE 1: BORRAR (lo único que falla de verdad) ---
+      // Todos los borrados juntos y antes de escribir: si uno no pega se lanza excepción y
+      // la venta queda EXACTAMENTE como estaba, en vez de a medio actualizar.
+      borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
+      var borrComEV = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idVntE);
+      var borrPagEV = borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
+
+      // --- FASE 2: ESCRIBIR ---
+      actualizarFila(HOJAS.ventas, 'id_venta', idVntE, datosEV);
+      validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, true);
+      verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idVntE, body.partes.length);
+      var verifComEV = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idVntE,
+        filasComEV, COLUMNAS.comisiones);
+      verifComEV.borradas = borrComEV;
+
+      // Plan de pagos con los valores nuevos (filas ya validadas arriba).
+      // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
+      var verifPagEV = insertarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
         (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], COLUMNAS.pagos,
         function(fila, i){
           fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
@@ -4277,6 +4330,7 @@ function doPost(e) {
             fila.comision_pagada_por = prev.comision_pagada_por || '';
           }
         });
+      verifPagEV.borradas = borrPagEV;
       var advPagEV = '';
       var marcadosPrevEV = pagosPrevEV.filter(comisionPagada_).length;
       if (marcadosPrevEV > 0 && pagosPrevEV.length !== verifPagEV.insertadas) {

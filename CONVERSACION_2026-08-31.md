@@ -233,3 +233,71 @@ reintento **habría evitado el error que vio el usuario**.
 4. Comprobar que `Comisiones` no perdió filas ajenas durante los reintentos.
 5. Decidir qué hacer con la **no-atomicidad** de `editar_arriendo` / `editar_venta`.
 
+---
+
+# Tercera parte — CobrosArriendo no se actualizaba al editar
+
+## 14. Pedido del usuario
+
+> "Ya entiendo también qué está pasando: cuando edito un arriendo y cambio el negocio, no se
+> cambia en CobrosArriendo. Arréglalo."
+
+Diagnóstico acertado del usuario: es la **consecuencia directa de la no-atomicidad** detectada
+en el punto 10.
+
+## 15. La causa, confirmada
+
+`editar_arriendo` escribía y borraba intercalado, en este orden:
+
+| # | Operación | ¿Escribe? |
+|---|---|---|
+| 1 | `actualizarFila(Arriendos)` | **sí** — cabecera con el canon nuevo |
+| 2 | borrar Partes + `validarYGuardarPartes` | **sí** |
+| 3 | `reemplazarFilasDeNegocio_(Comisiones)` — borra e inserta | ← **aquí lanzaba** |
+| 4 | borrar CobrosArriendo + `generarCobrosProyectados` | nunca llegaba |
+
+Como el borrado de Comisiones falla de forma intermitente, la excepción del paso 3 dejaba la
+cabecera con el **canon nuevo** y `CobrosArriendo` con el **valor viejo**. Exactamente lo que
+reportó el usuario. `editar_venta` tenía la misma estructura con el plan de pagos.
+
+Comprobado además que la regeneración en sí es correcta: `aplicarColegaje_` siempre llena
+`comision_oficina`, que es lo que `generarCobrosProyectados` escribe en `valor_cobrado`. El
+problema era **solo el orden**.
+
+## 16. El arreglo: dos fases, borrar antes de escribir
+
+`editar_arriendo` y `editar_venta` quedan reorganizados en tres bloques:
+
+1. **Calcular** — comisiones nuevas y cobros proyectados en memoria; en ventas, leer los pagos
+   actuales (de ahí salen las marcas de comisión pagada). Sin tocar la hoja.
+2. **FASE 1 — BORRAR**: partes, comisiones y cobros/pagos, todos juntos. Es lo único que falla
+   de verdad. Si un borrado no pega, se lanza excepción y **el negocio queda exactamente como
+   estaba**.
+3. **FASE 2 — ESCRIBIR**: cabecera, partes, comisiones y cobros/pagos.
+
+Ahora "No se insertó nada nuevo" es **cierto para toda la operación**, no solo para Comisiones.
+
+### Cambios de apoyo
+
+- **`insertarFilasDeNegocio_`** — la mitad "insertar y verificar" de la antigua
+  `reemplazarFilasDeNegocio_`.
+- **`reemplazarFilasDeNegocio_` eliminada.** Se quedó sin usos, y dejarla era una trampa:
+  juntar borrar+insertar en un paso es justo lo que causaba el estado a medias.
+- **`filasCobrosProyectados_`** (calcula, no escribe) + **`escribirCobrosProyectados_`**
+  (escribe numerando los `id_cobro` de corrido). `generarCobrosProyectados` sigue existiendo
+  para `registrar_arriendo`. De paso arregla un derroche: `siguienteId` lee la hoja **entera**,
+  y se llamaba **dentro del bucle** — 12 lecturas completas de CobrosArriendo por arriendo.
+- La respuesta y el `Logger` ahora informan de los cobros borrados y regenerados, así que se ve
+  en *Ejecuciones* si se actualizaron.
+
+## 17. Pruebas
+
+Arnés en Node con hojas simuladas, **7 de 7 pasan**:
+
+- Edición normal → los 12 cobros quedan con el **valor nuevo**.
+- **El bug**: con el borrado de comisiones saboteado, ni `CobrosArriendo` ni `Comisiones` se
+  tocan (antes la cabecera ya estaba escrita y los cobros se quedaban viejos).
+- Fallo pasajero del borrado → el reintento completa todo, cobros incluidos.
+- `id_cobro` únicos y correlativos; no se tocan los cobros de otros arriendos; contrato de 24
+  meses cruza de año bien; `filasCobrosProyectados_` no escribe por sí sola.
+
