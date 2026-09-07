@@ -4488,7 +4488,9 @@ async function guardarAccion() {
     idInm = val('ac_inmueble','Escoja el inmueble captado'); if (!idInm) return;
     if (!desc.trim()) { toast('Una captaci\u00f3n debe llevar observaci\u00f3n (qu\u00e9 se capt\u00f3, condiciones, contacto)','er'); document.getElementById('ac_desc').focus(); return; }
   }
-  const mes = (new Date(fecha)).getMonth() + 1;
+  // Mes desde el texto YYYY-MM-DD: new Date('YYYY-MM-DD') es medianoche UTC y en
+  // Colombia (UTC-5) el dia 1 caia en el mes anterior.
+  const mes = (anioMesDeFecha(fecha) || {}).mes || (new Date(fecha)).getMonth() + 1;
   try {
     const r = await apiPost({
       action:'registrar_accion',

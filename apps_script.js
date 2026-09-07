@@ -3726,7 +3726,10 @@ function doPost(e) {
           lock.releaseLock();
           return jsonResponse({ ok:false, error:'Fecha inválida: ' + datos.fecha });
         }
-        if (!datos.mes) datos.mes = fechaP.getMonth() + 1;
+        // El mes se deriva SIEMPRE del texto de la fecha (no de Date, que interpreta
+        // 'YYYY-MM-DD' como UTC y corria el dia 1 al mes anterior en Colombia).
+        var amAcc = anioMesDe_(datos.fecha);
+        datos.mes = amAcc ? amAcc.mes : (datos.mes || fechaP.getMonth() + 1);
       } else if (!datos.mes) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'Falta fecha o mes de la acción' });
