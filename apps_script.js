@@ -816,62 +816,58 @@ function filasConValor_(sheet, colNombre, valor) {
 //
 // A PRUEBA DE DUPLICADOS (29-ago-2026): antes devolvía 0 en silencio si la columna no
 // existía o si deleteRow no surtía efecto, y quien llamaba seguía insertando las filas
-// nuevas → el negocio quedaba con los asesores repetidos. Ahora borra por bloques
-// contiguos, hace flush, RE-LEE para verificar que no quedó ninguna, reintenta una vez
-// y, si aún quedan, LANZA EXCEPCIÓN (la edición completa falla con mensaje claro).
-// Relee un bloque de n filas justo antes de borrarlo y confirma que TODAS pertenecen al
-// negocio objetivo. Sin esta guarda se borra por POSICIÓN a partir de un snapshot: si una
-// re-lectura llegara desfasada, el reintento borraría las filas que ahora ocupan esos
-// números — comisiones de OTRO negocio, perdidas en silencio.
-function confirmarBloqueBorrable_(sheet, colNombre, objetivo, inicio, n) {
-  var ultimaCol = sheet.getLastColumn();
-  if (ultimaCol < 1) throw new Error('La hoja "' + sheet.getName() + '" está vacía');
-  var idx = indiceColumna_(sheet.getRange(1, 1, 1, ultimaCol).getValues()[0], colNombre);
+// nuevas → el negocio quedaba con los asesores repetidos. Ahora RE-LEE para verificar que
+// no quedó ninguna y, si aún quedan, LANZA EXCEPCIÓN (la edición falla con mensaje claro).
+// Desde el 14-oct-2026 no usa deleteRows (ver borrarPorReescritura_).
+
+// Quita las filas del negocio SIN deleteRows: lee el tramo desde la primera fila que casa
+// hasta el final, lo reescribe sin esas filas (setValues, que escribe también en filas
+// ocultas por un filtro) y limpia las n filas sobrantes del final. Es determinista: no
+// depende de deleteRows, que en esta hoja falla de forma intermitente (29-ago / 14-oct-2026,
+// "quedan 2 (filas 97, 98)"). Si el tramo tiene fórmulas aborta: setValues las aplastaría.
+function borrarPorReescritura_(sheet, colNombre, objetivo) {
+  var rango = sheet.getDataRange();
+  var data = rango.getValues();
+  if (data.length < 2) return 0;
+  var idx = indiceColumna_(data[0], colNombre);
   if (idx === -1) {
     throw new Error('La hoja "' + sheet.getName() + '" no tiene la columna "' + colNombre +
       '". No se modificó nada para no duplicar filas.');
   }
-  var bloque = sheet.getRange(inicio, idx + 1, n, 1).getValues();
-  for (var k = 0; k < n; k++) {
-    var v = String(bloque[k][0] == null ? '' : bloque[k][0]).trim();
-    if (v !== objetivo) {
-      throw new Error('Borrado abortado en "' + sheet.getName() + '": la fila ' + (inicio + k) +
-        ' se iba a borrar por ' + colNombre + '="' + objetivo + '" pero contiene "' + v +
-        '". No se borró nada, para no perder datos de otro negocio.');
-    }
+  var casa = function(fila){ return String(fila[idx] == null ? '' : fila[idx]).trim() === objetivo; };
+  var r0 = -1;
+  for (var r = 1; r < data.length; r++) { if (casa(data[r])) { r0 = r; break; } }
+  if (r0 === -1) return 0;
+  var ncol = data[0].length;
+  var tramo = data.slice(r0);
+  var formulas = sheet.getRange(r0 + 1, 1, tramo.length, ncol).getFormulas();
+  var conFormula = formulas.some(function(f){ return f.some(function(x){ return x !== ''; }); });
+  if (conFormula) {
+    throw new Error('La hoja "' + sheet.getName() + '" tiene fórmulas en las filas del negocio o debajo; ' +
+      'no se borró nada para no dañarlas.');
   }
+  var quedan = tramo.filter(function(f){ return !casa(f); });
+  var n = tramo.length - quedan.length;
+  if (quedan.length) sheet.getRange(r0 + 1, 1, quedan.length, ncol).setValues(quedan);
+  sheet.getRange(r0 + 1 + quedan.length, 1, n, ncol).clearContent();
+  SpreadsheetApp.flush();
+  return n;
 }
 
 function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
   var objetivo = String(valor == null ? '' : valor).trim();
   var borradas = 0;
   var traza = [];
-  // Handle FRESCO de la hoja en cada pasada (antes se reutilizaba el capturado al entrar,
-  // a diferencia de insertarFilasDeNegocio_ / verificarFilasDeNegocio_, que lo re-obtienen).
-  for (var intento = 0; intento < 3; intento++) {
+  // Ya no se usa deleteRows (fallaba de forma intermitente y no se pudo explicar): se
+  // reescribe el tramo afectado. Un segundo intento solo por si la re-lectura aún ve filas.
+  for (var intento = 0; intento < 2; intento++) {
     var sheet = getSheet(nombreHoja);
     if (!sheet) throw new Error('Hoja "' + nombreHoja + '" no encontrada');
     var filas = filasConValor_(sheet, colNombre, valor);
     if (!filas.length) { traza.push('#' + intento + ' sin filas'); break; }
-    var antes = sheet.getLastRow();
-    // De abajo hacia arriba y por bloques contiguos: no desfasa índices y es más rápido.
-    filas.sort(function(a, b){ return b - a; });
-    var i = 0;
-    while (i < filas.length) {
-      var fin = filas[i], n = 1;
-      while (i + n < filas.length && filas[i + n] === fin - n) n++;
-      var inicio = fin - n + 1;
-      confirmarBloqueBorrable_(sheet, colNombre, objetivo, inicio, n);
-      sheet.deleteRows(inicio, n);
-      borradas += n;
-      i += n;
-    }
-    SpreadsheetApp.flush();
-    var despues = getSheet(nombreHoja).getLastRow();
-    traza.push('#' + intento + ' filas=[' + filas.join(',') + '] lastRow ' + antes + '->' + despues);
-    // Si la hoja no encogió, el deleteRows no surtió efecto (el fallo intermitente que
-    // perseguimos desde el 29-ago). Dar aire antes de reintentar.
-    if (despues === antes) Utilities.sleep(400);
+    var n = borrarPorReescritura_(sheet, colNombre, objetivo);
+    borradas += n;
+    traza.push('#' + intento + ' filas=[' + filas.join(',') + '] reescritas, quitadas=' + n);
   }
   var quedan = filasConValor_(getSheet(nombreHoja), colNombre, valor);
   Logger.log('[borrarFilas] ' + nombreHoja + ' ' + colNombre + '="' + objetivo + '" borradas=' +
@@ -882,6 +878,65 @@ function borrarFilasPorColumna_(nombreHoja, colNombre, valor) {
       '). No se insertó nada nuevo para no duplicar. Reintenta el guardado.');
   }
   return borradas;
+}
+
+// RESPALDO de un negocio antes de editarlo. Editar borra partes/comisiones/pagos de varias
+// hojas y luego escribe: si algo lanza excepción a mitad (14-oct-2026: el borrado de Pagos de
+// VNT-051 falló DESPUÉS de borrar sus Partes y Comisiones → la venta quedó sin asesores), hay
+// que devolver todo a como estaba. specs: [{hoja, col, valor, enSitio}]; enSitio = la fila
+// cabecera (Ventas/Arriendos), que se restaura en su misma posición en vez de re-agregarse.
+function respaldarNegocio_(specs) {
+  return specs.map(function(s){
+    var sheet = getSheet(s.hoja);
+    var filas = filasConValor_(sheet, s.col, s.valor);
+    var ncol = sheet.getLastColumn();
+    var valores = filas.map(function(f){ return sheet.getRange(f, 1, 1, ncol).getValues()[0]; });
+    return { hoja: s.hoja, col: s.col, valor: s.valor, enSitio: !!s.enSitio, filas: valores };
+  });
+}
+
+// Devuelve las hojas al respaldo. Nunca lanza: junta los fallos y los devuelve como texto
+// (vacío si todo quedó restaurado) para sumarlos al mensaje de error original.
+function restaurarNegocio_(respaldos) {
+  var fallos = [];
+  respaldos.forEach(function(r){
+    try {
+      var sheet = getSheet(r.hoja);
+      var ncol = sheet.getLastColumn();
+      var pad = function(fila){ var f = fila.slice(0, ncol); while (f.length < ncol) f.push(''); return f; };
+      if (r.enSitio) {
+        var pos = filasConValor_(sheet, r.col, r.valor);
+        if (pos.length === 1 && r.filas.length === 1) sheet.getRange(pos[0], 1, 1, ncol).setValues([pad(r.filas[0])]);
+        return;
+      }
+      borrarFilasPorColumna_(r.hoja, r.col, r.valor);
+      if (r.filas.length) {
+        sheet = getSheet(r.hoja);
+        sheet.getRange(sheet.getLastRow() + 1, 1, r.filas.length, ncol).setValues(r.filas.map(pad));
+      }
+    } catch (e) {
+      fallos.push(r.hoja + ': ' + e.message);
+    }
+  });
+  SpreadsheetApp.flush();
+  Logger.log('[restaurarNegocio] ' + respaldos.map(function(r){ return r.hoja + '=' + r.filas.length; }).join(' ') +
+    (fallos.length ? ' FALLOS: ' + fallos.join(' | ') : ' OK'));
+  return fallos.join(' | ');
+}
+
+// Ejecuta fn() (los borrados + escrituras de una edición). Si lanza, restaura el respaldo y
+// relanza con un mensaje que dice si el negocio quedó como estaba o no.
+function conRespaldo_(specs, fn) {
+  var resp = respaldarNegocio_(specs);
+  try {
+    return fn();
+  } catch (e) {
+    var fallo = restaurarNegocio_(resp);
+    invalidarCacheHojas(specs.map(function(s){ return s.hoja; }));
+    throw new Error(e.message + (fallo
+      ? ' ¡OJO! No se pudo restaurar del todo el negocio (' + fallo + '). Revisa la hoja o el historial de versiones.'
+      : ' El negocio se restauró tal como estaba; no se perdió nada.'));
+  }
 }
 
 // Borra una lista de números de fila (1-based) de una hoja, de abajo hacia arriba y por
@@ -986,6 +1041,8 @@ function periodosFinancierosNegocio_(idNegocio, tipoNegocio) {
 // True si algún asesor del negocio YA cobró su bonificación en un periodo que el negocio
 // impacta. En ese caso, editar o borrar el negocio desincronizaría una cuenta de cobro ya
 // emitida → no se permite borrado real; se debe cancelar (soft) dejando rastro de auditoría.
+// (Lo usan editar_arriendo y eliminar_negocio. editar_venta NO: allí solo se congelan los
+// hitos de meses liquidados, ver validarEdicionVentaLiquidada_.)
 function negocioBloqueadoPorCobro_(idNegocio, tipoNegocio) {
   var comis = leerHoja(HOJAS.comisiones).filter(function(c){ return String(c.id_negocio) === String(idNegocio); });
   if (!comis.length) return false;
@@ -999,6 +1056,85 @@ function negocioBloqueadoPorCobro_(idNegocio, tipoNegocio) {
     var ba = parseInt(b['año'], 10) || 0, bm = parseInt(b.mes, 10) || 0;
     return periodos.some(function(p){ return p.ano === ba && p.mes === bm; });
   });
+}
+
+// Set {"año|mes": true} de los meses en que alguno de esos asesores ya cobró su bonificación.
+function periodosCobradosAsesores_(idsAsesores) {
+  var set = {};
+  leerHoja(HOJAS.bonificaciones_mes).forEach(function(b){
+    if (!b.cobrada_en || !idsAsesores[b.id_asesor]) return;
+    set[(parseInt(b['año'], 10) || 0) + '|' + (parseInt(b.mes, 10) || 0)] = true;
+  });
+  return set;
+}
+
+// Editar una venta cuyos hitos caen (algunos) en meses ya liquidados: se permite siempre que
+// lo que aportó cada hito liquidado a cada asesor quede idéntico
+// (valor_comision × valor_cobrado / comision_oficina, en su mes_pago). Es decir:
+//   - misma comisión de oficina y misma comisión por asesor,
+//   - cada hito liquidado sigue existiendo con el mismo mes/año y valor_cobrado,
+//   - ningún otro hito cae en un mes liquidado.
+// Devuelve '' si es válido o el mensaje de error.
+function validarEdicionVentaLiquidada_(idVenta, vntActual, pagosPrev, filasPagosNuevas, comOfNueva, filasComNuevas) {
+  // Sin repetir por (id_asesor, punta), igual que filasComisiones_: una hoja con comisiones
+  // duplicadas no debe leerse como "la comisión del asesor cambió".
+  var comPrev = {};
+  leerHoja(HOJAS.comisiones).forEach(function(c){
+    if (String(c.id_negocio) === String(idVenta)) comPrev[String(c.id_asesor) + '|' + String(c.punta)] = c;
+  });
+  var porAsesorPrev = {}, porAsesorNuevo = {}, asesores = {};
+  Object.keys(comPrev).forEach(function(k){
+    var c = comPrev[k];
+    asesores[c.id_asesor] = true;
+    porAsesorPrev[c.id_asesor] = (porAsesorPrev[c.id_asesor] || 0) + numVal(c.valor_comision);
+  });
+  (filasComNuevas || []).forEach(function(c){
+    asesores[c.id_asesor] = true;
+    porAsesorNuevo[c.id_asesor] = (porAsesorNuevo[c.id_asesor] || 0) + numVal(c.valor_comision);
+  });
+  var cobrados = periodosCobradosAsesores_(asesores);
+  var periodo = function(p){ return (parseInt(p['año_pago'] || p['ano_pago'], 10) || 0) + '|' + (parseInt(p.mes_pago, 10) || 0); };
+  var bloqueados = pagosPrev.filter(function(p){
+    return String(p.estado || '').toUpperCase() !== 'ANULADO' && cobrados[periodo(p)];
+  });
+  if (!bloqueados.length) return '';
+
+  var MESES = ['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var nombreHito = function(p){
+    return MESES[parseInt(p.mes_pago, 10) || 0] + '-' + (parseInt(p['año_pago'] || p['ano_pago'], 10) || '') +
+      ' ($' + Math.round(numVal(p.valor_cobrado)).toLocaleString() + ')';
+  };
+
+  if (Math.abs(numVal(comOfNueva) - numVal(vntActual.comision_oficina)) > 1) {
+    return 'Esta venta tiene hitos en meses ya liquidados: no se puede cambiar el valor base, el % ni el colegaje. Solo puedes editar los hitos de meses no liquidados.';
+  }
+  var cambioCom = Object.keys(asesores).some(function(id){
+    return Math.abs((porAsesorPrev[id] || 0) - (porAsesorNuevo[id] || 0)) > 1;
+  });
+  if (cambioCom) {
+    return 'Esta venta tiene hitos en meses ya liquidados: no se pueden cambiar los asesores ni sus comisiones/participaciones. Solo puedes editar los hitos de meses no liquidados.';
+  }
+
+  var usadas = {};
+  for (var i = 0; i < bloqueados.length; i++) {
+    var b = bloqueados[i];
+    var idx = -1;
+    for (var j = 0; j < filasPagosNuevas.length; j++) {
+      var f = filasPagosNuevas[j];
+      if (usadas[j]) continue;
+      if (periodo(f) === periodo(b) && Math.abs(numVal(f.valor_cobrado) - numVal(b.valor_cobrado)) <= 1) { idx = j; break; }
+    }
+    if (idx === -1) {
+      return 'El hito de ' + nombreHito(b) + ' ya está en una bonificación cobrada: no se puede cambiar su fecha ni su %/valor. Solo puedes editar los hitos de meses no liquidados.';
+    }
+    usadas[idx] = true;
+  }
+  for (var k = 0; k < filasPagosNuevas.length; k++) {
+    if (!usadas[k] && cobrados[periodo(filasPagosNuevas[k])]) {
+      return 'No se puede poner un hito en ' + nombreHito(filasPagosNuevas[k]) + ': ese mes ya fue liquidado. Usa un mes no liquidado.';
+    }
+  }
+  return '';
 }
 
 // Agrega una fila a una hoja. Se construye por los ENCABEZADOS FÍSICOS de la hoja
@@ -1279,6 +1415,7 @@ function diagnosticarBorrado(idNegocio, nombreHoja, colNombre) {
 //   3) verMarcaPagadosHastaJulio2026      -> informe, NO toca nada
 //   4) aplicarMarcaPagadosHastaJulio2026  -> marca pagado todo lo anterior a julio 2026
 //   5) diagnosticarBorradoARR243          -> informe, NO toca nada (por qué falla el borrado)
+//   6) verNegociosIncompletos             -> informe, NO toca nada (negocios sin asesores/partes)
 
 function verReparacionDuplicados() {
   return repararDuplicados();
@@ -1298,6 +1435,43 @@ function aplicarMarcaPagadosHastaJulio2026() {
 
 function diagnosticarBorradoARR243() {
   return diagnosticarBorrado('ARR-243');
+}
+
+// 6) verNegociosIncompletos -> informe, NO toca nada.
+// Lista arriendos y ventas vigentes (no cancelados) a los que les faltan comisiones, partes
+// o (ventas) pagos: el rastro que deja una edición que falló a mitad antes del 14-oct-2026
+// (borraba partes y comisiones y luego fallaba en Pagos/Cobros sin restaurar).
+function verNegociosIncompletos() {
+  var cuenta = function(hoja, col){
+    var m = {};
+    leerHoja(hoja).forEach(function(r){ var k = String(r[col] || '').trim(); if (k) m[k] = (m[k] || 0) + 1; });
+    return m;
+  };
+  var com = cuenta(HOJAS.comisiones, 'id_negocio');
+  var par = cuenta(HOJAS.partes, 'id_negocio');
+  var pag = cuenta(HOJAS.pagos, 'id_venta');
+  var L = ['=== NEGOCIOS INCOMPLETOS (solo lectura) ==='];
+  var revisar = function(id, tipo, extra){
+    var falta = [];
+    if (!com[id]) falta.push('SIN COMISIONES (ningún asesor)');
+    if (!par[id]) falta.push('sin partes');
+    if (extra) falta.push(extra);
+    if (falta.length) L.push(tipo + ' ' + id + ': ' + falta.join(', '));
+  };
+  leerHoja(HOJAS.ventas).forEach(function(v){
+    var id = String(v.id_venta || '').trim();
+    if (!id || String(v.estado_venta || '').toUpperCase() === 'CANCELADA') return;
+    revisar(id, 'venta', pag[id] ? '' : 'sin pagos/hitos');
+  });
+  leerHoja(HOJAS.arriendos).forEach(function(a){
+    var id = String(a.id_arriendo || '').trim();
+    if (!id || String(a.estado_arriendo || '').toUpperCase() === 'CANCELADO') return;
+    revisar(id, 'arriendo', '');
+  });
+  if (L.length === 1) L.push('Ninguno: todos los negocios vigentes tienen comisiones y partes.');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
 }
 
 // ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
@@ -4176,23 +4350,28 @@ function doPost(e) {
       var filasCobEA = filasCobrosProyectados_(datosEA);
       asegurarColumnasColegaje_();
 
-      // --- FASE 1: BORRAR (lo único que falla de verdad) ---
-      // deleteRows sobre Comisiones falla de forma intermitente, así que TODOS los borrados
-      // van primero y juntos: si uno no pega se lanza excepción y el arriendo queda
-      // EXACTAMENTE como estaba. Antes la cabecera y las partes ya se habían escrito y el
-      // borrado de comisiones abortaba la edición, dejando CobrosArriendo con los valores
-      // VIEJOS y el negocio a medio actualizar.
+      // Borrados y escrituras dentro de conRespaldo_: si algo lanza a mitad, el arriendo
+      // vuelve a como estaba (cabecera, partes, comisiones y cobros).
+      var borrComEA, borrCobEA, verifComEA;
+      conRespaldo_([
+        { hoja: HOJAS.arriendos, col: 'id_arriendo', valor: idArrE, enSitio: true },
+        { hoja: HOJAS.partes, col: 'id_negocio', valor: idArrE },
+        { hoja: HOJAS.comisiones, col: 'id_negocio', valor: idArrE },
+        { hoja: HOJAS.cobros_arriendo, col: 'id_arriendo', valor: idArrE }
+      ], function(){
+      // --- FASE 1: BORRAR (todos juntos, antes de escribir) ---
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idArrE);
-      var borrComEA = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idArrE);
-      var borrCobEA = borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
+      borrComEA = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idArrE);
+      borrCobEA = borrarFilasPorColumna_(HOJAS.cobros_arriendo, 'id_arriendo', idArrE);
 
       // --- FASE 2: ESCRIBIR ---
       actualizarFila(HOJAS.arriendos, 'id_arriendo', idArrE, datosEA);
       validarYGuardarPartes(idArrE, 'arriendo', ['arrendador','arrendatario'], body.partes, cliRefEA, true);
       verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idArrE, body.partes.length);
-      var verifComEA = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idArrE,
+      verifComEA = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idArrE,
         filasComEA, COLUMNAS.comisiones);
       verifComEA.borradas = borrComEA;
+      });
 
       // Cobros proyectados con los valores nuevos (se pierden ediciones manuales de cobros).
       var advCobEA = '';
@@ -4233,11 +4412,8 @@ function doPost(e) {
         lock.releaseLock();
         return jsonResponse({ ok:false, error:'No se puede editar una venta cancelada' });
       }
-      if (negocioBloqueadoPorCobro_(idVntE, 'venta')) {
-        lock.releaseLock();
-        return jsonResponse({ ok:false, requiere_cancelacion:true,
-          error:'Esta venta ya tiene bonificaciones cobradas de un mes de pago; editarla desincronizaría cuentas de cobro ya emitidas. Si está mal, cancélala.' });
-      }
+      // Los meses ya liquidados NO bloquean toda la venta: más abajo (validarEdicionVentaLiquidada_)
+      // solo se congelan los hitos de esos meses; los pendientes siguen editables.
 
       var datosEV = body.datos;
       if (!datosEV['año']) datosEV['año'] = vntE['año'] || new Date().getFullYear();
@@ -4301,27 +4477,37 @@ function doPost(e) {
       var pagosPrevEV = leerHoja(HOJAS.pagos).filter(function(p){
         return String(p.id_venta || '').trim() === String(idVntE).trim();
       });
+      var errLiqEV = validarEdicionVentaLiquidada_(idVntE, vntE, pagosPrevEV,
+        (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], comOfEV, filasComEV);
+      if (errLiqEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errLiqEV }); }
       asegurarColumnasColegaje_();
       if (resPagosEV && resPagosEV.filas.length > 0) { asegurarColumnaPctPago(); asegurarColumnasPagado_(); }
 
-      // --- FASE 1: BORRAR (lo único que falla de verdad) ---
-      // Todos los borrados juntos y antes de escribir: si uno no pega se lanza excepción y
-      // la venta queda EXACTAMENTE como estaba, en vez de a medio actualizar.
+      // Todo lo que borra/escribe va dentro de conRespaldo_: si algo lanza a mitad, la venta
+      // vuelve a como estaba (antes, un fallo en Pagos dejaba la venta SIN partes ni comisiones).
+      var borrComEV, borrPagEV, verifComEV, verifPagEV;
+      conRespaldo_([
+        { hoja: HOJAS.ventas, col: 'id_venta', valor: idVntE, enSitio: true },
+        { hoja: HOJAS.partes, col: 'id_negocio', valor: idVntE },
+        { hoja: HOJAS.comisiones, col: 'id_negocio', valor: idVntE },
+        { hoja: HOJAS.pagos, col: 'id_venta', valor: idVntE }
+      ], function(){
+      // --- FASE 1: BORRAR ---
       borrarFilasPorColumna_(HOJAS.partes, 'id_negocio', idVntE);
-      var borrComEV = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idVntE);
-      var borrPagEV = borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
+      borrComEV = borrarFilasPorColumna_(HOJAS.comisiones, 'id_negocio', idVntE);
+      borrPagEV = borrarFilasPorColumna_(HOJAS.pagos, 'id_venta', idVntE);
 
       // --- FASE 2: ESCRIBIR ---
       actualizarFila(HOJAS.ventas, 'id_venta', idVntE, datosEV);
       validarYGuardarPartes(idVntE, 'venta', ['vendedor','comprador'], body.partes, cliRefEV, true);
       verificarFilasDeNegocio_(HOJAS.partes, 'id_negocio', idVntE, body.partes.length);
-      var verifComEV = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idVntE,
+      verifComEV = insertarFilasDeNegocio_(HOJAS.comisiones, 'id_negocio', idVntE,
         filasComEV, COLUMNAS.comisiones);
       verifComEV.borradas = borrComEV;
 
       // Plan de pagos con los valores nuevos (filas ya validadas arriba).
       // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
-      var verifPagEV = insertarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
+      verifPagEV = insertarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
         (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], COLUMNAS.pagos,
         function(fila, i){
           fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
@@ -4334,6 +4520,7 @@ function doPost(e) {
           }
         });
       verifPagEV.borradas = borrPagEV;
+      });
       var advPagEV = '';
       var marcadosPrevEV = pagosPrevEV.filter(comisionPagada_).length;
       if (marcadosPrevEV > 0 && pagosPrevEV.length !== verifPagEV.insertadas) {
