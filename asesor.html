@@ -3095,6 +3095,7 @@ function renderMisNegocios(){
   const fAnio = Number(document.getElementById('negFiltroAnio')?.value || 0);
   const fMes = Number(document.getElementById('negFiltroMes')?.value || 0);
   const fPunta = document.getElementById('negFiltroPunta')?.value || '';
+  const fPagado = document.getElementById('negFiltroPagado')?.value || '';
   // Búsqueda por código o nombre del inmueble (igual que en Gestión)
   const fBusquedaRaw = document.getElementById('negBusqueda')?.value || '';
   const fBusqueda = normalizarTexto(fBusquedaRaw);
@@ -3153,6 +3154,14 @@ function renderMisNegocios(){
     ventasFilt = ventasFilt.filter(v => matchBusq(v.id_inmueble));
   }
 
+  // Estado del pago de comisiones (marca de gerencia; en ventas se mide por hitos)
+  if (fPagado) {
+    const est=(neg,esArr)=>estadoPagoNeg(r,neg,esArr).estado;
+    const quiere=fPagado==='si'?'todos':(fPagado==='parcial'?'parcial':'ninguno');
+    ventasFilt = ventasFilt.filter(v=>est(v,false)===quiere);
+    arriendosFilt = arriendosFilt.filter(a=>est(a,true)===quiere);
+  }
+
   // Último creado primero (ID incremental descendente)
   arriendosFilt.sort((a,b)=>numIdNeg(b.id_arriendo)-numIdNeg(a.id_arriendo));
   ventasFilt.sort((a,b)=>numIdNeg(b.id_venta)-numIdNeg(a.id_venta));
@@ -3193,7 +3202,16 @@ function renderMisNegocios(){
         </select>
       </div>
       <div class="neg-filtro-grupo">
-        <button class="btn btn-limpiar" onclick="document.getElementById('negFiltroAnio').value=0;document.getElementById('negFiltroMes').value=0;document.getElementById('negFiltroPunta').value='';document.getElementById('negBusqueda').value='';renderMisNegocios()">Limpiar filtros</button>
+        <label>Pagado:</label>
+        <select id="negFiltroPagado" onchange="renderMisNegocios()">
+          <option value="">Todos</option>
+          <option value="si"${fPagado==='si'?' selected':''}>Pagados</option>
+          <option value="parcial"${fPagado==='parcial'?' selected':''}>Parciales</option>
+          <option value="no"${fPagado==='no'?' selected':''}>Sin pagar</option>
+        </select>
+      </div>
+      <div class="neg-filtro-grupo">
+        <button class="btn btn-limpiar" onclick="document.getElementById('negFiltroAnio').value=0;document.getElementById('negFiltroMes').value=0;document.getElementById('negFiltroPunta').value='';document.getElementById('negFiltroPagado').value='';document.getElementById('negBusqueda').value='';renderMisNegocios()">Limpiar filtros</button>
       </div>
     </div>
     <div class="neg-resumen">
@@ -3216,8 +3234,9 @@ function renderMisNegocios(){
       const canceladaArr=String(a.estado_arriendo||'').toUpperCase()==='CANCELADO';
       const estadoArrHdr=canceladaArr?'<span style="margin-left:auto;font-weight:700;font-size:11px;color:#888">CANCELADO</span>':'';
       const cardStyleArr=canceladaArr?'opacity:0.55;background:#f5f5f5':'';
-      html+=`<div class="neg-card arriendo" style="${cardStyleArr}">
-        <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}${estadoArrHdr}</div>
+      const epArr=estadoPagoNeg(r,a,true);
+      html+=`<div class="neg-card arriendo${!canceladaArr&&epArr.estado==='todos'?' pagado':''}" style="${cardStyleArr}">
+        <div class="neg-top"><span class="neg-id">${a.id_arriendo}</span><span class="neg-tipo arr">Arriendo &mdash; ${nomMes(a.mes)} ${a['año']||''}</span>${negBadgesExtra(a)}${badgePagadoHTML(a,epArr)}${estadoArrHdr}</div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(a.id_inmueble)}</div>
           <div><strong>Mercado:</strong> ${a.mercado||'&mdash;'}</div>
@@ -3284,8 +3303,11 @@ function renderMisNegocios(){
           const esDelFiltro=(fMes&&mp===fMes)&&(!fAnio||ap===fAnio);
           const badgeMes=esDelFiltro?'<span style="background:var(--azul-l);color:var(--azul);font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px">Cuota de este mes</span>':'';
           const filaStyle=esDelFiltro?'background:var(--azul-l);border-radius:4px;padding:4px 6px':'padding:4px 0';
+          const pagQ=comisionPagadaHito(p)
+            ? ' <span class="ne-hito-pagado">&#10003; comisi&oacute;n pagada'+(p.fecha_comision_pagada?' '+String(p.fecha_comision_pagada).slice(0,10):'')+'</span>'
+            : '';
           cuotasHTML+=`<div style="display:flex;justify-content:space-between;align-items:center;${filaStyle};border-bottom:1px solid #eee;font-size:12px">
-            <span>Cuota ${i+1}: ${fmtP(valorCom)}${pctHitoTxt} <small>(${fechaTxt})</small> ${estadoPago}${badgeMes}</span>
+            <span>Cuota ${i+1}: ${fmtP(valorCom)}${pctHitoTxt} <small>(${fechaTxt})</small> ${estadoPago}${badgeMes}${pagQ}</span>
             <span style="display:flex;align-items:center;gap:8px">
               <strong>Mi com: ${fmtP(miComPago)}</strong>
               ${cobrable?'<button class="btn btn-cc" style="font-size:10px;padding:3px 8px" title="Generar PDF de cobro de esta cuota (comisi&oacute;n por la venta)" onclick="imprimirCuentaCobro(\'venta_pago\',\''+p.id_pago+'\',this)">Cuenta de cobro de la venta</button>':''}
@@ -3300,8 +3322,9 @@ function renderMisNegocios(){
       const compradores = partesV.filter(p=>p.rol==='comprador').map(p=>nomCli(p.id_cliente)+' ('+Math.round(Number(p.participacion_pct)*100)+'%)').join(', ')||'&mdash;';
       const esSecM=String(v.mercado||'').toLowerCase()==='secundario';
       const tipoVentaM=v.mercado?(esSecM?'Venta Secundaria':'Venta Primaria'):'Venta';
-      html+=`<div class="neg-card venta${esSecM?' sec':''}" style="${cardStyle}">
-        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt${esSecM?' sec':''}">${tipoVentaM} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}<span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
+      const epVnt=estadoPagoNeg(r,v,false);
+      html+=`<div class="neg-card venta${esSecM?' sec':''}${cancelada?'':(epVnt.estado==='todos'?' pagado':(epVnt.estado==='parcial'?' pagado-parcial':''))}" style="${cardStyle}">
+        <div class="neg-top"><span class="neg-id">${v.id_venta}</span><span class="neg-tipo vnt${esSecM?' sec':''}">${tipoVentaM} &mdash; ${nomMes(v.mes)} ${v['año']||''}</span>${negBadgesExtra(v)}${badgePagadoHTML(v,epVnt)}<span style="margin-left:auto;font-weight:700;font-size:11px;${estadoClassFinal}">${estadoFinal}</span></div>
         <div class="neg-detail">
           <div><strong>Inmueble:</strong> ${nomInm(v.id_inmueble)}</div>
           <div><strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
