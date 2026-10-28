@@ -64,6 +64,12 @@ No llegó a guardar nada: los pagos de VNT-076 siguen siendo PAG-158..160 con lo
 (5/2026) tiene la comisión pagada; hito 2 (8/2026) está en mes liquidado para ASE-003 y lo protege
 `validarEdicionVentaLiquidada_`; hito 3 (12/2026, el del pago parcial) es editable.
 
+**¿Quién hizo la edición del 14-oct que corrió la columna?** El propio usuario, durante la sesión en
+que se arregló VNT-051: 17:22 código nuevo pegado, 17:28-17:36 intentos fallidos, 17:42/17:44 el
+guardado que funcionó ("VNT-051 ya guardó"), con la hoja Pagos filtrada a VNT-051 (puesta para mirar
+las filas 97-98 del error). El historial atribuye todo a la cuenta del propietario porque la app corre
+con ella. No es un error de uso: el código debía detectar o quitar el filtro.
+
 ### 2.4 Por qué "todos los meses llaman por la edición"
 1. El formulario no enviaba `id_pago`; el servidor borraba todos los pagos y los reinsertaba copiando
    las marcas de "comisión pagada" **por posición**. Partir la última cuota en dos (el caso del pago
@@ -165,3 +171,12 @@ No llegó a guardar nada: los pagos de VNT-076 siguen siendo PAG-158..160 con lo
 - Ejecutar `verFechasPagoCorridas()` una vez al mes como control.
 - Más adelante: actualizar Pagos **en sitio** por `id_pago` (sin desplazar filas) en vez de
   borrar-y-reinsertar; con los ids estables ya queda el camino abierto.
+
+## 9. Resultado en producción (27-oct, noche)
+Checklist ejecutado por el usuario con el código final (commit 6377c20):
+- `verFiltrosActivos` / `quitarFiltrosHojas`: filtros fuera.
+- `aplicarFechasPagoCorridas`: escritas 9.
+- `verFechasPagoAlMesGuardado` → 15 filas "Migrado desde Pipeline"; `aplicarFechasPagoAlMesGuardado`: escritas 15.
+- `verFechasPagoCorridas`: 0 inconsistencias.
+- Nueva versión publicada; el usuario confirmó **"funcionó"**: VNT-076 muestra las mismas fechas en
+  lista y editor y Germán puede registrar el pago parcial.
