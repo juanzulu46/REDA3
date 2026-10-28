@@ -1561,6 +1561,8 @@ function diagnosticarBorrado(idNegocio, nombreHoja, colNombre) {
 //   8) quitarFiltrosHojas                 -> quita el filtro básico de todas las hojas
 //   9) verFechasPagoCorridas              -> informe, NO toca nada (fecha_pago vs mes_pago/año_pago)
 //  10) aplicarFechasPagoCorridas          -> corrige fecha_pago de los hitos corridos el 14-oct-2026
+//  11) verFechasPagoAlMesGuardado         -> informe, NO toca nada (hitos migrados con fecha de relleno)
+//  12) aplicarFechasPagoAlMesGuardado     -> pone fecha_pago = día 1 del mes guardado en esos hitos
 
 function verReparacionDuplicados() {
   return repararDuplicados();
@@ -1764,6 +1766,67 @@ function repararFechasPagoCorridas_(aplicar, mapa) {
 }
 function verFechasPagoCorridas() { return repararFechasPagoCorridas_(false); }
 function aplicarFechasPagoCorridas() { return repararFechasPagoCorridas_(true); }
+
+// ===== FECHA_PAGO AL DÍA 1 DEL MES GUARDADO: hitos migrados (11 y 12) =====
+// Los hitos "Migrado desde Pipeline" (abr-2026) quedaron con fecha_pago = día 1 del mes de la
+// VENTA (un relleno) y mes_pago/año_pago = mes esperado de pago; ya estaban así en los respaldos
+// de jul/ago-2026 (27-oct-2026: 15 filas, PAG-032..064). Como el mes que manda es
+// mes_pago/año_pago, se normaliza fecha_pago al día 1 de ese mes. Solo toca filas con fecha
+// cuyo mes no coincide y que NO están en el mapa del 14-oct (esas van por aplicarFechasPagoCorridas).
+function normalizarFechasPagoAlMes_(aplicar) {
+  var L = ['=== FECHA_PAGO → DÍA 1 DEL MES GUARDADO (hoja Pagos) ' + (aplicar ? '[APLICAR]' : '[solo informe]') + ' ==='];
+  var sheet = getSheet(HOJAS.pagos);
+  if (!sheet) { L.push('!! La hoja Pagos no existe'); Logger.log(L.join('\n')); return L.join('\n'); }
+  var data = sheet.getDataRange().getValues();
+  var H = data[0] || [];
+  var ix = {};
+  ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'observacion', 'comision_pagada']
+    .forEach(function(c){ ix[c] = indiceColumna_(H, c); });
+  if (ix.id_pago === -1 || ix.fecha_pago === -1 || ix.mes_pago === -1 || ix['año_pago'] === -1) {
+    throw new Error('La hoja Pagos no tiene las columnas id_pago / fecha_pago / mes_pago / año_pago.');
+  }
+  var g = function(fila, c){ return ix[c] === -1 ? '' : fila[ix[c]]; };
+  var txtF = function(v){ return v instanceof Date ? fechaTexto_(v) + ' [Date]' : "'" + String(v) + "'"; };
+  var filtro = null;
+  try { filtro = sheet.getFilter(); } catch (eF) { filtro = null; }
+  var candidatas = [];
+  for (var r = 1; r < data.length; r++) {
+    var f = data[r];
+    var id = String(g(f, 'id_pago') || '').trim();
+    if (!id || FECHAS_PAGO_RECUPERADAS_20261014[id]) continue;
+    var ap = parseInt(g(f, 'año_pago'), 10) || 0, mp = parseInt(g(f, 'mes_pago'), 10) || 0;
+    if (!ap || !mp) continue;
+    var actual = g(f, 'fecha_pago');
+    var am = anioMesDe_(actual);
+    if (!am || (am.anio === ap && am.mes === mp)) continue;   // sin fecha o ya coherente: no se toca
+    var nueva = ap + '-' + (mp < 10 ? '0' : '') + mp + '-01';
+    candidatas.push({ id: id, fila: r + 1, nueva: nueva });
+    L.push('  fila ' + (r + 1) + ' · ' + id + ' · ' + g(f, 'id_venta') + ' · ' + txtF(actual) + ' → ' + nueva +
+      ' · "' + g(f, 'observacion') + '"' +
+      (comisionPagada_({ comision_pagada: g(f, 'comision_pagada') }) ? ' · COMISIÓN PAGADA' : ''));
+  }
+  L.push('Filas a normalizar: ' + candidatas.length + ' · filtro: ' + (filtro ? '!! ACTIVO' : 'ninguno'));
+  if (!aplicar) {
+    L.push('Nada se modificó. Ejecuta aplicarFechasPagoAlMesGuardado() para aplicar.');
+  } else if (filtro) {
+    L.push('!! La hoja Pagos tiene un filtro activo: ejecuta quitarFiltrosHojas() y vuelve a intentar. Nada se modificó.');
+  } else {
+    candidatas.forEach(function(c){ sheet.getRange(c.fila, ix.fecha_pago + 1).setValue(c.nueva); });
+    SpreadsheetApp.flush();
+    var escritas = 0, fallidas = [];
+    candidatas.forEach(function(c){
+      var leido = sheet.getRange(c.fila, ix.fecha_pago + 1).getValue();
+      if (fechaTexto_(leido) === c.nueva) escritas++; else fallidas.push(c.id + ' (leído: ' + leido + ')');
+    });
+    invalidarCacheHojas([HOJAS.pagos]);
+    L.push('APLICADO → escritas ' + escritas + (fallidas.length ? ' · !! NO verificadas: ' + fallidas.join(', ') : ''));
+  }
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+function verFechasPagoAlMesGuardado() { return normalizarFechasPagoAlMes_(false); }
+function aplicarFechasPagoAlMesGuardado() { return normalizarFechasPagoAlMes_(true); }
 
 // ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
 // Escribe varias filas de una hoja de un solo golpe (una llamada setValues por columna

@@ -148,7 +148,20 @@ No llegó a guardar nada: los pagos de VNT-076 siguen siendo PAG-158..160 con lo
    con el saldo en 2026-12-28, Guardar. Debe conservar PAG-158 pagado y mostrar "PAGADO 1/4".
 7. Editar un arriendo con cobros (debe seguir regenerando CobrosArriendo).
 
-## 7. Pendiente / siguiente paso sugerido
+## 7. Al ejecutar en producción
+- `verFiltrosActivos()` agotó los 6 minutos: contaba filas ocultas con `isRowHiddenByFilter` fila por
+  fila (miles de llamadas en CobrosArriendo/Comisiones/Partes). Se quitó ese conteo (también se acotó
+  en `diagnosticarBorrado` a hojas de ≤300 filas).
+- `verFechasPagoCorridas()` listó **24** inconsistencias: las 9 del 14-oct y **15 hitos "Migrado desde
+  Pipeline"** (PAG-032, 034, 044, 046-050, 053, 054, 059, 061-064) que ya estaban así en los respaldos
+  del 31-jul y 26-ago: `fecha_pago` = día 1 del mes de la venta (relleno de la migración) y
+  `mes_pago/año_pago` = mes esperado de pago. Como el mes que manda es `mes_pago/año_pago`, se
+  agregaron `verFechasPagoAlMesGuardado()` / `aplicarFechasPagoAlMesGuardado()`, que ponen
+  `fecha_pago` = día 1 del mes guardado en esas filas (excluyen las 9 del mapa, las sin fecha y las
+  coherentes). También se vio que la hoja guarda `fecha_pago` como **Date** (115 Date · 0 texto):
+  Google convierte el texto 'YYYY-MM-DD' al escribir; `normCelda_` y `fechaTexto_` ya lo contemplan.
+
+## 8. Pendiente / siguiente paso sugerido
 - Ejecutar `verFechasPagoCorridas()` una vez al mes como control.
 - Más adelante: actualizar Pagos **en sitio** por `id_pago` (sin desplazar filas) en vez de
   borrar-y-reinsertar; con los ids estables ya queda el camino abierto.
