@@ -262,8 +262,8 @@ function mesesContratoDe(arriendo) {
 // consistente con el resto del módulo de bonificaciones).
 function pagoYaIngresado_(p, hoy) {
   if (p.fecha_pago && p.fecha_pago !== '') {
-    var fp = new Date(p.fecha_pago);
-    if (!isNaN(fp.getTime())) return fp <= hoy;
+    var fp = fechaLocalDe_(p.fecha_pago);
+    if (fp) return fp <= hoy;
   }
   var ap = Number(p['año_pago'] || p['ano_pago']) || 0;
   var mp = Number(p.mes_pago) || 0;
@@ -555,7 +555,10 @@ function construirPagosVenta_(pagosBody, datosVenta) {
       mes_pago: fechaPago ? (fechaPago.getMonth() + 1) : '',
       valor_cobrado: Math.round(fraccion * comOficina),
       pct_pago: esPorPct ? fraccion : '',
-      observacion: pago.observacion || ''
+      observacion: pago.observacion || '',
+      // id del hito que esta fila reemplaza (lo manda el editor desde el 27-oct-2026).
+      // No es columna de la hoja: agregarFila lo ignora.
+      id_pago_prev: pago.id_pago ? String(pago.id_pago).trim() : ''
     };
   });
   return { filas: filas };
@@ -825,7 +828,59 @@ function filasConValor_(sheet, colNombre, valor) {
 // ocultas por un filtro) y limpia las n filas sobrantes del final. Es determinista: no
 // depende de deleteRows, que en esta hoja falla de forma intermitente (29-ago / 14-oct-2026,
 // "quedan 2 (filas 97, 98)"). Si el tramo tiene fórmulas aborta: setValues las aplastaría.
+// Avisos NO fatales que una operación quiere devolverle al usuario (p. ej. "se quitó el
+// filtro de la hoja"). Se vacían al entrar en doPost; editar_venta / editar_arriendo los
+// suman a su `advertencia` con conAvisos_.
+var AVISOS_OP_ = [];
+function agregarAviso_(msg) {
+  if (msg && AVISOS_OP_.indexOf(msg) === -1) AVISOS_OP_.push(msg);
+}
+function tomarAvisos_() {
+  var a = AVISOS_OP_.slice();
+  AVISOS_OP_ = [];
+  return a;
+}
+function conAvisos_(texto) {
+  return [texto || ''].concat(tomarAvisos_()).filter(function(x){ return !!x; }).join(' ');
+}
+
+// Quita el filtro básico de la hoja si lo hay. Devuelve true si quitó uno.
+function quitarFiltroSiHay_(sheet) {
+  var f = null;
+  try { f = sheet.getFilter(); } catch (e) { f = null; }
+  if (!f) return false;
+  f.remove();
+  SpreadsheetApp.flush();
+  return true;
+}
+
+// Normaliza una celda para comparar lo que se escribió con lo que se lee después.
+// Una Date a medianoche y el texto 'yyyy-MM-dd' del mismo día se consideran iguales;
+// un número y su texto también (la hoja puede cambiar el tipo al escribir).
+function normCelda_(v) {
+  if (v === null || v === undefined || v === '') return 'S:';
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return 'S:';
+    var txt = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    return 'D:' + txt.replace(/ 00:00:00$/, '');
+  }
+  if (typeof v === 'number') return isFinite(v) ? 'N:' + String(v) : 'S:';
+  if (typeof v === 'boolean') return 'B:' + String(v);
+  var s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return 'D:' + s;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return 'N:' + String(Number(s));
+  return 'S:' + s;
+}
+
 function borrarPorReescritura_(sheet, colNombre, objetivo) {
+  // 14-oct-2026: la primera reescritura de Pagos corrió con un filtro básico activo (solo
+  // mostraba VNT-051) y las filas OCULTAS quedaron con la columna fecha_pago sin actualizar
+  // (corrida dos filas respecto a las demás). Por eso: (1) el filtro se quita antes de tocar
+  // nada y (2) al final se relee el tramo y se compara celda a celda con lo escrito.
+  if (quitarFiltroSiHay_(sheet)) {
+    Logger.log('[borrarFilas] se quitó el filtro de "' + sheet.getName() + '" antes de reescribir');
+    agregarAviso_('Se quitó el filtro de la hoja "' + sheet.getName() + '" para poder guardar.');
+  }
   var rango = sheet.getDataRange();
   var data = rango.getValues();
   if (data.length < 2) return 0;
@@ -848,9 +903,31 @@ function borrarPorReescritura_(sheet, colNombre, objetivo) {
   }
   var quedan = tramo.filter(function(f){ return !casa(f); });
   var n = tramo.length - quedan.length;
-  if (quedan.length) sheet.getRange(r0 + 1, 1, quedan.length, ncol).setValues(quedan);
-  sheet.getRange(r0 + 1 + quedan.length, 1, n, ncol).clearContent();
+  // Una sola escritura del tramo completo: las filas que quedan y, debajo, n filas en blanco.
+  var esperado = quedan.slice();
+  for (var b = 0; b < n; b++) {
+    var blanco = [];
+    for (var c0 = 0; c0 < ncol; c0++) blanco.push('');
+    esperado.push(blanco);
+  }
+  sheet.getRange(r0 + 1, 1, tramo.length, ncol).setValues(esperado);
+  if (n) sheet.getRange(r0 + 1 + quedan.length, 1, n, ncol).clearContent();
   SpreadsheetApp.flush();
+  // Verificación: lo leído debe ser exactamente lo escrito, en TODAS las columnas.
+  var leido = sheet.getRange(r0 + 1, 1, tramo.length, ncol).getValues();
+  var difs = [];
+  for (var rv = 0; rv < esperado.length && difs.length < 5; rv++) {
+    for (var cv = 0; cv < ncol && difs.length < 5; cv++) {
+      if (normCelda_(leido[rv][cv]) !== normCelda_(esperado[rv][cv])) {
+        difs.push('fila ' + (r0 + 1 + rv) + ', columna "' + data[0][cv] + '": esperado "' +
+          esperado[rv][cv] + '", leído "' + leido[rv][cv] + '"');
+      }
+    }
+  }
+  if (difs.length) {
+    throw new Error('Verificación de reescritura fallida en "' + sheet.getName() + '" (' +
+      difs.join('; ') + '). La hoja NO quedó como se esperaba; revisa el historial de versiones.');
+  }
   return n;
 }
 
@@ -1068,6 +1145,69 @@ function periodosCobradosAsesores_(idsAsesores) {
   return set;
 }
 
+// "año|mes" de un hito; sirve igual para pagos leídos de la hoja y para filas nuevas.
+function periodoPago_(p) {
+  return (parseInt(p['año_pago'] || p['ano_pago'], 10) || 0) + '|' + (parseInt(p.mes_pago, 10) || 0);
+}
+var MESES_CORTOS_ = ['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function nombreHitoPago_(p) {
+  return MESES_CORTOS_[parseInt(p.mes_pago, 10) || 0] + '-' + (parseInt(p['año_pago'] || p['ano_pago'], 10) || '') +
+    ' ($' + Math.round(numVal(p.valor_cobrado)).toLocaleString() + ')';
+}
+
+// Empareja los hitos que YA tiene la venta con las filas nuevas del formulario.
+//   modo 'id':       alguna fila nueva trae id_pago_prev que existe → se empareja por id.
+//   modo 'posicion': cliente viejo sin ids → hito i ↔ fila i (como antes del 27-oct-2026).
+// Devuelve { modo, prevDe: [hito previo o null, por fila nueva], quitados: [hitos previos sin pareja] }.
+function emparejarPagosPrev_(pagosPrev, filasNuevas) {
+  var prev = pagosPrev || [], nuevas = filasNuevas || [];
+  var porId = {};
+  prev.forEach(function(p){ porId[String(p.id_pago || '').trim()] = p; });
+  var conId = nuevas.some(function(f){ return f.id_pago_prev && porId[f.id_pago_prev]; });
+  var prevDe = [], usados = {};
+  if (conId) {
+    nuevas.forEach(function(f){
+      var id = String(f.id_pago_prev || '').trim();
+      if (id && porId[id] && !usados[id]) { usados[id] = true; prevDe.push(porId[id]); }
+      else prevDe.push(null);
+    });
+  } else {
+    nuevas.forEach(function(f, i){
+      var p = prev[i] || null;
+      if (p) usados[String(p.id_pago || '').trim()] = true;
+      prevDe.push(p);
+    });
+  }
+  var quitados = prev.filter(function(p){ return !usados[String(p.id_pago || '').trim()]; });
+  return { modo: conId ? 'id' : 'posicion', prevDe: prevDe, quitados: quitados };
+}
+
+// Un hito cuya comisión ya se pagó a los asesores no se puede quitar ni cambiar de mes o de
+// valor (solo la observación, o el día dentro del mismo mes). Devuelve '' si todo está bien.
+function validarHitosPagados_(pagosPrev, filasNuevas, emp) {
+  var vivoPagado = function(p){
+    return !!p && comisionPagada_(p) && String(p.estado || '').toUpperCase() !== 'ANULADO';
+  };
+  var ayuda = ' Si el comprador pagó solo una parte, deja ese hito como está, edita el hito pendiente y agrega una cuota nueva para el saldo.';
+  if (emp.modo === 'posicion') {
+    ayuda += ' (Si insertaste o moviste cuotas, pulsa Ctrl+F5 para cargar la versión nueva de la página y vuelve a intentarlo.)';
+  }
+  for (var i = 0; i < emp.quitados.length; i++) {
+    if (vivoPagado(emp.quitados[i])) {
+      return 'El hito de ' + nombreHitoPago_(emp.quitados[i]) + ' ya tiene la comisión pagada: no se puede eliminar.' + ayuda;
+    }
+  }
+  for (var j = 0; j < (filasNuevas || []).length; j++) {
+    var prev = emp.prevDe[j];
+    if (!vivoPagado(prev)) continue;
+    var f = filasNuevas[j];
+    if (periodoPago_(f) !== periodoPago_(prev) || Math.abs(numVal(f.valor_cobrado) - numVal(prev.valor_cobrado)) > 1) {
+      return 'El hito de ' + nombreHitoPago_(prev) + ' ya tiene la comisión pagada: no se puede cambiar su mes ni su valor (solo la observación o el día dentro del mismo mes).' + ayuda;
+    }
+  }
+  return '';
+}
+
 // Editar una venta cuyos hitos caen (algunos) en meses ya liquidados: se permite siempre que
 // lo que aportó cada hito liquidado a cada asesor quede idéntico
 // (valor_comision × valor_cobrado / comision_oficina, en su mes_pago). Es decir:
@@ -1093,17 +1233,13 @@ function validarEdicionVentaLiquidada_(idVenta, vntActual, pagosPrev, filasPagos
     porAsesorNuevo[c.id_asesor] = (porAsesorNuevo[c.id_asesor] || 0) + numVal(c.valor_comision);
   });
   var cobrados = periodosCobradosAsesores_(asesores);
-  var periodo = function(p){ return (parseInt(p['año_pago'] || p['ano_pago'], 10) || 0) + '|' + (parseInt(p.mes_pago, 10) || 0); };
+  var periodo = periodoPago_;
   var bloqueados = pagosPrev.filter(function(p){
     return String(p.estado || '').toUpperCase() !== 'ANULADO' && cobrados[periodo(p)];
   });
   if (!bloqueados.length) return '';
 
-  var MESES = ['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  var nombreHito = function(p){
-    return MESES[parseInt(p.mes_pago, 10) || 0] + '-' + (parseInt(p['año_pago'] || p['ano_pago'], 10) || '') +
-      ' ($' + Math.round(numVal(p.valor_cobrado)).toLocaleString() + ')';
-  };
+  var nombreHito = nombreHitoPago_;
 
   if (Math.abs(numVal(comOfNueva) - numVal(vntActual.comision_oficina)) > 1) {
     return 'Esta venta tiene hitos en meses ya liquidados: no se puede cambiar el valor base, el % ni el colegaje. Solo puedes editar los hitos de meses no liquidados.';
@@ -1416,6 +1552,10 @@ function diagnosticarBorrado(idNegocio, nombreHoja, colNombre) {
 //   4) aplicarMarcaPagadosHastaJulio2026  -> marca pagado todo lo anterior a julio 2026
 //   5) diagnosticarBorradoARR243          -> informe, NO toca nada (por qué falla el borrado)
 //   6) verNegociosIncompletos             -> informe, NO toca nada (negocios sin asesores/partes)
+//   7) verFiltrosActivos                  -> informe, NO toca nada (qué hojas tienen filtro básico)
+//   8) quitarFiltrosHojas                 -> quita el filtro básico de todas las hojas
+//   9) verFechasPagoCorridas              -> informe, NO toca nada (fecha_pago vs mes_pago/año_pago)
+//  10) aplicarFechasPagoCorridas          -> corrige fecha_pago de los hitos corridos el 14-oct-2026
 
 function verReparacionDuplicados() {
   return repararDuplicados();
@@ -1473,6 +1613,151 @@ function verNegociosIncompletos() {
   Logger.log(msg);
   return msg;
 }
+
+// ===== FILTROS BÁSICOS DE LAS HOJAS (7 y 8) =====
+// Un filtro básico activo esconde filas a quien revisa la hoja y, el 14-oct-2026, dejó la
+// columna fecha_pago de Pagos corrida al reescribir (ver borrarPorReescritura_). Las hojas
+// que escribe la app (Pagos, Ventas, Comisiones, Partes, CobrosArriendo) no deben tener filtro.
+function informeFiltros_(quitar) {
+  var L = [quitar ? '=== QUITAR FILTROS BÁSICOS ===' : '=== FILTROS BÁSICOS ACTIVOS ==='];
+  var hojas = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  var n = 0;
+  hojas.forEach(function(sh){
+    var f = null;
+    try { f = sh.getFilter(); } catch (e) { f = null; }
+    if (!f) return;
+    n++;
+    var rf = f.getRange();
+    var cols = [];
+    for (var c = rf.getColumn(); c <= rf.getLastColumn(); c++) {
+      var crit = null;
+      try { crit = f.getColumnFilterCriteria(c); } catch (e2) { crit = null; }
+      if (crit) cols.push(String(sh.getRange(1, c).getValue() || ('col ' + c)).trim());
+    }
+    var ocultas = 0;
+    try { for (var r = 1; r <= sh.getLastRow(); r++) if (sh.isRowHiddenByFilter(r)) ocultas++; } catch (e3) {}
+    L.push('  ' + sh.getName() + ': filtro en ' + rf.getA1Notation() +
+      (cols.length ? ' · criterio en: ' + cols.join(', ') : ' · sin criterios') +
+      ' · ' + ocultas + ' filas ocultas' +
+      (rf.getLastRow() < sh.getLastRow() ? ' · !! el rango del filtro no cubre las filas nuevas' : ''));
+    if (quitar) { f.remove(); L.push('    → filtro quitado'); }
+  });
+  if (!n) L.push('  Ninguna hoja tiene filtro básico.');
+  if (quitar && n) SpreadsheetApp.flush();
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+function verFiltrosActivos() { return informeFiltros_(false); }
+function quitarFiltrosHojas() { return informeFiltros_(true); }
+
+// ===== FECHAS DE PAGO CORRIDAS (9 y 10) =====
+// El 14-oct-2026 17:42 la primera reescritura de Pagos (edición de VNT-051) corrió con el
+// filtro básico de la hoja activo (solo mostraba VNT-051). En las filas ocultas (99-114) las
+// columnas A,B,D..L subieron dos filas, como debía ser, pero fecha_pago (C) conservó el valor
+// viejo: cada hito quedó con la fecha del hito dos filas más arriba. Las listas (mes_pago /
+// año_pago) seguían bien; el editor (fecha_pago) mostraba otra fecha. Las fechas correctas
+// salen del historial de versiones de la hoja (7-oct 17:25 y 14-oct 17:44). VNT-075 y VNT-092
+// también quedaron corridas, pero se re-editaron el 16-oct y sus filas nuevas están bien.
+var FECHAS_PAGO_RECUPERADAS_20261014 = {
+  'PAG-153': '2026-08-01', 'PAG-154': '2027-11-30',                        // VNT-086
+  'PAG-158': '2026-05-04', 'PAG-159': '2026-08-28', 'PAG-160': '2026-12-28', // VNT-076
+  'PAG-172': '2026-04-24', 'PAG-173': '2026-10-10',                        // VNT-074
+  'PAG-174': '2026-10-01', 'PAG-175': '2026-11-30'                         // VNT-093
+};
+
+// aplicar=false: informe. aplicar=true: escribe SOLO la celda fecha_pago de los ids del mapa
+// que todavía estén corridos (idempotente). Nunca toca mes_pago/año_pago ni otras filas.
+function repararFechasPagoCorridas_(aplicar, mapa) {
+  mapa = mapa || FECHAS_PAGO_RECUPERADAS_20261014;
+  var L = ['=== FECHA_PAGO vs MES GUARDADO (hoja Pagos) ' + (aplicar ? '[APLICAR]' : '[solo informe]') + ' ==='];
+  var sheet = getSheet(HOJAS.pagos);
+  if (!sheet) { L.push('!! La hoja Pagos no existe'); Logger.log(L.join('\n')); return L.join('\n'); }
+  var data = sheet.getDataRange().getValues();
+  var H = data[0] || [];
+  var ix = {};
+  ['id_pago', 'id_venta', 'fecha_pago', 'año_pago', 'mes_pago', 'observacion', 'comision_pagada']
+    .forEach(function(c){ ix[c] = indiceColumna_(H, c); });
+  if (ix.id_pago === -1 || ix.fecha_pago === -1 || ix.mes_pago === -1 || ix['año_pago'] === -1) {
+    throw new Error('La hoja Pagos no tiene las columnas id_pago / fecha_pago / mes_pago / año_pago.');
+  }
+  var g = function(fila, c){ return ix[c] === -1 ? '' : fila[ix[c]]; };
+  var txtF = function(v){ return v instanceof Date ? fechaTexto_(v) + ' [Date]' : "'" + String(v) + "'"; };
+
+  // 1. Tipo de las celdas de fecha_pago y filtro
+  var nDate = 0, nTexto = 0, nVacio = 0, inconsistentes = [];
+  for (var r = 1; r < data.length; r++) {
+    var f = data[r];
+    var id = String(g(f, 'id_pago') || '').trim();
+    if (!id) continue;
+    var fp = g(f, 'fecha_pago');
+    if (fp instanceof Date) nDate++; else if (fp === '' || fp === null || fp === undefined) nVacio++; else nTexto++;
+    var am = anioMesDe_(fp);
+    var ap = parseInt(g(f, 'año_pago'), 10) || 0, mp = parseInt(g(f, 'mes_pago'), 10) || 0;
+    if (am && ap && mp && (am.anio !== ap || am.mes !== mp)) {
+      inconsistentes.push('  fila ' + (r + 1) + ' · ' + id + ' · ' + g(f, 'id_venta') + ' · fecha_pago=' + txtF(fp) +
+        ' · guardado ' + mp + '/' + ap + ' · "' + g(f, 'observacion') + '"' +
+        (comisionPagada_({ comision_pagada: g(f, 'comision_pagada') }) ? ' · COMISIÓN PAGADA' : ''));
+    }
+  }
+  var filtro = null;
+  try { filtro = sheet.getFilter(); } catch (eF) { filtro = null; }
+  L.push('--- 1. Columna fecha_pago: ' + nDate + ' Date · ' + nTexto + ' texto · ' + nVacio + ' vacías · filtro: ' +
+    (filtro ? '!! ACTIVO (' + filtro.getRange().getA1Notation() + ')' : 'ninguno'));
+  L.push('--- 2. Filas cuyo mes de fecha_pago NO coincide con mes_pago/año_pago: ' + inconsistentes.length);
+  inconsistentes.forEach(function(l){ L.push(l); });
+
+  // 3. Plan sobre los ids con fecha recuperada
+  L.push('--- 3. Plan de reparación (' + Object.keys(mapa).length + ' ids con fecha recuperada del historial):');
+  var candidatas = [], yaBien = 0, omitidas = 0;
+  Object.keys(mapa).forEach(function(idM){
+    var nueva = mapa[idM];
+    var filas = filasConValor_(sheet, 'id_pago', idM);
+    if (filas.length !== 1) { omitidas++; L.push('  ' + idM + ': omitida (' + filas.length + ' filas con ese id)'); return; }
+    var fila = data[filas[0] - 1];
+    var apM = parseInt(g(fila, 'año_pago'), 10) || 0, mpM = parseInt(g(fila, 'mes_pago'), 10) || 0;
+    var amN = anioMesDe_(nueva);
+    if (!amN || amN.anio !== apM || amN.mes !== mpM) {
+      omitidas++;
+      L.push('  ' + idM + ': omitida (la fecha recuperada ' + nueva + ' no cae en el mes guardado ' + mpM + '/' + apM + ')');
+      return;
+    }
+    var actual = g(fila, 'fecha_pago');
+    var amA = anioMesDe_(actual);
+    var actualTxt = fechaTexto_(actual);
+    if (amA && amA.anio === apM && amA.mes === mpM) {
+      if (actualTxt === nueva) { yaBien++; L.push('  ' + idM + ': ya estaba bien (' + nueva + ')'); }
+      else { omitidas++; L.push('  ' + idM + ': omitida (ya tiene una fecha del mes correcto, ' + actualTxt + ', distinta de la recuperada ' + nueva + ')'); }
+      return;
+    }
+    candidatas.push({ id: idM, fila: filas[0], actual: actualTxt, nueva: nueva });
+    L.push('  ' + idM + ' (' + g(fila, 'id_venta') + ', fila ' + filas[0] + ', "' + g(fila, 'observacion') + '"): ' +
+      txtF(actual) + ' → ' + nueva);
+  });
+
+  if (!aplicar) {
+    L.push('Nada se modificó: ' + candidatas.length + ' por escribir · ' + yaBien + ' ya bien · ' + omitidas +
+      ' omitidas. Ejecuta aplicarFechasPagoCorridas() para aplicar.');
+  } else if (filtro) {
+    L.push('!! La hoja Pagos tiene un filtro activo: ejecuta quitarFiltrosHojas() y vuelve a intentar. Nada se modificó.');
+  } else {
+    candidatas.forEach(function(c){ sheet.getRange(c.fila, ix.fecha_pago + 1).setValue(c.nueva); });
+    SpreadsheetApp.flush();
+    var escritas = 0, fallidas = [];
+    candidatas.forEach(function(c){
+      var leido = sheet.getRange(c.fila, ix.fecha_pago + 1).getValue();
+      if (fechaTexto_(leido) === c.nueva) escritas++; else fallidas.push(c.id + ' (leído: ' + leido + ')');
+    });
+    invalidarCacheHojas([HOJAS.pagos]);
+    L.push('APLICADO → escritas ' + escritas + ' · ya bien ' + yaBien + ' · omitidas ' + omitidas +
+      (fallidas.length ? ' · !! NO verificadas: ' + fallidas.join(', ') : ''));
+  }
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+function verFechasPagoCorridas() { return repararFechasPagoCorridas_(false); }
+function aplicarFechasPagoCorridas() { return repararFechasPagoCorridas_(true); }
 
 // ===== MARCA MASIVA DE COMISIONES PAGADAS (ejecutar a mano desde el editor de GAS) =====
 // Escribe varias filas de una hoja de un solo golpe (una llamada setValues por columna
@@ -1719,20 +2004,30 @@ function esTipoCaptacion_(tipo) {
   return normalizarNombre(tipo).indexOf('captacion') === 0;
 }
 
-// {anio, mes} de un valor de fecha que puede venir como Date, ISO, 'yyyy-MM-dd' o
-// 'dd/MM/yyyy'. null si no se puede interpretar.
+// {anio, mes, dia} de un valor de fecha que puede venir como Date, ISO, 'yyyy-MM-dd' o
+// 'dd/MM/yyyy'. null si no se puede interpretar. Lee el texto tal cual: nunca pasa
+// 'yyyy-MM-dd' por new Date(), que lo toma como UTC y en Colombia cae al día anterior.
 function anioMesDe_(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
   if (valor instanceof Date) {
-    return isNaN(valor.getTime()) ? null : { anio: valor.getFullYear(), mes: valor.getMonth() + 1 };
+    return isNaN(valor.getTime()) ? null : { anio: valor.getFullYear(), mes: valor.getMonth() + 1, dia: valor.getDate() };
   }
   var s = String(valor).trim();
   var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return { anio: parseInt(m[1], 10), mes: parseInt(m[2], 10) };
+  if (m) return { anio: parseInt(m[1], 10), mes: parseInt(m[2], 10), dia: parseInt(m[3], 10) };
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) return { anio: parseInt(m[3], 10), mes: parseInt(m[2], 10) };
+  if (m) return { anio: parseInt(m[3], 10), mes: parseInt(m[2], 10), dia: parseInt(m[1], 10) };
   var d = new Date(s);
-  return isNaN(d.getTime()) ? null : { anio: d.getFullYear(), mes: d.getMonth() + 1 };
+  return isNaN(d.getTime()) ? null : { anio: d.getFullYear(), mes: d.getMonth() + 1, dia: d.getDate() };
+}
+
+// Date LOCAL (medianoche) de un valor de fecha, o null. Para comparar "¿ya pasó?" y
+// agrupar por mes sin el corrimiento UTC de new Date('yyyy-MM-dd').
+function fechaLocalDe_(valor) {
+  var am = anioMesDe_(valor);
+  if (!am || !am.anio || !am.mes) return null;
+  var d = new Date(am.anio, am.mes - 1, am.dia || 1, 0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // Bono (fracción) que corresponde a un arriendo de (anio, mes) sobre un inmueble.
@@ -1968,8 +2263,8 @@ function calcularCategoriaMes(idAsesor, mes, anio, datos) {
     if (parseInt(p['año_pago'] || p['ano_pago'], 10) !== anio) return false;
     if (!p.fecha_pago || p.fecha_pago === '') return true;
     // Comparar usando año_pago y mes_pago si la fecha no parsea bien
-    var fp = new Date(p.fecha_pago);
-    if (isNaN(fp.getTime())) {
+    var fp = fechaLocalDe_(p.fecha_pago);
+    if (!fp) {
       // Fallback: si tiene año_pago y mes_pago, comparar solo año-mes
       var ap = Number(p.año_pago) || 0;
       var mp = Number(p.mes_pago) || 0;
@@ -2620,8 +2915,8 @@ function dispatchGet(params) {
           p.efectuado = true;
           return;
         }
-        var fp = new Date(p.fecha_pago);
-        if (isNaN(fp.getTime())) {
+        var fp = fechaLocalDe_(p.fecha_pago);
+        if (!fp) {
           var ap = Number(p['año_pago']) || Number(p['ano_pago']) || 0;
           var mp = Number(p.mes_pago) || 0;
           p.efectuado = (ap && mp) ? ((ap * 12 + mp) <= hoyAM) : true;
@@ -2942,6 +3237,7 @@ function doPost(e) {
   // deben quedar bloqueados detrás de una escritura o cálculo largo. El candado
   // global se toma únicamente para las acciones que escriben en las hojas.
   var body, action;
+  AVISOS_OP_ = [];
   try {
     body = JSON.parse(e.postData.contents);
     action = body.action || '';
@@ -3533,8 +3829,8 @@ function doPost(e) {
           if (pagosVenta.length) {
             var fechaCuota = function(p){
               if (p.fecha_pago) {
-                var d = new Date(p.fecha_pago + (String(p.fecha_pago).indexOf('T') > -1 ? '' : 'T12:00:00'));
-                if (!isNaN(d.getTime())) return d.getDate() + ' de ' + mesesNom[d.getMonth()] + ' de ' + d.getFullYear();
+                var d = fechaLocalDe_(p.fecha_pago);
+                if (d) return d.getDate() + ' de ' + mesesNom[d.getMonth()] + ' de ' + d.getFullYear();
               }
               var mp = parseInt(p.mes_pago, 10);
               var ap = parseInt(p['año_pago'] !== undefined ? p['año_pago'] : p.ano_pago, 10);
@@ -4124,6 +4420,20 @@ function doPost(e) {
       }
       if (body.observacion !== undefined) datosUpdate.observacion = body.observacion;
 
+      // Hito con la comisión ya pagada: solo cambia la observación o el día dentro del mes.
+      if (comisionPagada_(pagoActual)) {
+        var amNuevoAP = body.fecha_pago !== undefined ? anioMesDe_(body.fecha_pago) : null;
+        var cambiaMesAP = body.fecha_pago !== undefined &&
+          (!amNuevoAP || (amNuevoAP.anio + '|' + amNuevoAP.mes) !== periodoPago_(pagoActual));
+        var cambiaValorAP = datosUpdate.valor_cobrado !== undefined &&
+          Math.abs(numVal(datosUpdate.valor_cobrado) - numVal(pagoActual.valor_cobrado)) > 1;
+        if (cambiaMesAP || cambiaValorAP) {
+          lock.releaseLock();
+          return jsonResponse({ ok:false, error:'El hito de ' + nombreHitoPago_(pagoActual) +
+            ' ya tiene la comisión pagada: no se puede cambiar su mes ni su valor (solo la observación o el día dentro del mismo mes).' });
+        }
+      }
+
       actualizarFila(HOJAS.pagos, 'id_pago', idPago, datosUpdate);
       invalidarCacheHojas([HOJAS.pagos]);
       lock.releaseLock();
@@ -4392,7 +4702,7 @@ function doPost(e) {
       return jsonResponse({ ok:true, id: idArrE, mensaje:'Arriendo actualizado',
         verificacion: { comisiones: verifComEA, partes: body.partes.length,
                         cobros: { borrados: borrCobEA, regenerados: cobrosEA } },
-        advertencia: advCobEA || undefined });
+        advertencia: conAvisos_(advCobEA) || undefined });
     }
 
     // --- EDITAR VENTA (gestor o asesor que participa en el negocio) ---
@@ -4477,9 +4787,14 @@ function doPost(e) {
       var pagosPrevEV = leerHoja(HOJAS.pagos).filter(function(p){
         return String(p.id_venta || '').trim() === String(idVntE).trim();
       });
-      var errLiqEV = validarEdicionVentaLiquidada_(idVntE, vntE, pagosPrevEV,
-        (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], comOfEV, filasComEV);
+      var filasPagEV = (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [];
+      var errLiqEV = validarEdicionVentaLiquidada_(idVntE, vntE, pagosPrevEV, filasPagEV, comOfEV, filasComEV);
       if (errLiqEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errLiqEV }); }
+      // Hitos con la comisión ya pagada: se emparejan por id_pago (o por posición si el
+      // cliente es viejo) y no pueden quitarse ni cambiar de mes/valor.
+      var empEV = emparejarPagosPrev_(pagosPrevEV, filasPagEV);
+      var errPagEV = validarHitosPagados_(pagosPrevEV, filasPagEV, empEV);
+      if (errPagEV) { lock.releaseLock(); return jsonResponse({ ok:false, error: errPagEV }); }
       asegurarColumnasColegaje_();
       if (resPagosEV && resPagosEV.filas.length > 0) { asegurarColumnaPctPago(); asegurarColumnasPagado_(); }
 
@@ -4505,14 +4820,17 @@ function doPost(e) {
         filasComEV, COLUMNAS.comisiones);
       verifComEV.borradas = borrComEV;
 
-      // Plan de pagos con los valores nuevos (filas ya validadas arriba).
-      // El id_pago se asigna fila por fila: siguienteId mira la hoja ya escrita.
+      // Plan de pagos con los valores nuevos (filas ya validadas arriba). Un hito emparejado
+      // conserva su id_pago (y su estado y marcas); los nuevos reciben siguienteId, que mira
+      // la hoja ya escrita (las filas viejas ya se borraron, así que no hay colisión).
       verifPagEV = insertarFilasDeNegocio_(HOJAS.pagos, 'id_venta', idVntE,
-        (resPagosEV && resPagosEV.filas) ? resPagosEV.filas : [], COLUMNAS.pagos,
+        filasPagEV, COLUMNAS.pagos,
         function(fila, i){
-          fila.id_pago = siguienteId(HOJAS.pagos, 'PAG');
+          var prev = empEV.prevDe[i];
+          fila.id_pago = prev && prev.id_pago ? prev.id_pago : siguienteId(HOJAS.pagos, 'PAG');
           fila.id_venta = idVntE;
-          var prev = pagosPrevEV[i];
+          fila.estado = prev ? (prev.estado || '') : '';
+          delete fila.id_pago_prev;
           if (prev && comisionPagada_(prev)) {
             fila.comision_pagada = 'SI';
             fila.fecha_comision_pagada = prev.fecha_comision_pagada || '';
@@ -4522,10 +4840,14 @@ function doPost(e) {
       verifPagEV.borradas = borrPagEV;
       });
       var advPagEV = '';
-      var marcadosPrevEV = pagosPrevEV.filter(comisionPagada_).length;
-      if (marcadosPrevEV > 0 && pagosPrevEV.length !== verifPagEV.insertadas) {
-        advPagEV = 'Cambió el número de cuotas y esta venta tenía ' + marcadosPrevEV +
-          ' hito(s) con la comisión marcada como pagada. Revisa en Gestión cuáles quedaron marcados.';
+      var marcadosPrevEV = pagosPrevEV.filter(comisionPagada_);
+      if (marcadosPrevEV.length > 0 && pagosPrevEV.length !== verifPagEV.insertadas) {
+        advPagEV = empEV.modo === 'id'
+          ? 'Cambió el número de cuotas (' + pagosPrevEV.length + ' → ' + verifPagEV.insertadas +
+            '); la marca de comisión pagada se conservó en ' +
+            marcadosPrevEV.map(function(p){ return p.id_pago; }).join(', ') + '.'
+          : 'Cambió el número de cuotas y esta venta tenía ' + marcadosPrevEV.length +
+            ' hito(s) con la comisión marcada como pagada. Revisa en Gestión cuáles quedaron marcados.';
       }
       recalcularPagadoVenta_(idVntE, body.id_asesor);
 
@@ -4536,7 +4858,7 @@ function doPost(e) {
       lock.releaseLock();
       return jsonResponse({ ok:true, id: idVntE, mensaje:'Venta actualizada',
         verificacion: { comisiones: verifComEV, pagos: verifPagEV, partes: body.partes.length },
-        advertencia: advPagEV || undefined });
+        advertencia: conAvisos_(advPagEV) || undefined });
     }
 
     // --- MARCAR NEGOCIO COMO PAGADO (SOLO GERENTE) ---

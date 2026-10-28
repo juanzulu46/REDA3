@@ -158,6 +158,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g50);color:var
 .neg-card.pagado-parcial{background:#fbfdfb;border-left-color:#84cc16}
 .neg-card .neg-tipo.pagado-parcial{background:#fef9c3;color:#a16207;border:1px solid #eab308;margin-left:6px}
 .ne-hito-pagado{color:#15803d;font-weight:600}
+/* Editor de cuotas: mes guardado, hito con comisión pagada (bloqueado) y fecha dudosa */
+.pago-guardado{font-size:11px;color:var(--g600);white-space:nowrap}
+.com-row.pago-bloqueado{background:#f4fbf6;border-left:3px solid #10b981}
+.com-row.pago-bloqueado input[readonly]{background:var(--g100);color:var(--g600);cursor:not-allowed}
+.pago-fecha-dudosa{border-color:#f59e0b!important;background:#fffbeb!important}
+.pago-aviso{flex-basis:100%;font-size:11px;color:#a16207;margin:-2px 0 2px 2px}
 .neg-exp{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--g300);font-size:12px;color:var(--g600)}
 .neg-exp.open{display:block}
 .neg-exp strong{color:var(--g800)}
@@ -1381,6 +1387,26 @@ function anioMesDeFecha(valor){
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : { anio: d.getFullYear(), mes: d.getMonth() + 1 };
 }
+// Date LOCAL (medianoche) de un valor de fecha, o null. new Date('yyyy-MM-dd') lo toma como
+// UTC y en Colombia cae al día anterior (una cuota del día 1 se iba al mes anterior).
+function fechaLocalDeTexto(valor){
+  if (valor === null || valor === undefined || valor === '') return null;
+  const s = String(valor).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 0, 0, 0, 0);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1], 0, 0, 0, 0);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+// Año/mes de una cuota: manda lo guardado en mes_pago/año_pago (lo que usan las listas y la
+// liquidación); la fecha solo se usa si la cuota no trae mes.
+function _pagoAnioMes(p, fp){
+  const ap = Number(p['año_pago']) || Number(p.ano_pago) || 0, mp = Number(p.mes_pago) || 0;
+  if (ap && mp) return { anio: ap, mes: mp };
+  return fp ? { anio: fp.getFullYear(), mes: fp.getMonth() + 1 } : { anio: 0, mes: 0 };
+}
+function nomMesCorto(m){ const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']; return ms[Number(m)]||String(m||''); }
 const BONO_CAPTACION = { 0: 0.02, 1: 0.01 };
 // Bono para un arriendo de (anio, mes) sobre el inmueble idInmueble (catálogo `inmuebles`).
 function bonoCaptacionPP(idInmueble, anio, mes){
@@ -1975,27 +2001,49 @@ function esVentaPrimario() {
   return document.getElementById('v_mercado').value === 'Primario';
 }
 
-function addPagoRow() {
+// opts (solo al editar): { id_pago, mes_pago, 'año_pago', comision_pagada, estado }.
+// Con comision_pagada la fila queda BLOQUEADA: fecha y monto/% de solo lectura, sin botón
+// de borrar (el servidor también lo rechaza). El mes guardado (mes_pago/año_pago) se muestra
+// al lado: es el mes con el que la cuota aparece en las listas y en la liquidación.
+function addPagoRow(opts) {
+  opts = opts || {};
   const container = document.getElementById('pagosVntList');
   const row = document.createElement('div');
   row.className = 'com-row';
-  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap';
+  const bloqueado = !!opts.comision_pagada;
+  const mp = Number(opts.mes_pago) || 0, ap = Number(opts['año_pago']) || Number(opts.ano_pago) || 0;
+  const guardadoHTML = (mp && ap)
+    ? '<span class="pago-guardado" title="Mes con el que esta cuota aparece en las listas y en la liquidaci\u00f3n">guardado: ' + nomMesCorto(mp) + ' ' + ap + '</span>'
+    : '';
+  const pagadoHTML = bloqueado
+    ? '<span class="ne-hito-pagado" title="La comisi\u00f3n de este hito ya se pag\u00f3 a los asesores: no se puede cambiar su mes ni su valor">&#10003; comisi\u00f3n pagada</span>'
+    : '';
+  const delHTML = bloqueado
+    ? ''
+    : '<button class="com-del" onclick="this.closest(\'.com-row\').remove();resumenPagos()">&times;</button>';
+  const ro = bloqueado ? ' readonly' : '';
   if (esVentaPrimario()) {
     row.innerHTML = `
-      <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
-      <input type="number" class="pago-pct" min="0" max="100" step="0.01" placeholder="% de la comisi\u00f3n" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
+      <input type="date" class="pago-fecha"${ro} style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
+      <input type="number" class="pago-pct"${ro} min="0" max="100" step="0.01" placeholder="% de la comisi\u00f3n" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
       <input type="text" class="pago-obs" placeholder="Ej: Punto de equilibrio" style="flex:0.8;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
-      <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
+      ${guardadoHTML}${pagadoHTML}${delHTML}
     `;
   } else {
     row.innerHTML = `
-      <input type="date" class="pago-fecha" style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
-      <input type="text" class="pago-valor" inputmode="numeric" placeholder="Monto del pago ($)" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
+      <input type="date" class="pago-fecha"${ro} style="flex:1;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" required onchange="resumenPagos()">
+      <input type="text" class="pago-valor"${ro} inputmode="numeric" placeholder="Monto del pago ($)" style="flex:1.2;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px" oninput="resumenPagos()">
       <input type="text" class="pago-obs" placeholder="Ej: PE, Escrituraci\u00f3n" style="flex:0.8;padding:7px;font-size:12px;border:1px solid var(--g300);border-radius:5px">
-      <button class="com-del" onclick="this.closest('.com-row').remove();resumenPagos()">&times;</button>
+      ${guardadoHTML}${pagadoHTML}${delHTML}
     `;
     attachMoneyInput(row.querySelector('.pago-valor'));
   }
+  if (opts.id_pago) row.dataset.idPago = String(opts.id_pago);
+  if (mp) row.dataset.mesPago = String(mp);
+  if (ap) row.dataset.anioPago = String(ap);
+  if (opts.estado) row.dataset.estado = String(opts.estado);
+  if (bloqueado) { row.classList.add('pago-bloqueado'); row.dataset.pagado = '1'; }
   container.appendChild(row);
   resumenPagos();
 }
@@ -2015,12 +2063,15 @@ function cambioMercadoVenta() {
   container.querySelectorAll('.com-row').forEach(function(r) {
     previas.push({
       fecha: r.querySelector('.pago-fecha').value,
-      obs: r.querySelector('.pago-obs').value
+      obs: r.querySelector('.pago-obs').value,
+      // Al editar: id del hito, mes guardado y marca de comisión pagada viajan con la fila.
+      opts: { id_pago: r.dataset.idPago || '', mes_pago: r.dataset.mesPago || '', 'año_pago': r.dataset.anioPago || '',
+              comision_pagada: r.dataset.pagado === '1', estado: r.dataset.estado || '' }
     });
   });
   container.innerHTML = '';
   previas.forEach(function(p) {
-    addPagoRow();
+    addPagoRow(p.opts);
     const rows = container.querySelectorAll('.com-row');
     const nueva = rows[rows.length - 1];
     nueva.querySelector('.pago-fecha').value = p.fecha;
@@ -2105,14 +2156,17 @@ function recolectarPagos() {
   rows.forEach(function(r) {
     const fecha = r.querySelector('.pago-fecha').value;
     const obs = r.querySelector('.pago-obs').value || '';
+    // id del hito que esta fila reemplaza (vacío en filas nuevas o al registrar): el
+    // servidor conserva por id las marcas de comisión pagada y protege los hitos pagados.
+    const idPago = r.dataset.idPago || '';
     if (primario) {
       const pctInp = r.querySelector('.pago-pct');
       const pctHito = pctInp ? (Number(pctInp.value) || 0) : 0;
-      if (fecha && pctHito > 0) pagos.push({ fecha_pago: fecha, pct_pago: pctHito, observacion: obs });
+      if (fecha && pctHito > 0) pagos.push({ id_pago: idPago, fecha_pago: fecha, pct_pago: pctHito, observacion: obs });
     } else {
       const valInp = r.querySelector('.pago-valor');
       const valor = valInp ? moneyToNum(valInp.value) : 0;
-      if (fecha && valor > 0) pagos.push({ fecha_pago: fecha, valor_pago: valor, observacion: obs });
+      if (fecha && valor > 0) pagos.push({ id_pago: idPago, fecha_pago: fecha, valor_pago: valor, observacion: obs });
     }
   });
   return pagos;
@@ -3833,8 +3887,17 @@ function editarPago(idPago, idVenta, btn) {
   const pctOfi = Number(v.pct_comision_oficina)||0;
   const nomMesC = m=>{const ms=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return ms[m]||m};
 
-  // Valores actuales de la cuota que se edita
-  const fechaActual = (()=>{ try{ return aFechaInput(p.fecha_pago); }catch(e){ return ''; } })();
+  // Valores actuales de la cuota que se edita. Manda el mes guardado (mes_pago/año_pago): si
+  // fecha_pago cae en otro mes se propone el día 1 de ese mes y se avisa. Un hito con la
+  // comisión ya pagada solo admite cambiar la observación o el día dentro del mismo mes.
+  const mpE=Number(p.mes_pago)||0, apE=Number(p['año_pago'])||Number(p.ano_pago)||0;
+  const fechaGuardadaTxt=(()=>{ try{ return aFechaInput(p.fecha_pago); }catch(e){ return ''; } })();
+  const amE=anioMesDeFecha(fechaGuardadaTxt||p.fecha_pago);
+  const fechaDudosa=!!(mpE&&apE&&(!amE||amE.anio!==apE||amE.mes!==mpE));
+  const fechaActual=fechaDudosa?(apE+'-'+String(mpE).padStart(2,'0')+'-01'):fechaGuardadaTxt;
+  const guardadoTxt=(mpE&&apE)?('Guardado como '+nomMesC(mpE)+' '+apE):'';
+  const pagadoE=comisionPagadaHito(p);
+  const roE=pagadoE?' readonly':'';
   const pctActual = (p.pct_pago!==''&&p.pct_pago!=null)
     ? Math.round(Number(p.pct_pago)*10000)/100
     : (comOfi>0 ? Math.round(((Number(p.valor_cobrado)||0)/comOfi)*10000)/100 : 0);
@@ -3855,16 +3918,16 @@ function editarPago(idPago, idVenta, btn) {
 
   const campoValor = esPrimario
     ? '<label style="font-size:12px;font-weight:600">% del hito (de la comisi&oacute;n REDA3)</label>'+
-      '<input type="number" id="ep_pct" min="0" max="100" step="0.01" value="'+pctActual+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">'
+      '<input type="number" id="ep_pct"'+roE+' min="0" max="100" step="0.01" value="'+pctActual+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px'+(pagadoE?';background:var(--g100);color:var(--g600)':'')+'">'
     : '<label style="font-size:12px;font-weight:600">Monto del pago del inmueble ($)</label>'+
-      '<input type="text" id="ep_valor" inputmode="numeric" value="'+formatMiles(montoActual)+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">';
+      '<input type="text" id="ep_valor"'+roE+' inputmode="numeric" value="'+formatMiles(montoActual)+'" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px'+(pagadoE?';background:var(--g100);color:var(--g600)':'')+'">';
 
   const overlay = document.createElement('div');
   overlay.id = 'editarPagoModal';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,40,64,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML = `
     <div style="background:#fff;border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;padding:22px">
-      <div style="font-size:16px;font-weight:700;color:var(--azul);margin-bottom:12px">Editar cuota de ${idVenta}</div>
+      <div style="font-size:16px;font-weight:700;color:var(--azul);margin-bottom:12px">Editar cuota de ${idVenta}${pagadoE?' <span class="ne-hito-pagado" style="font-size:12px">&#10003; comisi&oacute;n pagada</span>':''}</div>
       <div style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
         <div style="font-weight:700;color:var(--azul);margin-bottom:6px">Referencia del negocio</div>
         <div><strong>Inmueble:</strong> ${inm?inm.nombre:v.id_inmueble} &nbsp;&middot;&nbsp; <strong>Mercado:</strong> ${v.mercado||'&mdash;'}</div>
@@ -3872,8 +3935,10 @@ function editarPago(idPago, idVenta, btn) {
         <div style="margin-top:8px;font-weight:600">Cuotas del negocio ${esPrimario?'(hitos % de la comisi&oacute;n)':''}:</div>
         ${cuotasRef}
       </div>
-      <label style="font-size:12px;font-weight:600">Fecha del pago</label>
-      <input type="date" id="ep_fecha" value="${fechaActual}" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:10px">
+      <label style="font-size:12px;font-weight:600">Fecha del pago${guardadoTxt?' <small style="color:var(--g600);font-weight:400">&middot; '+guardadoTxt+'</small>':''}</label>
+      <input type="date" id="ep_fecha" class="${fechaDudosa?'pago-fecha-dudosa':''}" value="${fechaActual}" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:${fechaDudosa||pagadoE?'4':'10'}px">
+      ${fechaDudosa?'<div class="pago-aviso" style="margin:0 0 10px 2px">La fecha guardada ('+(fechaGuardadaTxt||p.fecha_pago)+') no coincide con el mes de esta cuota ('+nomMesC(mpE)+' '+apE+'); se propone el 1 de ese mes, ajusta el d&iacute;a si lo conoces.</div>':''}
+      ${pagadoE?'<div class="pago-aviso" style="margin:0 0 10px 2px;color:#15803d">La comisi&oacute;n de este hito ya se pag&oacute;: solo puedes ajustar el d&iacute;a dentro de '+(mpE&&apE?nomMesC(mpE)+' '+apE:'su mes')+' y la observaci&oacute;n.</div>':''}
       ${campoValor}
       <label style="font-size:12px;font-weight:600">Observaci&oacute;n</label>
       <input type="text" id="ep_obs" value="${String(p.observacion||'').replace(/"/g,'&quot;')}" style="width:100%;padding:8px;border:1px solid var(--g300);border-radius:6px;margin-bottom:16px">
@@ -3890,6 +3955,13 @@ function editarPago(idPago, idVenta, btn) {
   document.getElementById('ep_guardar').onclick = async function() {
     const fechaT = document.getElementById('ep_fecha').value.trim();
     if (fechaT && !fechaISOValida(fechaT)) { toast('Fecha inválida (formato YYYY-MM-DD).','er'); return; }
+    if (pagadoE && mpE && apE) {
+      const amT = fechaT ? anioMesDeFecha(fechaT) : null;
+      if (!amT || amT.anio !== apE || amT.mes !== mpE) {
+        toast('Este hito ya tiene la comisión pagada: la fecha debe quedar dentro de '+nomMesC(mpE)+' '+apE+'.','er');
+        return;
+      }
+    }
     const gBtn = this; gBtn.disabled = true; gBtn.textContent = 'Guardando...';
     try {
       const datos = { action: 'actualizar_pago', id_pago: idPago, id_asesor: asesorActual.id_asesor };
@@ -4189,15 +4261,40 @@ function prefillComisionesForm(tipo,idNeg,src){
   document.getElementById(cerId).querySelectorAll('.com-row').forEach((row,i)=>setRow(row,cers[i]));
 }
 
-// Convierte un valor de fecha (string 'YYYY-MM-DD' o ISO) al formato del input date.
+// Convierte un valor de fecha ('YYYY-MM-DD', ISO, 'dd/mm/yyyy' o texto de Date) al formato del
+// input date. Lee el texto tal cual y, si cae a new Date(), usa getters locales: toISOString
+// devolvía el día anterior en Colombia.
 function aFechaInput(v){
   if(!v)return '';
-  const s=String(v);
-  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m)return m[1]+'-'+m[2]+'-'+m[3];
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m)return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
   const d=new Date(s);
-  if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);
+  if(!isNaN(d.getTime()))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   return '';
+}
+
+// Fecha para el input del editor. MANDA el mes guardado (mes_pago/año_pago): si fecha_pago
+// cae en otro mes (columna corrida el 14-oct-2026), se propone el día 1 del mes guardado y,
+// si se pasa la fila, se le pone un aviso. Guardar deja fecha y mes otra vez coherentes.
+function fechaInputDeHito(p,row){
+  const txt=aFechaInput(p.fecha_pago);
+  const am=anioMesDeFecha(txt||p.fecha_pago);
+  const mp=Number(p.mes_pago)||0, ap=Number(p['año_pago'])||Number(p.ano_pago)||0;
+  if(!mp||!ap)return txt;
+  if(am&&am.anio===ap&&am.mes===mp)return txt;
+  const propuesta=ap+'-'+String(mp).padStart(2,'0')+'-01';
+  if(row){
+    const fin=row.querySelector('.pago-fecha');
+    if(fin)fin.classList.add('pago-fecha-dudosa');
+    const av=document.createElement('div');
+    av.className='pago-aviso';
+    av.textContent='La fecha guardada ('+(txt||p.fecha_pago)+') no coincide con el mes de esta cuota ('+nomMesCorto(mp)+' '+ap+'); se propone el 1 de ese mes, ajusta el día si lo conoces.';
+    row.appendChild(av);
+  }
+  return propuesta;
 }
 
 // Reconstruye el "monto del pago" (valor del inmueble) desde la comisión guardada.
@@ -4218,6 +4315,12 @@ function prefillPagosForm(v,src){
   const valorBase=Number(v.valor_base_comision)||0;
   const comOficina=Number(v.comision_oficina)||valorBase*pct;
   const primario=v.mercado==='Primario';
+  // Hitos con la comisión ya pagada quedan bloqueados; el ajuste de cuadre va al ÚLTIMO hito
+  // editable (nunca sobre uno pagado). Si todos están pagados no se ajusta nada y
+  // resumenPagos muestra la diferencia.
+  const bloqueados=pagos.map(p=>comisionPagadaHito(p));
+  let iAjuste=-1;
+  for(let i=pagos.length-1;i>=0;i--){ if(!bloqueados[i]){ iAjuste=i; break; } }
 
   let pcts=[], montos=[];
   if(primario){
@@ -4226,26 +4329,27 @@ function prefillPagosForm(v,src){
       if(p.pct_pago!==''&&p.pct_pago!=null) return Math.round(Number(p.pct_pago)*10000)/100;
       return comOficina>0?Math.round(((Number(p.valor_cobrado)||0)/comOficina)*10000)/100:0;
     });
-    // Ajustar el último para que la suma cuadre exactamente en 100%.
-    if(pcts.length){
-      const sumOtros=pcts.slice(0,-1).reduce((s,x)=>s+x,0);
-      pcts[pcts.length-1]=Math.max(0,Math.round((100-sumOtros)*100)/100);
+    if(iAjuste>=0){
+      const sumOtros=pcts.reduce((s,x,i)=>i===iAjuste?s:s+x,0);
+      pcts[iAjuste]=Math.max(0,Math.round((100-sumOtros)*100)/100);
     }
   } else {
-    // Reconstruir montos; ajustar el último para que la suma cuadre con el valor base.
-    // Monto = proporción de la comisión de oficina (NETA en colegaje) × valor base.
+    // Reconstruir montos. Monto = proporción de la comisión de oficina (NETA en colegaje) × valor base.
     montos=pagos.map(p=>comOficina>0?Math.round((Number(p.valor_cobrado)||0)/comOficina*valorBase):(pct>0?Math.round((Number(p.valor_cobrado)||0)/pct):0));
-    if(valorBase>0&&montos.length){
-      const sumOtros=montos.slice(0,-1).reduce((s,m)=>s+m,0);
-      montos[montos.length-1]=Math.max(0,valorBase-sumOtros);
+    if(valorBase>0&&iAjuste>=0){
+      const sumOtros=montos.reduce((s,m,i)=>i===iAjuste?s:s+m,0);
+      montos[iAjuste]=Math.max(0,valorBase-sumOtros);
     }
   }
 
-  pagos.forEach(()=>addPagoRow());
+  pagos.forEach(p=>addPagoRow({
+    id_pago:p.id_pago, mes_pago:p.mes_pago, 'año_pago':p['año_pago']||p.ano_pago,
+    comision_pagada:comisionPagadaHito(p), estado:p.estado
+  }));
   const rows=list.querySelectorAll('.com-row');
   rows.forEach((row,i)=>{
     const p=pagos[i];
-    row.querySelector('.pago-fecha').value=aFechaInput(p.fecha_pago);
+    row.querySelector('.pago-fecha').value=fechaInputDeHito(p,row);
     if(primario){
       const pctInp=row.querySelector('.pago-pct');
       if(pctInp)pctInp.value=pcts[i];
@@ -4473,7 +4577,7 @@ async function cargarBonificaciones(mes) {
 // ===== ACCIÓN COMERCIAL =====
 function prepararFormAccion() {
   const f = document.getElementById('ac_fecha');
-  if (!f.value) { const h = new Date(); f.value = h.toISOString().slice(0,10); }
+  if (!f.value) { f.value = aFechaInput(new Date()); } // fecha local: toISOString daba el día siguiente después de las 7 p.m.
   // Llenar tipos de acción dinámicamente desde el catálogo
   const sel = document.getElementById('ac_tipo');
   sel.innerHTML = '<option value="">-- Tipo --</option>' +
@@ -5424,8 +5528,8 @@ function _dashPipeline(data){
   for(const p of (data.pagos||[])){
     if(vtaMerc && !vtaMerc.has(p.id_venta)) continue;
     if(!p.fecha_pago) continue;
-    const fp = new Date(p.fecha_pago);
-    if(isNaN(fp.getTime())) continue;
+    const fp = fechaLocalDeTexto(p.fecha_pago);
+    if(!fp) continue;
     if(fp > hoy){
       valor += Number(p.valor_cobrado)||0;
       count++;
@@ -5459,8 +5563,8 @@ function _dashHoy0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
 // (coherente con la lógica de "Mis Negocios", asesor.html ~2638).
 function _dashPagoVentaCobrado(p){
   if(!p.fecha_pago) return true;
-  const fp = new Date(p.fecha_pago);
-  if(isNaN(fp.getTime())) return true;
+  const fp = fechaLocalDeTexto(p.fecha_pago);
+  if(!fp) return true;
   return fp <= _dashHoy0();
 }
 
@@ -5783,15 +5887,19 @@ async function _dashAfterRenderKpis(data, año, mesesSel, segmento){
     chartTitle = 'Comisión vs Comisión Futura';
     chartSub = '12 meses · cobrado · futuro · presupuesto · acumulado real vs acumulado ppto';
     const hoy = new Date(); hoy.setHours(0,0,0,0);
+    // Mes de la cuota = mes_pago/año_pago (como las listas y la liquidación); la fecha solo
+    // decide si ya se cobró (fecha local, sin el corrimiento UTC de new Date('yyyy-MM-dd')).
     const cobrado = meses12.map(x => (data.pagos||[]).filter(p => {
       if(!_pagoEnMerc(p)) return false;
-      if(!p.fecha_pago) return false; const fp = new Date(p.fecha_pago);
-      return !isNaN(fp.getTime()) && fp<=hoy && fp.getFullYear()===x.y && (fp.getMonth()+1)===x.m;
+      if(!p.fecha_pago) return false; const fp = fechaLocalDeTexto(p.fecha_pago); if(!fp) return false;
+      const am = _pagoAnioMes(p, fp);
+      return fp<=hoy && am.anio===x.y && am.mes===x.m;
     }).reduce((s,p)=>s+(Number(p.valor_cobrado)||0), 0));
     const futuro  = meses12.map(x => (data.pagos||[]).filter(p => {
       if(!_pagoEnMerc(p)) return false;
-      if(!p.fecha_pago) return false; const fp = new Date(p.fecha_pago);
-      return !isNaN(fp.getTime()) && fp>hoy && fp.getFullYear()===x.y && (fp.getMonth()+1)===x.m;
+      if(!p.fecha_pago) return false; const fp = fechaLocalDeTexto(p.fecha_pago); if(!fp) return false;
+      const am = _pagoAnioMes(p, fp);
+      return fp>hoy && am.anio===x.y && am.mes===x.m;
     }).reduce((s,p)=>s+(Number(p.valor_cobrado)||0), 0));
     const ppto = meses12.map(x => (data.ppto||[]).filter(p => p.tipo==='Venta' && Number(p['año'])===x.y && Number(p.mes)===x.m).reduce((s,p)=>s+(Number(p.comision)||0), 0));
     let aC=0,aP=0;
@@ -6156,10 +6264,10 @@ function _dashCalcFunnel(data, año, mesesSel){
   if(_dashIncluyeVentas()) for(const p of (data.pagos||[])){
     if(vtaMercSet && !vtaMercSet.has(p.id_venta)) continue;
     if(!p.fecha_pago) continue;
-    const fp = new Date(p.fecha_pago);
-    if(isNaN(fp.getTime())) continue;
+    const fp = fechaLocalDeTexto(p.fecha_pago);
+    if(!fp) continue;
     if(fp > hoy) continue;
-    const y = fp.getFullYear(), m = fp.getMonth()+1;
+    const amP = _pagoAnioMes(p, fp); const y = amP.anio, m = amP.mes;
     if(y !== año) continue;
     if(mesesSel.size > 0 && !mesesSel.has(m)) continue;
     pagosPagos++;
