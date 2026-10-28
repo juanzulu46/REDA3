@@ -1532,8 +1532,13 @@ function diagnosticarBorrado(idNegocio, nombreHoja, colNombre) {
   L.push('--- FILAS OCULTAS ---');
   try {
     var ocultasN = 0, ultima = sheet.getLastRow();
-    for (var r = 1; r <= ultima; r++) if (sheet.isRowHiddenByFilter(r)) ocultasN++;
-    L.push(ocultasN + ' de ' + ultima + ' filas ocultas por el filtro');
+    if (ultima > 300) {
+      // isRowHiddenByFilter es una llamada por fila: en hojas grandes agota los 6 minutos.
+      L.push('hoja de ' + ultima + ' filas: no se cuentan las ocultas (sería demasiado lento)');
+    } else {
+      for (var r = 1; r <= ultima; r++) if (sheet.isRowHiddenByFilter(r)) ocultasN++;
+      L.push(ocultasN + ' de ' + ultima + ' filas ocultas por el filtro');
+    }
   } catch (eR) { L.push('no se pudo calcular: ' + eR.message); }
 
   var msg = L.join('\n');
@@ -1628,17 +1633,18 @@ function informeFiltros_(quitar) {
     if (!f) return;
     n++;
     var rf = f.getRange();
+    // Encabezados en UNA lectura; nada de recorrer filas una por una (isRowHiddenByFilter por
+    // fila agotó los 6 minutos de ejecución el 27-oct-2026 con hojas de 600-900 filas).
+    var ultimaCol = sh.getLastColumn();
+    var encab = ultimaCol > 0 ? sh.getRange(1, 1, 1, ultimaCol).getValues()[0] : [];
     var cols = [];
     for (var c = rf.getColumn(); c <= rf.getLastColumn(); c++) {
       var crit = null;
       try { crit = f.getColumnFilterCriteria(c); } catch (e2) { crit = null; }
-      if (crit) cols.push(String(sh.getRange(1, c).getValue() || ('col ' + c)).trim());
+      if (crit) cols.push(String(encab[c - 1] || ('col ' + c)).trim());
     }
-    var ocultas = 0;
-    try { for (var r = 1; r <= sh.getLastRow(); r++) if (sh.isRowHiddenByFilter(r)) ocultas++; } catch (e3) {}
     L.push('  ' + sh.getName() + ': filtro en ' + rf.getA1Notation() +
       (cols.length ? ' · criterio en: ' + cols.join(', ') : ' · sin criterios') +
-      ' · ' + ocultas + ' filas ocultas' +
       (rf.getLastRow() < sh.getLastRow() ? ' · !! el rango del filtro no cubre las filas nuevas' : ''));
     if (quitar) { f.remove(); L.push('    → filtro quitado'); }
   });
